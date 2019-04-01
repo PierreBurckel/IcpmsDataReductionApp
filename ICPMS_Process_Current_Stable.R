@@ -3,6 +3,36 @@ library(DT)
 library(stringr)
 
 #Functions declaration
+
+mergeMatrixes <- function(matrix1, matrix2, name1=NULL, name2=NULL) {
+  if (!all(dim(matrix1) == dim(matrix2))){
+    stop("Matrixes of different sizes")
+  }
+  
+  columnNumber <- ncol(matrix1)
+  
+  if (is.null(name1)){}
+  else{colnames(matrix1) <- rep(name1,columnNumber)}
+  
+  if (is.null(name2)){}
+  else{colnames(matrix2) <- rep(name2,columnNumber)}
+  
+  for(i in seq(columnNumber)){
+    if (i == 1){
+      combinedMatrix <- cbind(matrix1[,1],matrix2[,1])
+      colnames(combinedMatrix) <- c(colnames(matrix1)[1],colnames(matrix2)[1])
+    }
+    else{
+      combinedMatrix <- cbind(combinedMatrix, matrix1[,i], matrix2[,i])
+      colnames(combinedMatrix)[ncol(combinedMatrix) - 1] <- colnames(matrix1)[i]
+      colnames(combinedMatrix)[ncol(combinedMatrix)] <- colnames(matrix2)[i]
+    }
+  }
+  
+  return(combinedMatrix)
+}
+
+
 ##Returns the state as a text message. State is TRUE or FALSE.
 ##If state is TRUE, either stateTxt and validStateTxt is returned, or nothing is returned (used for warnings to pop only when the state is invalid)
 ##If state is FALSE, stateTxt and invalidStateTxt is returned
@@ -994,10 +1024,16 @@ server <- function(input, output, session) {
   output$conc <- renderTable({
     if (is.null(process$conc)){return()}
     
-    displayWhat = input$viewConcentrationSwitch
+    displayWhat = strtoi(input$viewConcentrationSwitch)
     displayIndex = input$viewConcentrationIndex
     
-    cbind(nameColumn(),process$conc[[strtoi(displayWhat)]])[index$custom[[displayIndex]],]
+    if (displayWhat <= 2){displayMatrix <- process$conc[[displayWhat]]}
+    else if (displayWhat == 3){
+      displayMatrix <- mergeMatrixes(matrix1 = process$conc[[1]], matrix2 = process$conc[[2]], name1=NULL, name2="RSD (%)")
+    }
+    else {}
+    
+    cbind(nameColumn(), displayMatrix)[index$custom[[displayIndex]],]
   })
   
   #Button to download the list of analyte and ISTD
@@ -1005,17 +1041,9 @@ server <- function(input, output, session) {
     filename = paste("data_", input$viewConcentrationIndex, ".csv", sep = ""),
     content = function(file) {
       selectedIndex = index$custom[[input$viewConcentrationIndex]]
-      for(i in seq(elementNumber())){
-        if (i == 1){
-          combinedConcRSD <- cbind(process$conc[[1]][,1],process$conc[[2]][,1])
-          colnames(combinedConcRSD) <- c(colnames(process$conc[[1]])[1],"RSD (%)")
-        }
-        else{
-          combinedConcRSD <- cbind(combinedConcRSD, process$conc[[1]][,i],process$conc[[2]][,i])
-          colnames(combinedConcRSD)[ncol(combinedConcRSD) - 1] <- colnames(process$conc[[1]])[i]
-          colnames(combinedConcRSD)[ncol(combinedConcRSD)] <- "RSD (%)"
-        }
-      }
+      
+      combinedConcRSD <- mergeMatrixes(matrix1 = process$conc[[1]], matrix2 = process$conc[[2]], name1=NULL, name2="RSD (%)")
+
       if (strtoi(input$viewConcentrationSwitch) <= 2){
         write.csv(cbind(nameColumn(),process$conc[[strtoi(input$viewConcentrationSwitch)]])[selectedIndex,],
                   file, sep=";", quote = FALSE,
