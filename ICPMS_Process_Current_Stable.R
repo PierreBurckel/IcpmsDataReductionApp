@@ -485,19 +485,19 @@ server <- function(input, output, session) {
   #index$drift <- reactive({
   CPS <- reactive({
     rawData = extracted$data[["raw"]]
-    rawData[,index$CPS]})
+    rawData[,index$CPS, drop=FALSE]})
   
   RSD <- reactive({
     rawData = extracted$data[["raw"]]
-    rawData[,index$CPS_RSD]})
+    rawData[,index$CPS_RSD, drop=FALSE]})
   
   IS_CPS <- reactive({
     rawData = extracted$data[["raw"]]
-    rawData[,index$IS_CPS]})
+    rawData[,index$IS_CPS, drop=FALSE]})
   
   IS_CPS_RSD <- reactive({
     rawData = extracted$data[["raw"]]
-    rawData[,index$IS_CPS_RSD]})
+    rawData[,index$IS_CPS_RSD, drop=FALSE]})
   
   elementNames <- reactive({
     header_1 = extracted$data[["header_1"]]
@@ -690,7 +690,7 @@ server <- function(input, output, session) {
     }
     else {return()}
     
-    names(indexTable) <- c(firstColumnName, names(indexTable)[2:length(indexTable)])
+    colnames(indexTable) <- c(firstColumnName, colnames(IS_CPS())[1:length(IS_CPS())])
     
     indexTable
     
