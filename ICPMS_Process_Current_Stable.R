@@ -808,9 +808,12 @@ server <- function(input, output, session) {
     if (is.null(liveReplaceISTDtable()) | is.null(repIndex) | !isValidISTD()) {return()}
     lr = min(which(input$ISTDrowSlider[1] <= repIndex))
     ur = max(which(input$ISTDrowSlider[2] >= repIndex))
+    lr_new = max(min(repIndex),lr)
+    ur_new = min(max(repIndex),ur)
     lc = input$ISTDcolSlider[1]
     uc = input$ISTDcolSlider[2]
-    process$ISTDsignal[repIndex,][lr:ur, lc:uc] <- liveReplaceISTDtable()[[1]][repIndex,][lr:ur, lc:uc, drop = FALSE]
+    
+    process$ISTDsignal[lr_new:ur_new, lc:uc] <- liveReplaceISTDtable()[[1]][lr_new:ur_new, lc:uc, drop = FALSE]
   })
   
   #Updates the slider for row and col selections when modifications are made in IS_CPS(), i.e. when the extract button is hit
@@ -910,12 +913,15 @@ server <- function(input, output, session) {
   observeEvent(input$setBlkInterpolationMethod, {
     repIndex = index$custom[[input$indexBlkchoiceWhat]]
     if (is.null(liveReplaceBlkTable())| is.null(repIndex)) {return()}
-    lr = min(which(input$blkRowSlider[1] <= repIndex))
-    ur = max(which(input$blkRowSlider[2] >= repIndex))
+    lr = input$blkRowSlider[1]
+    ur = input$blkRowSlider[2]
+    lr_new = max(min(repIndex),lr)
+    ur_new = min(max(repIndex),ur)
     lc = input$blkColSlider[1]
     uc = input$blkColSlider[2]
-    process$blk_ratio[[1]][repIndex,][lr:ur, lc:uc] <- liveReplaceBlkTable()[[1]][repIndex,][lr:ur, lc:uc, drop = FALSE]
-    process$blk_ratio[[2]][repIndex,][lr:ur, lc:uc] <- liveReplaceBlkTable()[[2]][repIndex,][lr:ur, lc:uc, drop = FALSE]
+
+    process$blk_ratio[[1]][lr_new:ur_new,lc:uc] <- liveReplaceBlkTable()[[1]][lr_new:ur_new, lc:uc, drop = FALSE]
+    process$blk_ratio[[2]][lr_new:ur_new,lc:uc] <- liveReplaceBlkTable()[[2]][lr_new:ur_new, lc:uc, drop = FALSE]
   })
   
   #Updates the slider for row and col selections when modifications are made in IS_CPS(), i.e. when the extract button is hit
