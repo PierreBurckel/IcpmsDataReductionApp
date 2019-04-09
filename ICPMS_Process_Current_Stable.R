@@ -2,6 +2,158 @@ library(shiny)
 library(DT)
 library(stringr)
 
+#Shiny module creation
+
+csvFileUI <- function(id) {
+  # Create a namespace function using the provided id
+  ns <- NS(id)
+  
+  tagList(
+    sidebarPanel(
+      shinyjs::useShinyjs(),
+      sliderInput(ns("rowSlider"), label = h4("Row/Column range"), min = 1,
+                  max = 100, value = c(1, 1)),
+      sliderInput(ns("colSlider"), label = NULL, min = 1,
+                  max = 100, value = c(1, 1)),
+      selectInput(ns("interactionMode"), "Select a mode:",
+                  c("View" = "view", "Process" = "process")),
+      selectInput(ns("indexChoiceWhat"), "Replace what:",
+                  "", selected = ""),
+      selectInput(ns("correctionMethod"), "Replace calibration ISTD:",
+                  c("None" = "none", "Average blanks" = "mean",
+                    "Previous blank" = "prev")),
+      selectInput(ns("indexChoiceIn"), "Replace in:",
+                  "All", selected = "All"),
+      actionButton(ns("setCorrectionMethod"), "Set ISTD correction")),
+    mainPanel(
+      DT::DTOutput(ns("table"))
+    )
+  )
+}
+
+# Module server function
+csvFile <- function(input, output, session, nameColumn = reactive(nameColumn()), indexCustom = reactive(index$custom), isValidISTD = reactive(isValidISTD()), IS_CPS = reactive(IS_CPS()), signal, modifiedSignal) {
+  
+  
+  liveReplaceTable <- reactive({
+    replaceIndexWhat = indexCustom()[[input$indexChoiceWhat]]
+    replaceIndexIn = indexCustom()[[input$indexChoiceIn]]
+    replaceValues(signal()[[1]], signal()[[2]], 1:ncol(signal()[[1]]), input$correctionMethod, replaceIndexWhat, replaceIndexIn)})
+  
+  observeEvent(indexCustom(), {
+    if (is.null(indexCustom())){return()}
+    updateSelectInput(session,"indexChoiceWhat",choices=names(indexCustom()),names(indexCustom())[1])
+    updateSelectInput(session,"indexChoiceIn",choices=names(indexCustom()),names(indexCustom())[1])
+  })
+
+  #Render ISTD table if all conditions are met
+  output$table <- DT::renderDT({
+
+    lr = input$rowSlider[1]
+    ur = input$rowSlider[2]
+    lc = input$colSlider[1]
+    uc = input$colSlider[2]
+
+    df_view <- cbind(nameColumn(), modifiedSignal[[1]])
+    names(df_view) <- c("Sample Name", names(df_view)[2:length(df_view)])
+    df_view <- format(df_view, digits = 3, scientific=T)
+    df_process <- cbind(nameColumn()[lr:ur], liveReplaceTable()[[1]][lr:ur, lc:uc, drop = FALSE])
+    names(df_process) <- c("Sample Name", names(df_process)[2:length(df_process)])
+    df_process <- format(df_process, digits = 3, scientific=T)
+
+    if (input$interactionMode == "view") {df_view}
+    else if (input$interactionMode == "process") {df_process}
+  }, options = list(dom = '', pageLength = nrow(signal()[[1]]), ordering=F, autoWidth = TRUE, scrollX=T, columnDefs = list(list(width = '150px', targets = "_all"))))
+
+  #Defines a proxy for changing selections in the table
+  tableProxy <- DT::dataTableProxy("table", session = session)
+  
+  observeEvent(input$rowSlider, {
+    if (!is.null(input$indexChoiceWhat) & isValidISTD()){
+      DT::selectRows(tableProxy, indexCustom()[[input$indexChoiceWhat]])
+    }
+    else {}
+  })
+
+  observeEvent(input$colSlider, {
+    if (!is.null(input$indexChoiceWhat) & isValidISTD()){
+      DT::selectRows(tableProxy, indexCustom()[[input$indexChoiceWhat]])
+    }
+    else {}
+  })
+
+  observeEvent(input$indexChoiceWhat, {
+    if (!is.null(input$indexChoiceWhat) & isValidISTD()){
+      DT::selectRows(tableProxy, indexCustom()[[input$indexChoiceWhat]])
+    }
+    else {}
+  })
+
+  observeEvent(input$indexChoiceIn, {
+    if (!is.null(input$indexChoiceWhat) & isValidISTD()){
+      DT::selectRows(tableProxy, indexCustom()[[input$indexChoiceWhat]])
+    }
+    else {}
+  })
+
+  observeEvent(input$interactionMode, {
+    if (!is.null(input$indexChoiceWhat) & isValidISTD()){
+      DT::selectRows(tableProxy, indexCustom()[[input$indexChoiceWhat]])
+    }
+    else {}
+  })
+
+  observeEvent(input$correctionMethod, {
+    if (!is.null(input$indexChoiceWhat) & isValidISTD()){
+      DT::selectRows(tableProxy, indexCustom()[[input$indexChoiceWhat]])
+    }
+    else {}
+  })
+
+  #Assigns the current state of the ISTD table to the ISTD variable that will be used for calculations
+  observeEvent(input$setCorrectionMethod, {
+    
+    if(is.null(signal()[[1]])){return()}
+    
+    repIndex = indexCustom()[[input$indexChoiceWhat]]
+    if (is.null(liveReplaceTable()) | is.null(repIndex) | !isValidISTD()) {return()}
+    lr = min(which(input$rowSlider[1] <= repIndex))
+    ur = max(which(input$rowSlider[2] >= repIndex))
+    lc = input$colSlider[1]
+    uc = input$colSlider[2]
+    modifiedSignal[[1]][repIndex,][lr:ur, lc:uc] <- liveReplaceTable()[[1]][repIndex,][lr:ur, lc:uc, drop = FALSE]
+  })
+
+  #Updates the slider for row and col selections when modifications are made in IS_CPS(), i.e. when the extract button is hit
+  observeEvent(IS_CPS(), {
+    if (!isValidISTD()){return()}
+    updateSliderInput(session,"rowSlider", max=nrow(IS_CPS()), value = c(1,nrow(IS_CPS())))
+    updateSliderInput(session,"colSlider", max=length(IS_CPS()), value = c(1,length(IS_CPS())))
+  })
+  
+  return(modifiedSignal)
+}
+#   
+#   observe({
+#     if(input$interactionMode == "process") {
+#       shinyjs::enable("setCorrectionMethod")
+#       shinyjs::enable("rowSlider")
+#       shinyjs::enable("colSlider")
+#       shinyjs::enable("correctionMethod")
+#       shinyjs::enable("indexChoiceIn")
+#     }
+#     else if(input$interactionMode == "view") {
+#       shinyjs::disable("setCorrectionMethod")
+#       shinyjs::disable("rowSlider")
+#       shinyjs::disable("colSlider")
+#       shinyjs::disable("correctionMethod")
+#       shinyjs::disable("indexChoiceIn")
+#     }
+#   })
+#   
+#   return(signal)
+# }
+
 #Functions declaration
 
 mergeMatrixes <- function(matrix1, matrix2, name1=NULL, name2=NULL) {
@@ -446,6 +598,9 @@ ui <- fluidPage(
                         )
                       )
              ),
+             
+             tabPanel("test tab", csvFileUI("default")),
+             
              tabPanel("Process",
                       sidebarLayout(
                         sidebarPanel(
@@ -473,6 +628,7 @@ server <- function(input, output, session) {
   #index contains all indexes serving as masks to display/process specific lines or columns of the raw data
   index <- reactiveValues()
   process <- reactiveValues()
+  someTest <- NULL
   #tempDataFile stores the current file loaded by the user
   tempDataFile <- reactive({input$file})
   #extractionReady is TRUE or FALSE, depending on whether extraction can be done or not (required files assigned, variables names inputed)
@@ -485,19 +641,19 @@ server <- function(input, output, session) {
   #index$drift <- reactive({
   CPS <- reactive({
     rawData = extracted$data[["raw"]]
-    rawData[,index$CPS, drop=FALSE]})
+    rawData[,index$CPS]})
   
   RSD <- reactive({
     rawData = extracted$data[["raw"]]
-    rawData[,index$CPS_RSD, drop=FALSE]})
+    rawData[,index$CPS_RSD]})
   
   IS_CPS <- reactive({
     rawData = extracted$data[["raw"]]
-    rawData[,index$IS_CPS, drop=FALSE]})
+    rawData[,index$IS_CPS]})
   
   IS_CPS_RSD <- reactive({
     rawData = extracted$data[["raw"]]
-    rawData[,index$IS_CPS_RSD, drop=FALSE]})
+    rawData[,index$IS_CPS_RSD]})
   
   elementNames <- reactive({
     header_1 = extracted$data[["header_1"]]
@@ -641,6 +797,8 @@ server <- function(input, output, session) {
     
     ##Creates a boolean vector containing the decision of whether or not to correct signal drift for each element
     process$driftCorrectedElements <- rep(FALSE,elementNumber())
+    
+    someTest <- isolate(IS_CPS())
   })
   
   #Here we render warnings texts to help the user
@@ -690,7 +848,7 @@ server <- function(input, output, session) {
     }
     else {return()}
     
-    colnames(indexTable) <- c(firstColumnName, colnames(IS_CPS())[1:length(IS_CPS())])
+    names(indexTable) <- c(firstColumnName, names(indexTable)[2:length(indexTable)])
     
     indexTable
     
@@ -808,12 +966,9 @@ server <- function(input, output, session) {
     if (is.null(liveReplaceISTDtable()) | is.null(repIndex) | !isValidISTD()) {return()}
     lr = min(which(input$ISTDrowSlider[1] <= repIndex))
     ur = max(which(input$ISTDrowSlider[2] >= repIndex))
-    lr_new = max(min(repIndex),lr)
-    ur_new = min(max(repIndex),ur)
     lc = input$ISTDcolSlider[1]
     uc = input$ISTDcolSlider[2]
-    
-    process$ISTDsignal[lr_new:ur_new, lc:uc] <- liveReplaceISTDtable()[[1]][lr_new:ur_new, lc:uc, drop = FALSE]
+    process$ISTDsignal[repIndex,][lr:ur, lc:uc] <- liveReplaceISTDtable()[[1]][repIndex,][lr:ur, lc:uc, drop = FALSE]
   })
   
   #Updates the slider for row and col selections when modifications are made in IS_CPS(), i.e. when the extract button is hit
@@ -913,15 +1068,12 @@ server <- function(input, output, session) {
   observeEvent(input$setBlkInterpolationMethod, {
     repIndex = index$custom[[input$indexBlkchoiceWhat]]
     if (is.null(liveReplaceBlkTable())| is.null(repIndex)) {return()}
-    lr = input$blkRowSlider[1]
-    ur = input$blkRowSlider[2]
-    lr_new = max(min(repIndex),lr)
-    ur_new = min(max(repIndex),ur)
+    lr = min(which(input$blkRowSlider[1] <= repIndex))
+    ur = max(which(input$blkRowSlider[2] >= repIndex))
     lc = input$blkColSlider[1]
     uc = input$blkColSlider[2]
-
-    process$blk_ratio[[1]][lr_new:ur_new,lc:uc] <- liveReplaceBlkTable()[[1]][lr_new:ur_new, lc:uc, drop = FALSE]
-    process$blk_ratio[[2]][lr_new:ur_new,lc:uc] <- liveReplaceBlkTable()[[2]][lr_new:ur_new, lc:uc, drop = FALSE]
+    process$blk_ratio[[1]][repIndex,][lr:ur, lc:uc] <- liveReplaceBlkTable()[[1]][repIndex,][lr:ur, lc:uc, drop = FALSE]
+    process$blk_ratio[[2]][repIndex,][lr:ur, lc:uc] <- liveReplaceBlkTable()[[2]][repIndex,][lr:ur, lc:uc, drop = FALSE]
   })
   
   #Updates the slider for row and col selections when modifications are made in IS_CPS(), i.e. when the extract button is hit
@@ -1062,7 +1214,10 @@ server <- function(input, output, session) {
       }
     })
   
+  someTest <- callModule(csvFile, "default", nameColumn = reactive(nameColumn()), indexCustom = reactive(index$custom), isValidISTD = reactive(isValidISTD()), IS_CPS = reactive(IS_CPS()), signal=reactive(list(IS_CPS(),IS_CPS_RSD())), modifiedSignal = someTest)
 }
+
+
 
 app <- shinyApp(ui = ui, server = server)
 
