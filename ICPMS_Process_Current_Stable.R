@@ -2,6 +2,9 @@ library(shiny)
 library(DT)
 library(stringr)
 
+
+agilentElementNamePattern <- "[ ]{2}[A-Z]{1}[a-z]*[ ]{2}"
+
 #Shiny module creation
 
 csvFileUI <- function(id) {
@@ -32,8 +35,13 @@ csvFileUI <- function(id) {
 }
 
 # Module server function
-csvFile <- function(input, output, session, nameColumn = reactive(nameColumn()), indexCustom = reactive(index$custom), isValidISTD = reactive(isValidISTD()), IS_CPS = reactive(IS_CPS()), signal, modifiedSignal) {
+csvFile <- function(input, output, session, nameColumn = reactive(nameColumn()), indexCustom = reactive(index$custom), isValidISTD = reactive(isValidISTD()), IS_CPS = reactive(IS_CPS()), signal) {
   
+  modifiedSignal = someTest
+  
+  if (is.null(modifiedSignal)){
+    return(NULL)
+  } 
   
   liveReplaceTable <- reactive({
     replaceIndexWhat = indexCustom()[[input$indexChoiceWhat]]
@@ -131,7 +139,7 @@ csvFile <- function(input, output, session, nameColumn = reactive(nameColumn()),
     updateSliderInput(session,"colSlider", max=length(IS_CPS()), value = c(1,length(IS_CPS())))
   })
   
-  return(modifiedSignal)
+  someTest <<- modifiedSignal
 }
 #   
 #   observe({
@@ -155,6 +163,62 @@ csvFile <- function(input, output, session, nameColumn = reactive(nameColumn()),
 # }
 
 #Functions declaration
+
+
+
+getDriftData <- function(driftIndex, elementCalibrationData, stdIdentificationColumn, timeColumn) {
+  
+  firstStandardNumIndex <- grep(elementCalibrationData[1,1],make.names(stdIdentificationColumn))
+  eDritftIndex <- driftIndex[which(timeColumn[driftIndex] >= timeColumn[firstStandardNumIndex])]
+  e_t0 <- dtimeColumn[min(driftNumIndex)]
+  e_dt <- dtimeColumn - e_t0
+  e_dt[e_dt < 0] <- NA
+  dt <- e_dt[driftNumIndex]
+}
+
+getCalibrationData <- function(elementFullName, signal, stdIdentificationColumn, stdDataFrame) {
+  
+  #Extracts the element name from the element full name
+  eName <- getElementName(elementFullName, agilentElementNamePattern)
+  
+  #Rises an error if the element name is not found in the standard dataframe
+  if (!(eName %in% row.names(stdDataFrame))) {
+    stop(paste(eName, " not found in the standard file. If not in the standards, create an empty line for ", eName, " in the file.", sep=""))
+  } 
+  else {}
+  
+  #stdConcentration contains the concentrations of the element eName in the standards
+  stdConcentration <- t(stdDataFrame[eName,])
+  #if the element eName has concentrations associated to it, calibrate
+  if (sum(stdConcentration, na.rm=TRUE) != 0)
+  {
+    #Discard non numeric values in stdConcentration
+    stdConcentration <- stdConcentration[!is.na(stdConcentration),1, drop = FALSE]
+    
+    #Searches for the standard names (row names in stdConcentration) that are associated with numeric values in
+    #the level column to create an index that will be used to find the signal associated to the standards
+    calibrationStdNumIndex <- sapply(paste("^", row.names(stdConcentration), "$", sep=""),
+                                     grep, make.names(stdIdentificationColumn))
+    
+    #Rises an error if one of the standard id is not found (if grep didn't find a standard name, return a 0 length integer)
+    if (!all(sapply(calibrationStdNumIndex,length) > 0)) {
+      stop(paste("For ", eName, ", no name match between standard file and standard identifiers in the sequence.", sep=""))
+    } 
+    else {} 
+    
+    eSignal <- signal[calibrationStdNumIndex, elementFullName]
+  }
+  else
+  {
+    return(NA)
+  }
+  
+  return(cbind(eSignal, stdConcentration))
+}
+
+getElementName <- function(elementFullName, pattern) {
+  return(gsub(" ", "", str_extract(elementFullName, pattern), fixed = TRUE))
+}
 
 mergeMatrixes <- function(matrix1, matrix2, name1=NULL, name2=NULL) {
   if (!all(dim(matrix1) == dim(matrix2))){
@@ -411,6 +475,10 @@ extractData <- function(dataFileName, stdFileName){
   #Remove potential duplicates of element names in the standard dataframe
   std.raw <- removeDuplicateLines(std.raw)
   
+  #Assigns the first column of the std file to the row names then removes the first column
+  row.names(std.raw) <- std.raw[,1]
+  std.raw <- std.raw[,2:length(std.raw)]
+  
   return(list(raw=dat.raw, std=std.raw, header_1=header_1, header_2=header_2))
 }
   
@@ -431,32 +499,22 @@ createISTDMatrix <- function(ISTD_file, ISTD_signal){
 }
 
 
-processData <- function(p.ratio.1, p.RSD.1, e_names, std.raw, drift_ind, levelColumn, timeColumn, dtimeColumn, e_drift_choice){
-  e_pt <- "[ ]{2}[A-Z]{1}[a-z]*[ ]{2}"
-  e_nb <- length(e_names)
-  row.names(std.raw) <- std.raw[,1]
-  std.raw <- std.raw[,2:length(std.raw)]
-  for (i in 1:e_nb){
-    e_fn <- e_names[i]
-    e_n = gsub(" ", "", str_extract(e_fn,e_pt), fixed = TRUE)
-    std_c <- t(std.raw[e_n,])
-    if (sum(std_c, na.rm=TRUE) != 0)
-    {
-      std_c <- std_c[!is.na(std_c),1, drop = FALSE]
-      e_std_n.ind <- sapply(paste("^", row.names(std_c), "$", sep=""),
-                            grep, make.names(levelColumn))
-      e_sig <- p.ratio.1[e_std_n.ind,i] #plante
-      e_drift_n.ind <- drift_ind[which(timeColumn[drift_ind] >= timeColumn[min(e_std_n.ind)])]
-      e_t0 <- dtimeColumn[min(e_drift_n.ind)]
-      e_dt <- dtimeColumn - e_t0
-      e_dt[e_dt < 0] <- NA
-      dt <- e_dt[e_drift_n.ind]
-      cal_m <- lm(std_c ~ 0+e_sig)
-      if (all(is.na(p.ratio.1[e_drift_n.ind,i]))){
-        pred = rep(NA, nrow(p.ratio.1))
+processData <- function(signalRatio, signalRSD, eFullNames, std.raw, drift_ind, levelColumn, timeColumn, dtimeColumn, e_drift_choice){
+  
+  elementNumber <- length(eFullNames)
+  
+  for (i in 1:elementNumber){
+    eFullName <- eFullNames[i]
+    eCalibrationData <- getCalibration(elementFullName = eFullName, signal=signalRatio,
+                                       stdIdentificationColumn=levelColumn, stdDataFrame = std.raw)
+    eDriftData <-  getDriftData(elementCalibrationData = eCalibrationData, stdIdentificationColumn=levelColumn, timeColumn = timeColumn)
+
+      cal_m <- lm(stdConcentration ~ 0+eSignal)
+      if (all(is.na(signalRatio[driftNumIndex,i]))){
+        pred = rep(NA, nrow(signalRatio))
       }
       else{
-        m2 <- lm(p.ratio.1[e_drift_n.ind,i] ~ poly(dt, degree=2, raw=TRUE))
+        m2 <- lm(signalRatio[driftNumIndex,i] ~ poly(dt, degree=2, raw=TRUE))
         pred=predict(m2, newdata = data.frame(dt=e_dt))
       }
       if (i == 1){
@@ -469,21 +527,21 @@ processData <- function(p.ratio.1, p.RSD.1, e_names, std.raw, drift_ind, levelCo
       if (e_drift_choice[i]){
         dat.drift[i] <- dat.drift[i] / summary(m2)$coefficients[1,1]
         dat.drift[is.na(dat.drift[,i]), i] <- 1
-      } else {dat.drift[i] <- rep(1, nrow(p.ratio.1))}
+      } else {dat.drift[i] <- rep(1, nrow(signalRatio))}
     }
     else{
       if (i == 1){
-        dat.drift <- data.frame(rep(NA, nrow(p.ratio.1)))
+        dat.drift <- data.frame(rep(NA, nrow(signalRatio)))
         dat.coef <- NA
       }
       else{
-        dat.drift[i] <- rep(NA, nrow(p.ratio.1))
+        dat.drift[i] <- rep(NA, nrow(signalRatio))
         dat.coef[i] <- NA
       }
     }
   }
-  p.ratio.2 <- p.ratio.1 / dat.drift
-  p.RSD.2 <- p.RSD.1
+  p.ratio.2 <- signalRatio / dat.drift
+  p.RSD.2 <- signalRSD
   smp_conc <- t(t(p.ratio.2)*dat.coef)
   smp_conc[smp_conc < 0] <- "<blk"
   
@@ -798,7 +856,7 @@ server <- function(input, output, session) {
     ##Creates a boolean vector containing the decision of whether or not to correct signal drift for each element
     process$driftCorrectedElements <- rep(FALSE,elementNumber())
     
-    someTest <- isolate(IS_CPS())
+    someTest <<- isolate(IS_CPS())
   })
   
   #Here we render warnings texts to help the user
@@ -1220,7 +1278,7 @@ server <- function(input, output, session) {
       }
     })
   
-  someTest <- callModule(csvFile, "default", nameColumn = reactive(nameColumn()), indexCustom = reactive(index$custom), isValidISTD = reactive(isValidISTD()), IS_CPS = reactive(IS_CPS()), signal=reactive(list(IS_CPS(),IS_CPS_RSD())), modifiedSignal = someTest)
+  callModule(csvFile, "default", nameColumn = reactive(nameColumn()), indexCustom = reactive(index$custom), isValidISTD = reactive(isValidISTD()), IS_CPS = reactive(IS_CPS()), signal=reactive(list(IS_CPS(),IS_CPS_RSD())))
 }
 
 
