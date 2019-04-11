@@ -499,7 +499,7 @@ createISTDMatrix <- function(ISTD_file, ISTD_signal){
 }
 
 
-processData <- function(signalRatio, signalRSD, eFullNames, std.raw, drift_ind, levelColumn, timeColumn, dtimeColumn, e_drift_choice){
+processData <- function(signalRatio, signalRSD, eFullNames, std.raw, drift_ind, levelColumn, timeColumn, dtimeColumn, eDriftChoice){
   
   elementNumber <- length(eFullNames)
   
@@ -508,41 +508,54 @@ processData <- function(signalRatio, signalRSD, eFullNames, std.raw, drift_ind, 
     eCalibrationData <- getCalibration(elementFullName = eFullName, signal=signalRatio,
                                        stdIdentificationColumn=levelColumn, stdDataFrame = std.raw)
     eDriftData <-  getDriftData(elementCalibrationData = eCalibrationData, stdIdentificationColumn=levelColumn, timeColumn = timeColumn)
-
-      cal_m <- lm(stdConcentration ~ 0+eSignal)
+      
+      #defines the calibration linear model
+      calibrationModel <- lm(eCalibrationData[,"Concentration"] ~ 0+eCalibrationData[,"Signal"])
+      
+      #Here be drift model creation and signal prediction along the whole sequence for the drift standard
+      #if no drift signal, don't try to create a model for the drift and set drift prediction to NA
+      #else create a model. Predict the drift signal on the whole sequence. Doesn't mean that it is going to be used
       if (all(is.na(signalRatio[driftNumIndex,i]))){
-        pred = rep(NA, nrow(signalRatio))
+        driftPredict = rep(NA, nrow(signalRatio))
       }
       else{
-        m2 <- lm(signalRatio[driftNumIndex,i] ~ poly(dt, degree=2, raw=TRUE))
-        pred=predict(m2, newdata = data.frame(dt=e_dt))
+        driftModel <- lm(driftData[,"Signal"] ~ poly(driftData[,"dt"], degree=2, raw=TRUE))
+        driftPredict=predict(driftModel, newdata = data.frame(dt=dtimeColumn))
       }
+      
+      #Here we fill a dataframe and a vector containing the predicted drift signals and calibration coefficient respectively for all elements
+      #If i == 1, this is the first element and we need to initialize the variables
+      #Else we can directly fill the dataframe and vector using dataframe[i] or vector[i]
       if (i == 1){
-        dat.drift <- data.frame(pred)
-        dat.coef <- summary(cal_m)$coefficients[1,1]
-      } else{
-        dat.drift[i] <- pred
-        dat.coef[i] <- summary(cal_m)$coefficients[1,1]
+        driftDataFrame <- data.frame(driftPredict)
+        coefVector <- summary(calibrationModel)$coefficients[1,1]
       }
-      if (e_drift_choice[i]){
-        dat.drift[i] <- dat.drift[i] / summary(m2)$coefficients[1,1]
-        dat.drift[is.na(dat.drift[,i]), i] <- 1
-      } else {dat.drift[i] <- rep(1, nrow(signalRatio))}
+      else{
+        driftDataFrame[i] <- driftPredict
+        coefVector[i] <- summary(calibrationModel)$coefficients[1,1]
+      }
+      
+      #If we chose to correct for the drift (eDriftChoice[i] == TRUE)
+      
+      if (eDriftChoice[i]){
+        driftDataFrame[i] <- driftDataFrame[i] / summary(driftModel)$coefficients[1,1]
+        driftDataFrame[is.na(driftDataFrame[,i]), i] <- 1
+      } else {driftDataFrame[i] <- rep(1, nrow(signalRatio))}
     }
     else{
       if (i == 1){
-        dat.drift <- data.frame(rep(NA, nrow(signalRatio)))
-        dat.coef <- NA
+        driftDataFrame <- data.frame(rep(NA, nrow(signalRatio)))
+        coefVector <- NA
       }
       else{
-        dat.drift[i] <- rep(NA, nrow(signalRatio))
-        dat.coef[i] <- NA
+        driftDataFrame[i] <- rep(NA, nrow(signalRatio))
+        coefVector[i] <- NA
       }
     }
   }
-  p.ratio.2 <- signalRatio / dat.drift
+  p.ratio.2 <- signalRatio / driftDataFrame
   p.RSD.2 <- signalRSD
-  smp_conc <- t(t(p.ratio.2)*dat.coef)
+  smp_conc <- t(t(p.ratio.2)*coefVector)
   smp_conc[smp_conc < 0] <- "<blk"
   
   smp_RSD <- p.RSD.2
@@ -1219,11 +1232,11 @@ server <- function(input, output, session) {
       timeInterval = seq(from=as.numeric(time_0), to=as.numeric(time_f), by=as.numeric((time_f - time_0)/100))
       
       dt = as.numeric(driftTime)
-      m2 <- lm(driftValue ~ poly(dt, degree=2, raw=TRUE))
+      driftModel <- lm(driftValue ~ poly(dt, degree=2, raw=TRUE))
       
-      pred=predict(m2, newdata = data.frame(dt = timeInterval))
+      driftPredict=predict(driftModel, newdata = data.frame(dt = timeInterval))
       
-      lines(x=timeInterval, y=pred, col="red")
+      lines(x=timeInterval, y=driftPredict, col="red")
     }
     arrows(dtimeColumn()[index$drift], yminus(), dtimeColumn()[index$drift], yplus(), length=0.05, angle=90, code=3)
   })
