@@ -964,8 +964,8 @@ server <- function(input, output, session) {
   observeEvent(input$setISTDcorrectionMethod, {
     repIndex = index$custom[[input$indexISTDchoiceWhat]]
     if (is.null(liveReplaceISTDtable()) | is.null(repIndex) | !isValidISTD()) {return()}
-    lr = min(which(input$ISTDrowSlider[1] <= repIndex))
-    ur = max(which(input$ISTDrowSlider[2] >= repIndex))
+    lr = input$ISTDRowSlider[1]
+    ur = input$ISTDRowSlider[2]
     lr_new = max(min(repIndex),lr)
     ur_new = min(max(repIndex),ur)
     lc = input$ISTDcolSlider[1]
