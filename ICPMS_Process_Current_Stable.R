@@ -540,8 +540,6 @@ ui <- fluidPage(
                       sidebarLayout(
                         sidebarPanel(
                           shinyjs::useShinyjs(),
-                          sliderInput("ISTDrowSlider", label = h4("Row/Column range"), min = 1, 
-                                      max = 100, value = c(1, 1)),
                           sliderInput("ISTDcolSlider", label = NULL, min = 1, 
                                     max = 100, value = c(1, 1)),
                           selectInput("ISTDinteractionMode", "Select a mode:",
@@ -574,8 +572,6 @@ ui <- fluidPage(
                                       "All", selected = "All"),
                           actionButton("setBlkInterpolationMethod", "Set blank interpolation")),
                         mainPanel(
-                          div(style="display:inline-block",sliderInput("blkRowSlider", label = h3("Row range"), min = 1, 
-                                                                       max = 100, value = c(1, 1))),
                           div(style="display:inline-block",sliderInput("blkColSlider", label = h3("Column range"), min = 1, 
                                                                        max = 100, value = c(1, 1))),
                           DT::DTOutput("blkTable")
@@ -899,15 +895,14 @@ server <- function(input, output, session) {
       return()
       }
     ISTDmode = input$ISTDinteractionMode
-    lr = input$ISTDrowSlider[1]
-    ur = input$ISTDrowSlider[2]
+
     lc = input$ISTDcolSlider[1]
     uc = input$ISTDcolSlider[2]
     
     df_view <- cbind(nameColumn(), process$ISTDsignal)
     names(df_view) <- c("Sample Name", names(df_view)[2:length(df_view)])
     df_view <- format(df_view, digits = 3, scientific=T)
-    df_process <- cbind(nameColumn()[lr:ur], liveReplaceISTDtable()[[1]][lr:ur, lc:uc, drop = FALSE])
+    df_process <- cbind(nameColumn(), liveReplaceISTDtable()[[1]][, lc:uc, drop = FALSE])
     names(df_process) <- c("Sample Name", names(df_process)[2:length(df_process)])
     df_process <- format(df_process, digits = 3, scientific=T)
     
@@ -917,13 +912,6 @@ server <- function(input, output, session) {
   
   #Defines a proxy for changing selections in the table
   ISTDtableProxy <- DT::dataTableProxy("ISTDtable", session = session)
-  
-  observeEvent(input$ISTDrowSlider, {
-    if (!is.null(input$indexISTDchoiceWhat) & isValidISTD()){
-      DT::selectRows(ISTDtableProxy, index$custom[[input$indexISTDchoiceWhat]])
-    }
-    else {}
-  })
   
   observeEvent(input$ISTDcolSlider, {
     if (!is.null(input$indexISTDchoiceWhat) & isValidISTD()){
@@ -964,34 +952,28 @@ server <- function(input, output, session) {
   observeEvent(input$setISTDcorrectionMethod, {
     repIndex = index$custom[[input$indexISTDchoiceWhat]]
     if (is.null(liveReplaceISTDtable()) | is.null(repIndex) | !isValidISTD()) {return()}
-    lr = input$ISTDRowSlider[1]
-    ur = input$ISTDRowSlider[2]
-    lr_new = max(min(repIndex),lr)
-    ur_new = min(max(repIndex),ur)
+
     lc = input$ISTDcolSlider[1]
     uc = input$ISTDcolSlider[2]
     
-    process$ISTDsignal[lr_new:ur_new, lc:uc] <- liveReplaceISTDtable()[[1]][lr_new:ur_new, lc:uc, drop = FALSE]
+    process$ISTDsignal[repIndex, lc:uc] <- liveReplaceISTDtable()[[1]][repIndex, lc:uc, drop = FALSE]
   })
   
   #Updates the slider for row and col selections when modifications are made in IS_CPS(), i.e. when the extract button is hit
   observeEvent(IS_CPS(), {
     if (!isValidISTD()){return()}
-    updateSliderInput(session,"ISTDrowSlider", max=nrow(IS_CPS()), value = c(1,nrow(IS_CPS())))
     updateSliderInput(session,"ISTDcolSlider", max=length(IS_CPS()), value = c(1,length(IS_CPS())))
   })
   
   observe({
     if(input$ISTDinteractionMode == "process") {
       shinyjs::enable("setISTDcorrectionMethod")
-      shinyjs::enable("ISTDrowSlider")
       shinyjs::enable("ISTDcolSlider")
       shinyjs::enable("ISTDcorrectionMethod")
       shinyjs::enable("indexISTDchoiceIn")
     }
     else if(input$ISTDinteractionMode == "view") {
       shinyjs::disable("setISTDcorrectionMethod")
-      shinyjs::disable("ISTDrowSlider")
       shinyjs::disable("ISTDcolSlider")
       shinyjs::disable("ISTDcorrectionMethod")
       shinyjs::disable("indexISTDchoiceIn")
@@ -1005,8 +987,6 @@ server <- function(input, output, session) {
     if (is.null(CPS())){return()}
     blkMode = input$blkInteractionMode
     
-    lr = input$blkRowSlider[1]
-    ur = input$blkRowSlider[2]
     lc = input$blkColSlider[1]
     uc = input$blkColSlider[2]
     
@@ -1014,7 +994,7 @@ server <- function(input, output, session) {
     names(df_view) <- c("Sample Name", names(df_view)[2:length(df_view)])
     df_view <- format(df_view, digits = 3, scientific=T)
     
-    df_process <- cbind(nameColumn()[lr:ur], liveReplaceBlkTable()[[1]][lr:ur, lc:uc, drop = FALSE])
+    df_process <- cbind(nameColumn(), liveReplaceBlkTable()[[1]][, lc:uc, drop = FALSE])
     names(df_process) <- c("Sample Name", names(df_process)[2:length(df_process)])
     df_process <- format(df_process, digits = 3, scientific=T)
 
@@ -1025,12 +1005,6 @@ server <- function(input, output, session) {
   #Defines a proxy for changing selections in the table
   blkTableProxy <- DT::dataTableProxy("blkTable", session = session)
   
-  observeEvent(input$blkRowSlider, {
-    if (!is.null(input$indexBlkchoiceWhat)){
-      DT::selectRows(blkTableProxy, index$custom[[input$indexBlkchoiceWhat]])
-    }
-    else {}
-  })
   
   observeEvent(input$blkColSlider, {
     if (!is.null(input$indexBlkchoiceWhat)){
@@ -1071,15 +1045,12 @@ server <- function(input, output, session) {
   observeEvent(input$setBlkInterpolationMethod, {
     repIndex = index$custom[[input$indexBlkchoiceWhat]]
     if (is.null(liveReplaceBlkTable())| is.null(repIndex)) {return()}
-    lr = input$blkRowSlider[1]
-    ur = input$blkRowSlider[2]
-    lr_new = max(min(repIndex),lr)
-    ur_new = min(max(repIndex),ur)
+
     lc = input$blkColSlider[1]
     uc = input$blkColSlider[2]
 
-    process$blk_ratio[[1]][lr_new:ur_new,lc:uc] <- liveReplaceBlkTable()[[1]][lr_new:ur_new, lc:uc, drop = FALSE]
-    process$blk_ratio[[2]][lr_new:ur_new,lc:uc] <- liveReplaceBlkTable()[[2]][lr_new:ur_new, lc:uc, drop = FALSE]
+    process$blk_ratio[[1]][repIndex,lc:uc] <- liveReplaceBlkTable()[[1]][repIndex, lc:uc, drop = FALSE]
+    process$blk_ratio[[2]][repIndex,lc:uc] <- liveReplaceBlkTable()[[2]][repIndex, lc:uc, drop = FALSE]
   })
   
   #Updates the slider for row and col selections when modifications are made in IS_CPS(), i.e. when the extract button is hit
@@ -1092,14 +1063,12 @@ server <- function(input, output, session) {
   observe({
     if(input$blkInteractionMode == "process") {
       shinyjs::enable("setBlkInterpolationMethod")
-      shinyjs::enable("blkRowSlider")
       shinyjs::enable("blkColSlider")
       shinyjs::enable("blkInterpolationMethod")
       shinyjs::enable("indexBlkchoiceIn")
     }
     else if(input$blkInteractionMode == "view") {
       shinyjs::disable("setBlkInterpolationMethod")
-      shinyjs::disable("blkRowSlider")
       shinyjs::disable("blkColSlider")
       shinyjs::disable("blkInterpolationMethod")
       shinyjs::disable("indexBlkchoiceIn")
