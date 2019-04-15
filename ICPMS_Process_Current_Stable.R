@@ -2,6 +2,9 @@ library(shiny)
 library(DT)
 library(stringr)
 
+
+agilentElementNamePattern <- "[ ]{2}[A-Z]{1}[a-z]*[ ]{2}"
+
 #Shiny module creation
 
 csvFileUI <- function(id) {
@@ -32,8 +35,13 @@ csvFileUI <- function(id) {
 }
 
 # Module server function
-csvFile <- function(input, output, session, nameColumn = reactive(nameColumn()), indexCustom = reactive(index$custom), isValidISTD = reactive(isValidISTD()), IS_CPS = reactive(IS_CPS()), signal, modifiedSignal) {
+csvFile <- function(input, output, session, nameColumn = reactive(nameColumn()), indexCustom = reactive(index$custom), isValidISTD = reactive(isValidISTD()), IS_CPS = reactive(IS_CPS()), signal) {
   
+  modifiedSignal = someTest
+  
+  if (is.null(modifiedSignal)){
+    return(NULL)
+  } 
   
   liveReplaceTable <- reactive({
     replaceIndexWhat = indexCustom()[[input$indexChoiceWhat]]
@@ -131,7 +139,6 @@ csvFile <- function(input, output, session, nameColumn = reactive(nameColumn()),
     updateSliderInput(session,"colSlider", max=length(IS_CPS()), value = c(1,length(IS_CPS())))
   })
   
-  return(modifiedSignal)
 }
 #   
 #   observe({
@@ -155,6 +162,76 @@ csvFile <- function(input, output, session, nameColumn = reactive(nameColumn()),
 # }
 
 #Functions declaration
+
+
+
+getElementDriftIndex <- function(elementFullName, stdDataFrame, stdIdentificationColumn, driftIndex) {
+  
+  #Extracts the element name from the element full name
+  eName <- getElementName(elementFullName, agilentElementNamePattern)
+  
+  #Rises an error if the element name is not found in the standard dataframe
+  if (!(eName %in% row.names(stdDataFrame))) {
+    stop(paste(eName, " not found in the standard file. If not in the standards, create an empty line for ", eName, " in the file.", sep=""))
+  } 
+  else {}
+  
+  stdIndex <- which(!is.na(stdDataFrame[eName,]))
+  
+  if (length(stdIndex) != 0){
+    firstStandardNumIndex <- grep(colnames(stdDataFrame)[stdIndex[1]],make.names(stdIdentificationColumn))
+    eDritftIndex <- driftIndex[driftIndex >= firstStandardNumIndex]
+    return(eDritftIndex)
+  }
+  
+  else{
+    return(NA)
+  }
+}
+
+getCalibrationData <- function(elementFullName, signal, stdIdentificationColumn, stdDataFrame) {
+  
+  #Extracts the element name from the element full name
+  eName <- getElementName(elementFullName, agilentElementNamePattern)
+  
+  #Rises an error if the element name is not found in the standard dataframe
+  if (!(eName %in% row.names(stdDataFrame))) {
+    stop(paste(eName, " not found in the standard file. If not in the standards, create an empty line for ", eName, " in the file.", sep=""))
+  } 
+  else {}
+  
+  #stdConcentration contains the concentrations of the element eName in the standards
+  stdConcentration <- t(stdDataFrame[eName,])
+  #if the element eName has concentrations associated to it, calibrate
+  if (sum(stdConcentration, na.rm=TRUE) != 0)
+  {
+    #Discard non numeric values in stdConcentration
+    stdConcentration <- stdConcentration[!is.na(stdConcentration),1, drop = FALSE]
+    
+    #Searches for the standard names (row names in stdConcentration) that are associated with numeric values in
+    #the level column to create an index that will be used to find the signal associated to the standards
+    calibrationStdNumIndex <- sapply(paste("^", row.names(stdConcentration), "$", sep=""),
+                                     grep, make.names(stdIdentificationColumn))
+    
+    #Rises an error if one of the standard id is not found (if grep didn't find a standard name, return a 0 length integer)
+    if (!all(sapply(calibrationStdNumIndex,length) > 0)) {
+      stop(paste("For ", eName, ", no name match between standard file and standard identifiers in the sequence.", sep=""))
+    } 
+    else {} 
+    
+    eSignal <- signal[calibrationStdNumIndex, elementFullName]
+  }
+  else
+  {
+    return(NA)
+  }
+  
+  return(cbind(Signal=eSignal, Concentration=as.numeric(stdConcentration)))
+}
+
+getElementName <- function(elementFullName, pattern) {
+  return(gsub(" ", "", str_extract(elementFullName, pattern), fixed = TRUE))
+}
 
 mergeMatrixes <- function(matrix1, matrix2, name1=NULL, name2=NULL) {
   if (!all(dim(matrix1) == dim(matrix2))){
@@ -406,12 +483,16 @@ extractData <- function(dataFileName, stdFileName){
   names(dat.raw) <- header_1
   
   #Import the standard data, we consider here that there are headers corresponding to the standard names
-  std.raw <- read.table(stdFileName, header = TRUE, sep=';', stringsAsFactors=FALSE)
+  StdDataframe <- read.table(stdFileName, header = TRUE, sep=';', stringsAsFactors=FALSE)
   
   #Remove potential duplicates of element names in the standard dataframe
-  std.raw <- removeDuplicateLines(std.raw)
+  StdDataframe <- removeDuplicateLines(StdDataframe)
   
-  return(list(raw=dat.raw, std=std.raw, header_1=header_1, header_2=header_2))
+  #Assigns the first column of the std file to the row names then removes the first column
+  row.names(StdDataframe) <- StdDataframe[,1]
+  StdDataframe <- StdDataframe[,2:length(StdDataframe)]
+  
+  return(list(raw=dat.raw, std=StdDataframe, header_1=header_1, header_2=header_2))
 }
   
   
@@ -431,66 +512,73 @@ createISTDMatrix <- function(ISTD_file, ISTD_signal){
 }
 
 
-processData <- function(p.ratio.1, p.RSD.1, e_names, std.raw, drift_ind, levelColumn, timeColumn, dtimeColumn, e_drift_choice){
-  e_pt <- "[ ]{2}[A-Z]{1}[a-z]*[ ]{2}"
-  e_nb <- length(e_names)
-  row.names(std.raw) <- std.raw[,1]
-  std.raw <- std.raw[,2:length(std.raw)]
-  for (i in 1:e_nb){
-    e_fn <- e_names[i]
-    e_n = gsub(" ", "", str_extract(e_fn,e_pt), fixed = TRUE)
-    std_c <- t(std.raw[e_n,])
-    if (sum(std_c, na.rm=TRUE) != 0)
-    {
-      std_c <- std_c[!is.na(std_c),1, drop = FALSE]
-      e_std_n.ind <- sapply(paste("^", row.names(std_c), "$", sep=""),
-                            grep, make.names(levelColumn))
-      e_sig <- p.ratio.1[e_std_n.ind,i] #plante
-      e_drift_n.ind <- drift_ind[which(timeColumn[drift_ind] >= timeColumn[min(e_std_n.ind)])]
-      e_t0 <- dtimeColumn[min(e_drift_n.ind)]
-      e_dt <- dtimeColumn - e_t0
-      e_dt[e_dt < 0] <- NA
-      dt <- e_dt[e_drift_n.ind]
-      cal_m <- lm(std_c ~ 0+e_sig)
-      if (all(is.na(p.ratio.1[e_drift_n.ind,i]))){
-        pred = rep(NA, nrow(p.ratio.1))
-      }
-      else{
-        m2 <- lm(p.ratio.1[e_drift_n.ind,i] ~ poly(dt, degree=2, raw=TRUE))
-        pred=predict(m2, newdata = data.frame(dt=e_dt))
-      }
-      if (i == 1){
-        dat.drift <- data.frame(pred)
-        dat.coef <- summary(cal_m)$coefficients[1,1]
-      } else{
-        dat.drift[i] <- pred
-        dat.coef[i] <- summary(cal_m)$coefficients[1,1]
-      }
-      if (e_drift_choice[i]){
-        dat.drift[i] <- dat.drift[i] / summary(m2)$coefficients[1,1]
-        dat.drift[is.na(dat.drift[,i]), i] <- 1
-      } else {dat.drift[i] <- rep(1, nrow(p.ratio.1))}
+processData <- function(signalRatio, signalRSD, eFullNames, StdDataframe, drift_ind, levelColumn, timeColumn, eDriftChoice){
+  
+  elementNumber <- length(eFullNames)
+  
+  for (i in 1:elementNumber){
+
+    eFullName <- eFullNames[i]
+
+    eCalibrationData <- getCalibrationData(elementFullName = eFullName, signal=signalRatio,
+                                       stdIdentificationColumn=levelColumn, stdDataFrame = StdDataframe)
+
+    eDriftIndex <-  getElementDriftIndex(elementFullName = eFullName, stdDataFrame = StdDataframe, 
+                                        stdIdentificationColumn=levelColumn, driftIndex = drift_ind)
+
+    dtimeColumn <- timeColumn - timeColumn[eDriftIndex][1]
+    dtimeColumn[dtimeColumn < 0] <- 0
+
+    eDriftData <- cbind(Signal=signalRatio[eDriftIndex,i],dt=dtimeColumn[eDriftIndex])  
+
+    #defines the calibration linear model
+    calibrationModel <- lm(Concentration ~ 0+Signal, data=as.data.frame(eCalibrationData))
+    
+    #Here be drift model creation and signal prediction along the whole sequence for the drift standard
+    #if no drift signal, don't try to create a model for the drift and set drift prediction to NA
+    #else create a model. Predict the drift signal on the whole sequence. Doesn't mean that it is going to be used
+    if (all(is.na(signalRatio[eDriftIndex,i]))){
+      driftPredict = rep(NA, nrow(signalRatio))
     }
     else{
-      if (i == 1){
-        dat.drift <- data.frame(rep(NA, nrow(p.ratio.1)))
-        dat.coef <- NA
-      }
-      else{
-        dat.drift[i] <- rep(NA, nrow(p.ratio.1))
-        dat.coef[i] <- NA
-      }
+      driftModel <- lm(Signal ~ poly(dt, degree=2, raw=TRUE), data = as.data.frame(eDriftData))
+      driftPredict=predict(driftModel, newdata = data.frame(dt=dtimeColumn))
+    }
+
+    #Here we fill a dataframe and a vector containing the predicted drift signals and calibration coefficient respectively for all elements
+    #If i == 1, this is the first element and we need to initialize the variables
+    #Else we can directly fill the dataframe and vector using dataframe[i] or vector[i]
+    if (i == 1){
+      driftDataFrame <- data.frame(driftPredict)
+      coefVector <- summary(calibrationModel)$coefficients[1,1]
+    }
+    else{
+      driftDataFrame[i] <- driftPredict
+      coefVector[i] <- summary(calibrationModel)$coefficients[1,1]
+    }
+    
+    #If we chose to correct for the drift (eDriftChoice[i] == TRUE)
+    #Divide the drift dataframe at the ith position by the intersect at dt = 0 of the drift model
+    #We transform the drift dataframe by a drift relative to dt = 0 so that we can apply the drift correction by simple multiplication
+    #Else, if we chose not to correct the drift, we fill the dataframe at the ith position with 1 so that multiplication produces identity
+    if (eDriftChoice[i]){
+      driftDataFrame[i] <- driftDataFrame[i] / summary(driftModel)$coefficients[1,1]
+      driftDataFrame[is.na(driftDataFrame[,i]), i] <- 1
+    } 
+    else {
+      driftDataFrame[i] <- rep(1, nrow(signalRatio))
     }
   }
-  p.ratio.2 <- p.ratio.1 / dat.drift
-  p.RSD.2 <- p.RSD.1
-  smp_conc <- t(t(p.ratio.2)*dat.coef)
-  smp_conc[smp_conc < 0] <- "<blk"
   
-  smp_RSD <- p.RSD.2
-  smp_RSD[smp_conc < 0] <- "N/A"
+  signalDriftCorrectedRatio <- signalRatio / driftDataFrame
+  signalDriftCorrectedRSD <- signalRSD
+  concentration <- t(t(signalDriftCorrectedRatio)*coefVector)
+  concentration[concentration < 0] <- "<blk"
   
-  return(list(smp_conc,smp_RSD))
+  concentrationRSD <- signalDriftCorrectedRSD
+  concentrationRSD[concentration < 0] <- "N/A"
+  
+  return(list(concentration,concentrationRSD))
 }
 
 
@@ -624,7 +712,6 @@ server <- function(input, output, session) {
   #index contains all indexes serving as masks to display/process specific lines or columns of the raw data
   index <- reactiveValues()
   process <- reactiveValues()
-  someTest <- NULL
   #tempDataFile stores the current file loaded by the user
   tempDataFile <- reactive({input$file})
   #extractionReady is TRUE or FALSE, depending on whether extraction can be done or not (required files assigned, variables names inputed)
@@ -794,7 +881,6 @@ server <- function(input, output, session) {
     ##Creates a boolean vector containing the decision of whether or not to correct signal drift for each element
     process$driftCorrectedElements <- rep(FALSE,elementNumber())
     
-    someTest <- isolate(IS_CPS())
   })
   
   #Here we render warnings texts to help the user
@@ -1130,11 +1216,11 @@ server <- function(input, output, session) {
       timeInterval = seq(from=as.numeric(time_0), to=as.numeric(time_f), by=as.numeric((time_f - time_0)/100))
       
       dt = as.numeric(driftTime)
-      m2 <- lm(driftValue ~ poly(dt, degree=2, raw=TRUE))
+      driftModel <- lm(driftValue ~ poly(dt, degree=2, raw=TRUE))
       
-      pred=predict(m2, newdata = data.frame(dt = timeInterval))
+      driftPredict=predict(driftModel, newdata = data.frame(dt = timeInterval))
       
-      lines(x=timeInterval, y=pred, col="red")
+      lines(x=timeInterval, y=driftPredict, col="red")
     }
     arrows(dtimeColumn()[index$drift], yminus(), dtimeColumn()[index$drift], yplus(), length=0.05, angle=90, code=3)
   })
@@ -1151,7 +1237,7 @@ server <- function(input, output, session) {
   ####################Process
   observeEvent(input$process, {
     if (is.null(process$driftCorrectedElements)){return()}
-    process$conc <- processData(process$ratio_cor_b()[[1]], process$ratio_cor_b()[[2]], elementNames(), extracted$data[["std"]], index$drift,levelColumn(), timeColumn(), dtimeColumn(), process$driftCorrectedElements)
+    process$conc <- processData(process$ratio_cor_b()[[1]], process$ratio_cor_b()[[2]], elementNames(), extracted$data[["std"]], index$drift,levelColumn(), timeColumn(), process$driftCorrectedElements)
   })
   
   output$conc <- renderTable({
@@ -1189,7 +1275,7 @@ server <- function(input, output, session) {
       }
     })
   
-  someTest <- callModule(csvFile, "default", nameColumn = reactive(nameColumn()), indexCustom = reactive(index$custom), isValidISTD = reactive(isValidISTD()), IS_CPS = reactive(IS_CPS()), signal=reactive(list(IS_CPS(),IS_CPS_RSD())), modifiedSignal = someTest)
+  #callModule(csvFile, "default", nameColumn = reactive(nameColumn()), indexCustom = reactive(index$custom), isValidISTD = reactive(isValidISTD()), IS_CPS = reactive(IS_CPS()), signal=reactive(list(IS_CPS(),IS_CPS_RSD())))
 }
 
 
