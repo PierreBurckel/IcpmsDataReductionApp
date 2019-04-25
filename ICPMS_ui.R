@@ -1,5 +1,5 @@
 library(plotly)
-source('ICPMS_functions.R')
+source('C:/Users/pierr/Desktop/IPGP/R/ICP-MS_process/ICPMS_functions.R')
 
 ICPMS_ui <- shinyUI({
   fluidPage(
