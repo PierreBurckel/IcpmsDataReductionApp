@@ -813,7 +813,7 @@ server <- function(input, output, session) {
   #Table rendering of current uploaded file
   output$table <- renderTable({
     req(tempDataFile())
-    tempDataTable = read.table(tempDataFile()$datapath, sep =";", header = FALSE)
+    tempDataTable = read.csv2(tempDataFile()$datapath, sep =";", header = FALSE, stringsAsFactors=FALSE)
     rowNumber <- min(nrow(tempDataTable), input$fileUpload_nrow) 
     columnNumber <- min(length(tempDataTable), input$fileUpload_ncolumn) 
     tempDataTable[1:rowNumber, 1:columnNumber]
@@ -1208,8 +1208,7 @@ server <- function(input, output, session) {
     if (is.null(process$ratio_cor_b()[[1]]) | is.null(index$drift)){return()}
     driftTime = dtimeColumn()[index$drift]
     driftValue = process$ratio_cor_b()[[1]][index$drift,grep(input$e_drift, elementNames(),fixed=TRUE)]
-    plot(x=driftTime,y=driftValue,xlab = "Time (seconds)", ylab = input$e_drift, pch=21, bg="lightblue")
-
+    plot(x=driftTime,y=driftValue,xlab = "Time (seconds)", ylab = input$e_drift,pch=21, bg="lightblue")
     if (process$driftCorrectedElements[input$e_ind_drift] == TRUE){
       time_0 = driftTime[1]
       time_f = driftTime[length(driftTime)]
