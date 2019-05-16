@@ -422,7 +422,7 @@ processData <- function(signal, eFullNames, StdDataframe, drift_ind, levelColumn
   }
   
   signalDriftCorrectedRatio <- signal[[1]] / driftDataFrame
-  signalDriftCorrectedRSD <- signalRSD
+  signalDriftCorrectedRSD <- signal[[2]]
   concentration <- t(t(signalDriftCorrectedRatio)*coefVector)
   concentration[concentration < 0] <- "<blk"
   
