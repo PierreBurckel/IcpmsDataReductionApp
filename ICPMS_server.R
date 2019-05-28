@@ -582,7 +582,7 @@ ICPMS_server <- function(input, output, session) {
   ####################Process
   observeEvent(input$process, {
     if (is.null(process$driftCorrectedElements)){return()}
-    process$conc <- processData(process$ratio_cor_b(), elementNames(), extracted$data[["std"]], index$drift,levelColumn(), timeColumn())
+    process$conc <- processData(process$ratio_cor_b(), elementNames(), extracted$data[["std"]], index$drift,levelColumn(), timeColumn(), process$driftCorrectedElements)
   })
   
   output$conc <- renderTable({
