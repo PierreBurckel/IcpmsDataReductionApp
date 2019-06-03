@@ -13,6 +13,7 @@ ICPMS_server <- function(input, output, session) {
   #index contains all indexes serving as masks to display/process specific lines or columns of the raw data
   index <- reactiveValues()
   process <- reactiveValues()
+  calibrationParameters <- reactiveValues()
   #tempDataFile stores the current file loaded by the user
   tempDataFile <- reactive({input$file})
   #extractionReady is TRUE or FALSE, depending on whether extraction can be done or not (required files assigned, variables names inputed)
@@ -85,6 +86,10 @@ ICPMS_server <- function(input, output, session) {
   ISTDmatrix <- reactive({createISTDMatrix(extracted$data[["ISTD"]], process$ISTDsignal)})
   
   process$ratio <- reactive({list(signal=CPS()/ISTDmatrix(), RSD=RSD())})
+  
+  calibrationParameters$autoAdaptCalibration <- input$autoAdaptCalibration
+  calibrationParameters$useWeithedRegression <- input$useWeithedRegression
+  calibrationParameters$regressionWeight <- input$regressionWeight
   
   liveReplaceBlkTable <- reactive({
     replaceIndexWhat = index$custom[[input$indexBlkchoiceWhat]]
@@ -582,7 +587,7 @@ ICPMS_server <- function(input, output, session) {
   ####################Process
   observeEvent(input$process, {
     if (is.null(process$driftCorrectedElements)){return()}
-    process$conc <- processData(process$ratio_cor_b(), elementNames(), extracted$data[["std"]], index$drift,levelColumn(), timeColumn(), process$driftCorrectedElements)
+    process$conc <- processData(process$ratio_cor_b(), elementNames(), extracted$data[["std"]], index$drift,levelColumn(), timeColumn(), process$driftCorrectedElements, calibrationParameters)
   })
   
   output$conc <- renderTable({

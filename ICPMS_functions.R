@@ -363,7 +363,7 @@ createISTDMatrix <- function(ISTD_file, ISTD_signal){
 }
 
 
-processData <- function(signal, eFullNames, StdDataframe, drift_ind, levelColumn, timeColumn, eDriftChoice){
+processData <- function(signal, eFullNames, StdDataframe, drift_ind, levelColumn, timeColumn, eDriftChoice, calibrationParameters){
   
   elementNumber <- length(eFullNames)
   
