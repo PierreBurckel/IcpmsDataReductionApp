@@ -13,6 +13,7 @@ ICPMS_server <- function(input, output, session) {
   #index contains all indexes serving as masks to display/process specific lines or columns of the raw data
   index <- reactiveValues()
   process <- reactiveValues()
+  calibrationParameters <- reactiveValues()
   #tempDataFile stores the current file loaded by the user
   tempDataFile <- reactive({input$file})
   #extractionReady is TRUE or FALSE, depending on whether extraction can be done or not (required files assigned, variables names inputed)
@@ -181,7 +182,9 @@ ICPMS_server <- function(input, output, session) {
     
     ##Creates a boolean vector containing the decision of whether or not to correct signal drift for each element
     process$driftCorrectedElements <- rep(FALSE,elementNumber())
-    
+    calibrationParameters$autoAdaptCalibration <- rep(FALSE,elementNumber())
+    calibrationParameters$useWeithedRegression <- data.frame(useWeithedRegression=rep(FALSE,elementNumber()), weight=rep("",elementNumber()))
+
   })
   
   #Here we render warnings texts to help the user
