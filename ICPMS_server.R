@@ -5,6 +5,7 @@ source('C:/Users/pierr/Desktop/IPGP/R/ICP-MS_process/ICPMS_functions.R')
 
 ICPMS_server <- function(input, output, session) {
   
+  ival <- reactiveVal(0)
   #Setting up lists of reactiveValues variables
   #uploadedFile contains the information about user-uploaded files
   uploadedFile <- reactiveValues()
@@ -499,6 +500,10 @@ ICPMS_server <- function(input, output, session) {
     
     calibrationPredict = summary(calibrationModel)$coefficients[1,1]*concentrationInterval
     
+    observeEvent(input$useWeithedRegression, {
+      updateCheckboxInput(session, "autoAdaptCalibration", value = input$useWeithedRegression)
+    })
+    
     if (input$useWeithedRegression == TRUE) {
       signalResiduals <- ((calibrationData[,"Signal"] - summary(calibrationModel)$coefficients[1,1]*calibrationData[,"Concentration"]) * calibrationWeights)
       print(calibrationData)
@@ -541,17 +546,47 @@ ICPMS_server <- function(input, output, session) {
   }, digits = -2)
   
   
+  # observeEvent(input$e_drift, {
+  #   req(input$e_drift)
+  # 
+  #   i <- grep(input$e_drift,elementNames(),fixed=TRUE)
+  #   if (i != req(input$e_ind_drift)) {
+  #     updateNumericInput(session, "e_ind_drift", value = i)
+  #   }
+  # })
+  # 
+  # observeEvent(input$e_ind_drift, {
+  #   req(input$e_ind_drift)
+  #   
+  #   e <- elementNames()[input$e_ind_drift]
+  #   if (e != req(input$e_drift)) {
+  #     updateSelectInput(session,"e_drift", selected= e)
+  #   }
+  # })
   
   observeEvent(input$e_drift, {
-    if (is.null(input$e_drift)){return()}
-    updateNumericInput(session, "e_ind_drift", value = grep(input$e_drift,elementNames(),fixed=TRUE))
+    req(input$e_drift)
+
+    newVal <- grep(input$e_drift,elementNames(),fixed=TRUE)
+    ival(newVal)
   })
-  
+
   observeEvent(input$e_ind_drift, {
-    if (is.null(input$e_ind_drift)){return()}
-    updateSelectInput(session,"e_drift",selected=elementNames()[input$e_ind_drift])
+    req(input$e_ind_drift)
+
+    ival(input$e_ind_drift)
   })
   
+  output$inputs <- renderUI({
+    newval <- ival()
+    tagList(
+      numericInput("e_ind_drift", "Element number", min=1, max=length(elementNames()), value = newval),
+      
+      selectInput("e_drift","Choose element:", choices=elementNames(), selected = elementNames()[newval])
+      
+    )
+  })
+
   output$driftPlot <- renderPlot({
     if (is.null(process$ratio_cor_b()[[1]]) | is.null(index$drift)){return()}
     driftTime = dtimeColumn()[index$drift]
@@ -622,6 +657,6 @@ ICPMS_server <- function(input, output, session) {
                   row.names = FALSE, col.names = FALSE)
       }
     })
-  
+
   #callModule(csvFile, "default", nameColumn = reactive(nameColumn()), indexCustom = reactive(index$custom), isValidISTD = reactive(isValidISTD()), IS_CPS = reactive(IS_CPS()), signal=reactive(list(IS_CPS(),IS_CPS_RSD())))
 }
