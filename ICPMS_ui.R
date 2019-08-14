@@ -109,8 +109,8 @@ ICPMS_ui <- shinyUI({
                             uiOutput("inputs"),
                             selectInput("selectDriftIndex", "Define drift index:", "", selected = ""),
                             actionButton("setAsDriftIndex", "Set drift index"),
-                            #selectInput("e_drift", "Choose element:", "", selected = ""),
-                            #numericInput("e_ind_drift", "Element number", 1),
+                            selectInput("e_drift", "Choose element:", "", selected = ""),
+                            numericInput("e_ind_drift", "Element number", 1),
                             actionButton("setDriftCorrection", "Set ISTD correction"),
                             textOutput("warningDrifr")),
                           mainPanel(

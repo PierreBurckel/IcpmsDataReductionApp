@@ -564,29 +564,35 @@ ICPMS_server <- function(input, output, session) {
   #   }
   # })
   
-  observeEvent(input$e_drift, {
-    req(input$e_drift)
-
-    newVal <- grep(input$e_drift,elementNames(),fixed=TRUE)
-    ival(newVal)
-  })
-
-  observeEvent(input$e_ind_drift, {
-    req(input$e_ind_drift)
-
-    ival(input$e_ind_drift)
+  # observeEvent(input$e_drift, {
+  #   req(input$e_drift)
+  # 
+  #   newVal <- grep(input$e_drift,elementNames(),fixed=TRUE)
+  #   ival(newVal)
+  # })
+  # 
+  # observeEvent(input$e_ind_drift, {
+  #   req(input$e_ind_drift)
+  # 
+  #   ival(input$e_ind_drift)
+  # })
+  # 
+  
+  observe({
+    req(input$e_ind_drift, input$e_drift)
+    if (req(input$e_ind_drift) != ival()) {
+      print(ival())
+      ival(input$e_ind_drift)
+      print(ival())
+      updateSelectInput(session,"e_drift", choices = elementNames(), selected = elementNames()[ival()])
+      print(input$e_drift)}
+    else if (req(input$e_drift) != elementNames()[ival()]) {
+      print(elementNames()[ival()])
+      ival(grep(input$e_drift,elementNames(),fixed=TRUE))
+      print(elementNames()[ival()])
+      updateNumericInput(session, "e_ind_drift", value = ival())}
   })
   
-  output$inputs <- renderUI({
-    newval <- ival()
-    tagList(
-      numericInput("e_ind_drift", "Element number", min=1, max=length(elementNames()), value = newval),
-      
-      selectInput("e_drift","Choose element:", choices=elementNames(), selected = elementNames()[newval])
-      
-    )
-  })
-
   output$driftPlot <- renderPlot({
     if (is.null(process$ratio_cor_b()[[1]]) | is.null(index$drift)){return()}
     driftTime = dtimeColumn()[index$drift]
