@@ -95,8 +95,8 @@ ICPMS_server <- function(input, output, session) {
   
   process$ratio_cor_b <- reactive({propagateUncertainty(a=process$ratio(), b=process$blk_ratio, operation="substraction")})
 
-  yplus <- reactive({(process$ratio_cor_b()[[1]] + process$ratio_cor_b()[[2]]/100*process$ratio_cor_b()[[1]])[index$drift,grep(input$e_drift, elementNames(),fixed=TRUE)]})
-  yminus <- reactive({(process$ratio_cor_b()[[1]] - process$ratio_cor_b()[[2]]/100*process$ratio_cor_b()[[1]])[index$drift,grep(input$e_drift, elementNames(),fixed=TRUE)]})
+  yplus <- reactive({(process$ratio_cor_b()[[1]] + process$ratio_cor_b()[[2]]/100*process$ratio_cor_b()[[1]])[index$drift,ival()]})
+  yminus <- reactive({(process$ratio_cor_b()[[1]] - process$ratio_cor_b()[[2]]/100*process$ratio_cor_b()[[1]])[index$drift,ival()]})
   ###########################File import and viewing###########################
   
   #Text display of imported file
@@ -530,13 +530,13 @@ ICPMS_server <- function(input, output, session) {
   })
   
   output$smpBlkCorTable <- renderTable({
-    if (is.null(process$ratio_cor_b()[[1]]) | is.null(index$drift) | !is.integer(input$e_ind_drift)){return()}
+    if (is.null(process$ratio_cor_b()[[1]]) | is.null(index$drift) | !is.integer(ival())){return()}
     driftSignal <- process$ratio_cor_b()[[1]]
-    if (input$e_ind_drift < 5){
+    if (ival() < 5){
       lc <- 1
     }
     else{
-      lc <- max(which((1:input$e_ind_drift)%%5 == 0))
+      lc <- max(which((1:ival())%%5 == 0))
     }
     uc <- min(lc + 4, elementNumber())
     driftTable <- cbind(nameColumn()[index$drift],driftSignal[index$drift,lc:uc])
@@ -546,23 +546,15 @@ ICPMS_server <- function(input, output, session) {
   }, digits = -2)
   
   
-  # observeEvent(input$e_drift, {
-  #   req(input$e_drift)
-  # 
-  #   i <- grep(input$e_drift,elementNames(),fixed=TRUE)
-  #   if (i != req(input$e_ind_drift)) {
-  #     updateNumericInput(session, "e_ind_drift", value = i)
-  #   }
-  # })
-  # 
-  # observeEvent(input$e_ind_drift, {
-  #   req(input$e_ind_drift)
-  #   
-  #   e <- elementNames()[input$e_ind_drift]
-  #   if (e != req(input$e_drift)) {
-  #     updateSelectInput(session,"e_drift", selected= e)
-  #   }
-  # })
+  observeEvent(input$e_drift, {
+    req(input$e_drift)
+    ival(grep(input$e_drift,elementNames(),fixed=TRUE))
+  })
+
+  observeEvent(input$e_ind_drift, {
+    req(input$e_ind_drift)
+    ival(input$e_ind_drift)
+  })
   
   # observeEvent(input$e_drift, {
   #   req(input$e_drift)
@@ -578,28 +570,28 @@ ICPMS_server <- function(input, output, session) {
   # })
   # 
   
-  observe({
-    req(input$e_ind_drift, input$e_drift)
-    if (req(input$e_ind_drift) != ival()) {
-      print(ival())
-      ival(input$e_ind_drift)
-      print(ival())
-      updateSelectInput(session,"e_drift", choices = elementNames(), selected = elementNames()[ival()])
-      print(input$e_drift)}
-    else if (req(input$e_drift) != elementNames()[ival()]) {
-      print(elementNames()[ival()])
-      ival(grep(input$e_drift,elementNames(),fixed=TRUE))
-      print(elementNames()[ival()])
-      updateNumericInput(session, "e_ind_drift", value = ival())}
-  })
+  # observe({
+  #   req(input$e_ind_drift, input$e_drift)
+  #   if (req(input$e_ind_drift) != ival()) {
+  #     print(ival())
+  #     ival(input$e_ind_drift)
+  #     print(ival())
+  #     updateSelectInput(session,"e_drift", choices = elementNames(), selected = elementNames()[ival()])
+  #     print(input$e_drift)}
+  #   else if (req(input$e_drift) != elementNames()[ival()]) {
+  #     print(elementNames()[ival()])
+  #     ival(grep(input$e_drift,elementNames(),fixed=TRUE))
+  #     print(elementNames()[ival()])
+  #     updateNumericInput(session, "e_ind_drift", value = ival())}
+  # })
   
   output$driftPlot <- renderPlot({
     if (is.null(process$ratio_cor_b()[[1]]) | is.null(index$drift)){return()}
     driftTime = dtimeColumn()[index$drift]
-    driftValue = process$ratio_cor_b()[[1]][index$drift,grep(input$e_drift, elementNames(),fixed=TRUE)]
-    plot(x=driftTime,y=driftValue,xlab = "Time (seconds)", ylab = input$e_drift, pch=21, bg="lightblue")
+    driftValue = process$ratio_cor_b()[[1]][index$drift, ival()]
+    plot(x=driftTime,y=driftValue,xlab = "Time (seconds)", ylab = elementNames()[ival()], pch=21, bg="lightblue")
 
-    if (process$driftCorrectedElements[input$e_ind_drift] == TRUE){
+    if (process$driftCorrectedElements[ival()] == TRUE){
       time_0 = driftTime[1]
       time_f = driftTime[length(driftTime)]
       timeInterval = seq(from=as.numeric(time_0), to=as.numeric(time_f), by=as.numeric((time_f - time_0)/100))
@@ -616,7 +608,7 @@ ICPMS_server <- function(input, output, session) {
   
   observeEvent(input$setDriftCorrection, {
     if (is.null(process$driftCorrectedElements)){return()}
-    process$driftCorrectedElements[input$e_ind_drift] <- !process$driftCorrectedElements[input$e_ind_drift]
+    process$driftCorrectedElements[ival()] <- !process$driftCorrectedElements[ival()]
   })
   
   output$test <- renderTable({
