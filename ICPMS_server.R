@@ -9,8 +9,8 @@ ICPMS_server <- function(input, output, session) {
   #Setting up lists of reactiveValues variables
   #uploadedFile contains the information about user-uploaded files
   uploadedFile <- reactiveValues()
-  #extracted$data contains the list of important data after extraction
-  extracted <- reactiveValues()
+  #extracted() contains the list of important data after extraction
+  extracted <- reactiveVal(list())
   #index contains all indexes serving as masks to display/process specific lines or columns of the raw data
   index <- reactiveValues()
   process <- reactiveValues()
@@ -19,30 +19,30 @@ ICPMS_server <- function(input, output, session) {
   tempDataFile <- reactive({input$file})
   #extractionReady is TRUE or FALSE, depending on whether extraction can be done or not (required files assigned, variables names inputed)
   extractionReady <- reactive({!is.null(uploadedFile$raw) & !is.null(uploadedFile$std)})
-  isValidISTD <- reactive({(!is.null(index$IS_CPS)) & (!is.null(extracted$data[["ISTD"]]))})
+  isValidISTD <- reactive({(!is.null(index$IS_CPS)) & (!is.null(extracted()[["ISTD"]]))})
   
   #Line indexes
   #index$std <- reactive({
   #index$blk <- reactive({
   #index$drift <- reactive({
   CPS <- reactive({
-    rawData = extracted$data[["raw"]]
+    rawData = extracted()[["raw"]]
     rawData[,index$CPS, drop=FALSE]})
   
   RSD <- reactive({
-    rawData = extracted$data[["raw"]]
+    rawData = extracted()[["raw"]]
     rawData[,index$CPS_RSD, drop=FALSE]})
   
   IS_CPS <- reactive({
-    rawData = extracted$data[["raw"]]
+    rawData = extracted()[["raw"]]
     rawData[,index$IS_CPS, drop=FALSE]})
   
   IS_CPS_RSD <- reactive({
-    rawData = extracted$data[["raw"]]
+    rawData = extracted()[["raw"]]
     rawData[,index$IS_CPS_RSD, drop=FALSE]})
   
   elementNames <- reactive({
-    header_1 = extracted$data[["header_1"]]
+    header_1 = extracted()[["header_1"]]
     header_1[index$CPS]})
   
   elementNumber <- reactive({
@@ -52,27 +52,27 @@ ICPMS_server <- function(input, output, session) {
     length(which(index$IS_CPS))})
   
   sampleNumber <- reactive({
-    nrow(extracted$data[["raw"]])})
+    nrow(extracted()[["raw"]])})
   
   #Important columns
   timeColumn <- reactive({
-    rawData = extracted$data[["raw"]]
-    header_2 = extracted$data[["header_2"]]
+    rawData = extracted()[["raw"]]
+    header_2 = extracted()[["header_2"]]
     as.POSIXct(rawData[,which(header_2=="Acq. Date-Time")], format="%d/%m/%Y %H:%M")})
   
   nameColumn <- reactive({
-    rawData = extracted$data[["raw"]]
-    header_2 = extracted$data[["header_2"]]
+    rawData = extracted()[["raw"]]
+    header_2 = extracted()[["header_2"]]
     rawData[,which(header_2=="Sample Name")]})
   
   typeColumn <- reactive({
-    rawData = extracted$data[["raw"]]
-    header_2 = extracted$data[["header_2"]]
+    rawData = extracted()[["raw"]]
+    header_2 = extracted()[["header_2"]]
     rawData[,which(header_2=="Type")]})
   
   levelColumn <- reactive({
-    rawData = extracted$data[["raw"]]
-    header_2 = extracted$data[["header_2"]]
+    rawData = extracted()[["raw"]]
+    header_2 = extracted()[["header_2"]]
     rawData[,which(header_2=="Level")]})
   
   dtimeColumn <- reactive({
@@ -84,7 +84,7 @@ ICPMS_server <- function(input, output, session) {
     replaceIndexIn = index$custom[[input$indexISTDchoiceIn]]
     replaceValues(IS_CPS(), IS_CPS_RSD(), 1:ISNumber(), input$ISTDcorrectionMethod, replaceIndexWhat, replaceIndexIn)})
   
-  ISTDmatrix <- reactive({createISTDMatrix(extracted$data[["ISTD"]], process$ISTDsignal)})
+  ISTDmatrix <- reactive({createISTDMatrix(extracted()[["ISTD"]], process$ISTDsignal)})
   
   process$ratio <- reactive({list(signal=CPS()/ISTDmatrix(), RSD=RSD())})
   
@@ -156,19 +156,23 @@ ICPMS_server <- function(input, output, session) {
       return()
     } else {}
     
-    extracted$data <-  extractData(raw_file$datapath, std_file$datapath)
-    
-    index$CPS <- extracted$data[["header_2"]] == "CPS" & !grepl("ISTD", extracted$data[["header_1"]])
-    index$CPS_RSD <- extracted$data[["header_2"]] == "CPS RSD" & !grepl("ISTD", extracted$data[["header_1"]])
-    index$IS_CPS <- extracted$data[["header_2"]] == "CPS" & grepl("ISTD", extracted$data[["header_1"]])
-    index$IS_CPS_RSD <- extracted$data[["header_2"]] == "CPS RSD" & grepl("ISTD", extracted$data[["header_1"]])
-    index$numericalColumns <- min(which(index$CPS)):length(extracted$data[["raw"]])
-    
-    extracted$data[["raw"]][,index$numericalColumns] <- sapply(extracted$data[["raw"]][,index$numericalColumns], as.numeric)
-    
+    extracted(extractData(raw_file$datapath, std_file$datapath))
+    print(1)
+    index$CPS <- extracted()[["header_2"]] == "CPS" & !grepl("ISTD", extracted()[["header_1"]])
+    index$CPS_RSD <- extracted()[["header_2"]] == "CPS RSD" & !grepl("ISTD", extracted()[["header_1"]])
+    index$IS_CPS <- extracted()[["header_2"]] == "CPS" & grepl("ISTD", extracted()[["header_1"]])
+    index$IS_CPS_RSD <- extracted()[["header_2"]] == "CPS RSD" & grepl("ISTD", extracted()[["header_1"]])
+    index$numericalColumns <- min(which(index$CPS)):length(extracted()[["raw"]])
+    print(1)
+    print(sapply(extracted()[["raw"]][,index$numericalColumns], as.numeric))
+    print(1)
+    extracted_2 <- isolate(extracted())
+    extracted_2[["raw"]][,index$numericalColumns] <- sapply(extracted_2[["raw"]][,index$numericalColumns], as.numeric)
+    extracted(extracted_2)
+    print(1)
     ##If there exists an ISTD file that has been uploaded, extract and store it
     if (!is.null(ISTD_file)) {
-      extracted$data[["ISTD"]]  <- read.table(ISTD_file$datapath, header = TRUE, sep=';', stringsAsFactors=FALSE)
+      extracted()[["ISTD"]]  <- read.table(ISTD_file$datapath, header = TRUE, sep=';', stringsAsFactors=FALSE)
     } else {}
     
     ##Defines an a priori ISTD variable that will be possible to modified in the next pane
@@ -178,9 +182,9 @@ ICPMS_server <- function(input, output, session) {
     } else {
       process$blk_ratio <- list(signal=CPS(),RSD=RSD())
     }
-    
+    print(1)
     index$custom[["All"]] <- which(rep(x= TRUE, sampleNumber()))
-    
+    print(1)
     ##Creates a boolean vector containing the decision of whether or not to correct signal drift for each element
     process$driftCorrectedElements <- rep(FALSE,elementNumber())
     calibrationParameters$autoAdaptCalibration <- rep(FALSE,elementNumber())
@@ -193,7 +197,7 @@ ICPMS_server <- function(input, output, session) {
     renderState(extractionReady(), stateTxt = "Data extraction ", invalidStateTxt = "impossible", validStateTxt = "ready")
   })
   output$ISTD_not_extracted_txt <- renderText({
-    renderState(!(!is.null(uploadedFile$ISTD) & !is.null(extracted$data) & (isValidISTD() == FALSE)), stateTxt = "", invalidStateTxt = "Caution, ISTD not extracted", validStateTxt = NULL)
+    renderState(!(!is.null(uploadedFile$ISTD) & !is.null(extracted()) & (isValidISTD() == FALSE)), stateTxt = "", invalidStateTxt = "Caution, ISTD not extracted", validStateTxt = NULL)
   })
   
   ##################################Index creation######################
@@ -484,7 +488,7 @@ ICPMS_server <- function(input, output, session) {
     eFullName <- input$calibrationElement
     
     calibrationData <- getCalibrationData(elementFullName = eFullName, signal=process$ratio_cor_b(),
-                       stdIdentificationColumn=levelColumn(), stdDataFrame = extracted$data[["std"]])
+                       stdIdentificationColumn=levelColumn(), stdDataFrame = extracted()[["std"]])
     
     if (input$useWeithedRegression == TRUE) {
       calibrationWeights <- getWeights(calibrationData = calibrationData, fn = input$regressionWeight)
@@ -618,7 +622,7 @@ ICPMS_server <- function(input, output, session) {
   ####################Process
   observeEvent(input$process, {
     if (is.null(process$driftCorrectedElements)){return()}
-    process$conc <- processData(process$ratio_cor_b(), elementNames(), extracted$data[["std"]], index$drift,levelColumn(), timeColumn(), process$driftCorrectedElements)
+    process$conc <- processData(process$ratio_cor_b(), elementNames(), extracted()[["std"]], index$drift,levelColumn(), timeColumn(), process$driftCorrectedElements)
   })
   
   output$conc <- renderTable({
