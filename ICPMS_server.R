@@ -105,7 +105,6 @@ ICPMS_server <- function(input, output, session) {
 
   #Button to extract important information and signal of the dataframe
   observeEvent(input$extract, {
-    print(1)
     extracted(extracted() + 1)
     
     #Defines name space
@@ -114,15 +113,12 @@ ICPMS_server <- function(input, output, session) {
     ISTD_file <- uploadedFile$ISTD
     #Allows extraction if extraction condition are met (see extractionReady reactive value)
     if (!extractionReady()){return()}
-    print(2)
     dataList <<-  extractData(raw_file$datapath, std_file$datapath)
-    print(3)
     index[["CPS"]] <<- dataList[["header_2"]] == "CPS" & !grepl("ISTD", dataList[["header_1"]])
     index[["CPS_RSD"]] <<- dataList[["header_2"]] == "CPS RSD" & !grepl("ISTD", dataList[["header_1"]])
     index[["IS_CPS"]] <<- dataList[["header_2"]] == "CPS" & grepl("ISTD", dataList[["header_1"]])
     index[["IS_CPS_RSD"]] <<- dataList[["header_2"]] == "CPS RSD" & grepl("ISTD", dataList[["header_1"]])
     index[["numericalColumns"]] <<- min(which(index[["CPS"]])):length(dataList[["raw"]])
-    print(4)
     
     dataList[["raw"]][,index[["numericalColumns"]]] <<- sapply(dataList[["raw"]][,index[["numericalColumns"]]], as.numeric)
     
@@ -130,7 +126,6 @@ ICPMS_server <- function(input, output, session) {
     header1 <- dataList[["header_1"]]
     header2 <- dataList[["header_2"]]
     
-    print(5)
     CPS <<- rawData[,index[["CPS"]], drop=FALSE]
     RSD <<- rawData[,index[["CPS_RSD"]], drop=FALSE]
     IS_CPS <<- rawData[,index[["IS_CPS"]], drop=FALSE]
@@ -145,22 +140,14 @@ ICPMS_server <- function(input, output, session) {
     levelColumn <<- rawData[,which(header2=="Level")]
     dtimeColumn <<- timeColumn - timeColumn[1]
     
-    print(6)
     dataList[["raw"]][,index[["numericalColumns"]]] <<- sapply(dataList[["raw"]][,index[["numericalColumns"]]], as.numeric)
-    print(7)
     ##If there exists an ISTD file that has been uploaded, extract and store it
     if (!is.null(ISTD_file)) {
       dataList[["ISTD"]]  <<- read.table(ISTD_file$datapath, header = TRUE, sep=';', stringsAsFactors=FALSE)
     }
     
-    print(8)
     ISTDmatrix <<- createISTDMatrix(dataList[["ISTD"]], IS_CPS)
-    print(9)
-    View(CPS)
-    View(ISTDmatrix)
-    print("9bis")
     dataMod[["ratio"]] <<- list(signal=CPS/ISTDmatrix, RSD=RSD)
-    print(10)
     
     ##Defines an a priori ISTD variable that will be possible to modified in the next pane
     if (isValidISTD()) {
@@ -169,12 +156,9 @@ ICPMS_server <- function(input, output, session) {
     } else {
       dataMod[["blk_ratio"]] <<- list(signal=CPS,RSD=RSD)
     }
-    print(11)
     index[["custom"]][["All"]] <<- which(rep(x= TRUE, sampleNumber))
-    print(12)
     ##Creates a boolean vector containing the decision of whether or not to correct signal drift for each element
     driftCorrectedElement <<- rep(FALSE,elementNumber)
-    print(13)
   })
   
   #Here we render warnings texts to help the user
@@ -210,17 +194,17 @@ ICPMS_server <- function(input, output, session) {
     if (searchType == 'ematch'){searchWhat = paste("^", searchWhat, "$", sep="")}
     
     if (searchWhat == ""){
-      index[["temp"]] <- c(1:sampleNumber)
+      index[["temp"]] <<- c(1:sampleNumber)
     }
     else{
-      index[["temp"]] <- grep(searchWhat, headerRows)
+      index[["temp"]] <<- grep(searchWhat, headerRows)
     }
     
     if (displayWhat == "ISTD" & !is.null(IS_CPS)){
-      indexTable = cbind(headerRows[index[["temp"]]], IS_CPS[index[["temp"]],])
+      indexTable <- cbind(headerRows[index[["temp"]]], IS_CPS[index[["temp"]],])
     }
     else if (displayWhat == "analytes" & !is.null(CPS)){
-      indexTable = cbind(headerRows[index[["temp"]]], CPS[index[["temp"]],])
+      indexTable <- cbind(headerRows[index[["temp"]]], CPS[index[["temp"]],])
     }
     else {return()}
     
@@ -238,9 +222,16 @@ ICPMS_server <- function(input, output, session) {
     indexName = input$searchIndexName
     customNumIndex = c(1:sampleNumber)[index[["temp"]]][input$indexTable_rows_selected]
     if (is.null(index[["custom"]])) {
-      index[["custom"]] <- list()
+      index[["custom"]] <<- list()
     }
-    index[["custom"]][[input$searchIndexName]] <- customNumIndex
+    index[["custom"]][[input$searchIndexName]] <<- customNumIndex
+    
+    updateSelectInput(session,"indexISTDchoiceWhat",choices=names(index[["custom"]]),names(index[["custom"]])[1])
+    updateSelectInput(session,"indexBlkchoiceWhat",choices=names(index[["custom"]]),names(index[["custom"]])[1])
+    updateSelectInput(session,"indexISTDchoiceIn",choices=names(index[["custom"]]),names(index[["custom"]])[1])
+    updateSelectInput(session,"indexBlkchoiceIn",choices=names(index[["custom"]]),names(index[["custom"]])[1])
+    updateSelectInput(session,"selectDriftIndex",choices=names(index[["custom"]]),names(index[["custom"]])[1])
+    updateSelectInput(session,"viewConcentrationIndex",choices=c("All", names(index[["custom"]])),"All")
   })
   
   indexTableProxy <- DT::dataTableProxy("indexTable", session = session)
@@ -258,16 +249,6 @@ ICPMS_server <- function(input, output, session) {
   })
   
   ##################################ISTD verif/process######################
-  
-  observeEvent(index[["custom"]], {
-    if (is.null(index[["custom"]])){return()}
-    updateSelectInput(session,"indexISTDchoiceWhat",choices=names(index[["custom"]]),names(index[["custom"]])[1])
-    updateSelectInput(session,"indexBlkchoiceWhat",choices=names(index[["custom"]]),names(index[["custom"]])[1])
-    updateSelectInput(session,"indexISTDchoiceIn",choices=names(index[["custom"]]),names(index[["custom"]])[1])
-    updateSelectInput(session,"indexBlkchoiceIn",choices=names(index[["custom"]]),names(index[["custom"]])[1])
-    updateSelectInput(session,"selectDriftIndex",choices=names(index[["custom"]]),names(index[["custom"]])[1])
-    updateSelectInput(session,"viewConcentrationIndex",choices=c("All", names(index[["custom"]])),"All")
-  })
   
   #Render ISTD table if all conditions are met
   output$ISTDtable <- DT::renderDT({
