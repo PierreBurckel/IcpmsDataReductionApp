@@ -7,7 +7,9 @@ ICPMS_server <- function(input, output, session) {
   
   #dataList is a list of important data sets such as counts or standard concentrations
   dataList <- list()
-  
+  dataModifications <- list(ISTD=list(), blank=list())
+  elementNames <- vector()
+  extracted <- reactiveVal(0)
   #Setting up lists of reactiveValues variables
   #uploadedFile contains the information about user-uploaded files
   uploadedFile <- reactiveValues()
@@ -21,7 +23,19 @@ ICPMS_server <- function(input, output, session) {
   extractionReady <- reactive({!is.null(uploadedFile$raw) & !is.null(uploadedFile$std)})
   isValidISTD <- reactive({(!is.null(index$IS_CPS)) & (!is.null(dataList[["ISTD"]]))})
   
-  
+  # process$ISTDsignal <- reactive({
+  #   if (length(length(dataModifications[["ISTD"]])) == 0) {return(IS_CPS)}
+  #   else {
+  #     IS_CPS_mod <- IS_CPS
+  #     #IS_CPS_RSD_mod <- IS_CPS_RSD
+  #     for (mod in dataModifications[["ISTD"]]) {
+  #       newValues <- replaceValues(IS_CPS, IS_CPS_RSD, mod[["elements"]], mod[["method"]], mod[["what"]], mod[["in"]])
+  #       IS_CPS_mod <- newValues[["CPS"]]
+  #       #IS_CPS_RSD_mod <- newValues[["RSD"]]
+  #     }
+  #     return(IS_CPS_mod)
+  #   }
+  # })
   
   liveReplaceISTDtable <- reactive({
     req(isValidISTD())
@@ -102,6 +116,9 @@ ICPMS_server <- function(input, output, session) {
 
   #Button to extract important information and signal of the dataframe
   observeEvent(input$extract, {
+    print(1)
+    extracted(extracted() + 1)
+    
     #Defines name space
     raw_file = uploadedFile$raw
     std_file = uploadedFile$std
@@ -110,15 +127,15 @@ ICPMS_server <- function(input, output, session) {
     if (!extractionReady()){
       return()
     } else {}
-    
+    print(2)
     dataList <<-  extractData(raw_file$datapath, std_file$datapath)
-    
+    print(3)
     index$CPS <- dataList[["header_2"]] == "CPS" & !grepl("ISTD", dataList[["header_1"]])
     index$CPS_RSD <- dataList[["header_2"]] == "CPS RSD" & !grepl("ISTD", dataList[["header_1"]])
     index$IS_CPS <- dataList[["header_2"]] == "CPS" & grepl("ISTD", dataList[["header_1"]])
     index$IS_CPS_RSD <- dataList[["header_2"]] == "CPS RSD" & grepl("ISTD", dataList[["header_1"]])
     index$numericalColumns <- min(which(index$CPS)):length(dataList[["raw"]])
-    
+    print(4)
     
     
     dataList[["raw"]][,index$numericalColumns] <<- sapply(dataList[["raw"]][,index$numericalColumns], as.numeric)
@@ -145,7 +162,7 @@ ICPMS_server <- function(input, output, session) {
     header1 <- dataList[["header_1"]]
     header2 <- dataList[["header_2"]]
     
-    
+    print(5)
     
     CPS <<- rawData[,index$CPS, drop=FALSE]
     RSD <<- rawData[,index$CPS_RSD, drop=FALSE]
@@ -160,7 +177,7 @@ ICPMS_server <- function(input, output, session) {
     typeColumn <<- rawData[,which(header_2=="Type")]
     levelColumn <<- rawData[,which(header_2=="Level")]
     dtimeColumn <<- timeColumn - timeColumn[1]
-    
+    print(6)
   })
   
   #Here we render warnings texts to help the user
@@ -325,11 +342,17 @@ ICPMS_server <- function(input, output, session) {
     
     process$ISTDsignal[repIndex, lc:uc] <- liveReplaceISTDtable()[[1]][repIndex, lc:uc, drop = FALSE]
   })
-  browser()
+  #browser()
   #Updates the slider for row and col selections when modifications are made in IS_CPS, i.e. when the extract button is hit
-  observeEvent(IS_CPS, {
+  observeEvent(extracted, {
     if (!isValidISTD()){return()}
     updateSliderInput(session,"ISTDcolSlider", max=length(IS_CPS), value = c(1,length(IS_CPS)))
+    if (is.null(CPS)){return()}
+    updateSliderInput(session,"blkRowSlider", max=sampleNumber, value = c(1,sampleNumber))
+    updateSliderInput(session,"blkColSlider", max=elementNumber, value = c(1,elementNumber))
+    if (is.null(elementNames)){return()}
+    updateSelectInput(session,"calibrationElement",choices=elementNames,selected=elementNames[1])
+    updateSelectInput(session,"e_drift",choices=elementNames,selected=elementNames[1])
   })
   
   observe({
@@ -348,7 +371,7 @@ ICPMS_server <- function(input, output, session) {
   })
   
 ##################################Blank verif/process######################
-  browser()
+  #browser()
   #Render ISTD table if all conditions are met
   output$blkTable <- DT::renderDT({
     if (is.null(CPS)){return()}
@@ -368,7 +391,7 @@ ICPMS_server <- function(input, output, session) {
     if (blkMode == "view") {df_view}
     else if (blkMode == "process") {df_process}
   }, options = list(dom = '', pageLength = sampleNumber, ordering=F, autoWidth = TRUE, scrollX=T, columnDefs = list(list(width = '120px', targets = "_all"))))
-  browser()
+  #browser()
   #Defines a proxy for changing selections in the table
   blkTableProxy <- DT::dataTableProxy("blkTable", session = session)
   
@@ -420,13 +443,6 @@ ICPMS_server <- function(input, output, session) {
     process$blk_ratio[[2]][repIndex,lc:uc] <- liveReplaceBlkTable()[[2]][repIndex, lc:uc, drop = FALSE]
   })
   
-  #Updates the slider for row and col selections when modifications are made in IS_CPS, i.e. when the extract button is hit
-  observeEvent(CPS, {
-    if (is.null(CPS)){return()}
-    updateSliderInput(session,"blkRowSlider", max=sampleNumber, value = c(1,sampleNumber))
-    updateSliderInput(session,"blkColSlider", max=elementNumber, value = c(1,elementNumber))
-  })
-  
   observe({
     if(input$blkInteractionMode == "process") {
       shinyjs::enable("setBlkInterpolationMethod")
@@ -448,11 +464,6 @@ ICPMS_server <- function(input, output, session) {
   })
   
   ################################## Calibration verification ######################
-  observeEvent(elementNames, {
-    if (is.null(elementNames)){return()}
-    updateSelectInput(session,"calibrationElement",choices=elementNames,selected=elementNames[1])
-    updateSelectInput(session,"e_drift",choices=elementNames,selected=elementNames[1])
-  })
   
   output$calibrationPlot <- renderPlotly({
     if (is.null(process$ratio_cor_b()[[1]]) | input$calibrationElement ==""){return()}
