@@ -3,6 +3,19 @@ library(stringr)
 
 agilentElementNamePattern <- "[ ]{2}[A-Z]{1}[a-z]*[ ]{2}"
 
+getModifiedData <- function(dat, modifiers) {
+  if (length(modifiers) == 0) {return(dat)}
+  else {
+    dat_mod <- dat
+    for (mod in modifiers) {
+      newValues <- replaceValues(dat[["signal"]], dat[["RSD"]], mod[["elements"]], mod[["method"]], mod[["what"]], mod[["in"]])
+      dat_mod[["signal"]] <- newValues[["CPS"]]
+      dat_mod[["RSD"]] <- newValues[["RSD"]]
+    }
+    return(dat_mod)
+  }
+}
+
 getWeights <- function(calibrationData, fn) {
   if (fn == "1/SD") {
     return(1/(calibrationData[,"RSD"]/100 *calibrationData[,"Signal"]))
