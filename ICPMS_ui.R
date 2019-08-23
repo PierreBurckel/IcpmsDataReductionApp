@@ -23,7 +23,7 @@ ICPMS_ui <- shinyUI({
                      htmlOutput("ISTD_assignment_txt"),
                      div(style="display:inline-block",numericInput(inputId="fileUpload_nrow", label="Rows", value = 10, min = 1)),
                      div(style="display:inline-block",numericInput(inputId="fileUpload_ncolumn", label="Columns", value = 6, min = 1)),
-                     tableOutput("table")
+                     tableOutput("tempFilePreview")
                    )
                  )
                ),
