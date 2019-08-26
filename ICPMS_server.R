@@ -8,11 +8,14 @@ ICPMS_server <- function(input, output, session) {
   #dataList is a list of important data sets such as counts or standard concentrations
   dataList <- list()
   dataMod <- list(ISTD = list(), ratio = list(), ratio_cor_b = list(), blk_ratio = list(), driftCorrectedElements = list(), conc = list())
-  dataModifications <- list(ISTD=list(), blank=list())
+  dataModified <- reactiveValues()
+  dataModifiers <- reactiveValues(ISTD=list(), blk=list())
   index <- list()
   calibrationParameters <- list()
   driftCorrectedElements <- vector()
   elementNames <- vector()
+  
+  ISTDmodNumber <- reactiveVal(0)
   extracted <- reactiveVal(0)
   #Setting up lists of reactiveValues variables
   #uploadedFile contains the information about user-uploaded files
@@ -27,13 +30,33 @@ ICPMS_server <- function(input, output, session) {
     extracted()
     return(!is.null(index[["IS_CPS"]]) & !is.null(dataList[["ISTD"]]))})
   
-
+  dataModified$ISTD <- reactive({
+    req(extracted())
+    return(getModifiedData(IS_CPS, dataModifiers$ISTD, input$ISTDmodifiers))
+  })
+  
+  ISTDmatrix <- reactive({
+    req(extracted())
+    if(is.null(dataList[["ISTD"]])) {
+      return(matrix(1,sampleNumber,elementNumber))
+    }
+    else{
+      return(createISTDMatrix(dataList[["ISTD"]], dataModified$ISTD()[["signal"]]))
+    }
+  })
+  
+  dataModified$ratio <- reactive({
+    req(extracted())
+    return(list(signal=CPS[["signal"]]/ISTDmatrix(), RSD=CPS[["RSD"]]))
+  })
   
   liveReplaceISTDtable <- reactive({
     req(isValidISTD())
-    replaceIndexWhat = index[["custom"]][[input$indexISTDchoiceWhat]]
-    replaceIndexIn = index[["custom"]][[input$indexISTDchoiceIn]]
-    replaceValues(IS_CPS, IS_CPS_RSD, 1:ISNumber, input$ISTDcorrectionMethod, replaceIndexWhat, replaceIndexIn)})
+    method <- input$ISTDcorrectionMethod
+    whatIndex <- index[["custom"]][[input$indexISTDchoiceWhat]]
+    inIndex <- index[["custom"]][[input$indexISTDchoiceIn]]
+    replaceValues(IS_CPS[["signal"]], IS_CPS[["RSD"]], 1:ISNumber, method, whatIndex, inIndex)
+    })
   
   
   
@@ -47,7 +70,7 @@ ICPMS_server <- function(input, output, session) {
   liveReplaceBlkTable <- reactive({
     replaceIndexWhat = index[["custom"]][[input$indexBlkchoiceWhat]]
     replaceIndexIn = index[["custom"]][[input$indexBlkchoiceIn]]
-    replaceValues(CPS/ISTDmatrix(), RSD, 1:elementNumber, input$blkInterpolationMethod, replaceIndexWhat, replaceIndexIn)})
+    replaceValues(CPS[["signal"]]/ISTDmatrix(), RSD, 1:elementNumber, input$blkInterpolationMethod, replaceIndexWhat, replaceIndexIn)})
   
   dataMod[["ratio_cor_b"]] <- reactive({propagateUncertainty(a=dataMod[["ratio"]], b=dataMod[["blk_ratio"]], operation="substraction")})
 
@@ -126,10 +149,8 @@ ICPMS_server <- function(input, output, session) {
     header1 <- dataList[["header_1"]]
     header2 <- dataList[["header_2"]]
     
-    CPS <<- rawData[,index[["CPS"]], drop=FALSE]
-    RSD <<- rawData[,index[["CPS_RSD"]], drop=FALSE]
-    IS_CPS <<- rawData[,index[["IS_CPS"]], drop=FALSE]
-    IS_CPS_RSD <<- rawData[,index[["IS_CPS_RSD"]], drop=FALSE]
+    CPS <<- list(signal=rawData[,index[["CPS"]], drop=FALSE], RSD=rawData[,index[["CPS_RSD"]], drop=FALSE])
+    IS_CPS <<- list(signal=rawData[,index[["IS_CPS"]], drop=FALSE], RSD=rawData[,index[["IS_CPS_RSD"]], drop=FALSE])
     elementNames <<- header1[index[["CPS"]]]
     elementNumber <<- length(which(index[["CPS"]]))
     ISNumber <<- length(which(index[["IS_CPS"]]))
@@ -146,16 +167,6 @@ ICPMS_server <- function(input, output, session) {
       dataList[["ISTD"]]  <<- read.table(ISTD_file$datapath, header = TRUE, sep=';', stringsAsFactors=FALSE)
     }
     
-    ISTDmatrix <<- createISTDMatrix(dataList[["ISTD"]], IS_CPS)
-    dataMod[["ratio"]] <<- list(signal=CPS/ISTDmatrix, RSD=RSD)
-    
-    ##Defines an a priori ISTD variable that will be possible to modified in the next pane
-    if (isValidISTD()) {
-      dataMod[["ISTDsignal"]] <<- IS_CPS
-      dataMod[["blk_ratio"]] <<- list(signal=CPS/ISTDmatrix,RSD=RSD)
-    } else {
-      dataMod[["blk_ratio"]] <<- list(signal=CPS,RSD=RSD)
-    }
     index[["custom"]][["All"]] <<- which(rep(x= TRUE, sampleNumber))
     ##Creates a boolean vector containing the decision of whether or not to correct signal drift for each element
     driftCorrectedElement <<- rep(FALSE,elementNumber)
@@ -172,7 +183,7 @@ ICPMS_server <- function(input, output, session) {
   ##################################Index creation######################
   output$indexTable <- DT::renderDT({
 
-    if (is.null(CPS)){return()}
+    if (is.null(CPS[["signal"]])){return()}
     
     searchWhere = input$searchIndexwhere
     firstColumnName = ""
@@ -200,15 +211,15 @@ ICPMS_server <- function(input, output, session) {
       index[["temp"]] <<- grep(searchWhat, headerRows)
     }
     
-    if (displayWhat == "ISTD" & !is.null(IS_CPS)){
-      indexTable <- cbind(headerRows[index[["temp"]]], IS_CPS[index[["temp"]],])
+    if (displayWhat == "ISTD" & !is.null(IS_CPS[["signal"]])){
+      indexTable <- cbind(headerRows[index[["temp"]]], IS_CPS[["signal"]][index[["temp"]],])
     }
-    else if (displayWhat == "analytes" & !is.null(CPS)){
-      indexTable <- cbind(headerRows[index[["temp"]]], CPS[index[["temp"]],])
+    else if (displayWhat == "analytes" & !is.null(CPS[["signal"]])){
+      indexTable <- cbind(headerRows[index[["temp"]]], CPS[["signal"]][index[["temp"]],])
     }
     else {return()}
     
-    colnames(indexTable) <- c(firstColumnName, colnames(IS_CPS)[1:length(IS_CPS)])
+    colnames(indexTable) <- c(firstColumnName, colnames(IS_CPS[["signal"]])[1:length(IS_CPS[["signal"]])])
     
     indexTable
     
@@ -256,12 +267,12 @@ ICPMS_server <- function(input, output, session) {
       print("No available ISTD")
       return()
       }
-    ISTDmode = input$ISTDinteractionMode
+    ISTDmode <- input$ISTDinteractionMode
 
-    lc = input$ISTDcolSlider[1]
-    uc = input$ISTDcolSlider[2]
+    lc <- input$ISTDcolSlider[1]
+    uc <- input$ISTDcolSlider[2]
     
-    df_view <- cbind(nameColumn, dataMod[["ISTDsignal"]])
+    df_view <- cbind(nameColumn, dataModified$ISTD()[["signal"]])
     names(df_view) <- c("Sample Name", names(df_view)[2:length(df_view)])
     df_view <- format(df_view, digits = 3, scientific=T)
     df_process <- cbind(nameColumn, liveReplaceISTDtable()[[1]][, lc:uc, drop = FALSE])
@@ -312,22 +323,36 @@ ICPMS_server <- function(input, output, session) {
   
   #Assigns the current state of the ISTD table to the ISTD variable that will be used for calculations
   observeEvent(input$setISTDcorrectionMethod, {
-    repIndex = index[["custom"]][[input$indexISTDchoiceWhat]]
-    if (is.null(liveReplaceISTDtable()) | is.null(repIndex) | !isValidISTD()) {return()}
-
-    lc = input$ISTDcolSlider[1]
-    uc = input$ISTDcolSlider[2]
     
-    dataMod[["ISTDsignal"]][repIndex, lc:uc] <- liveReplaceISTDtable()[[1]][repIndex, lc:uc, drop = FALSE]
-    ISTDmatrix <<- createISTDMatrix(dataMod[["ISTD"]], dataMod[["ISTDsignal"]])
-    dataMod[["ratio"]] <<- reactivelist(signal=CPS/ISTDmatrix(), RSD=RSD)
+    ISTDmodNumber(ISTDmodNumber() + 1)
+    #est-ce que isolate utile?
+    elements <- 1:ISNumber
+    method <- isolate(input$ISTDcorrectionMethod)
+    whatIndex <- isolate(index[["custom"]][[input$indexISTDchoiceWhat]])
+    inIndex <- isolate(index[["custom"]][[input$indexISTDchoiceIn]])
+    
+    #quand on voudra pouvoir selectionner des éléments particuliers
+    #lc <- input$ISTDcolSlider[1]
+    #uc <- input$ISTDcolSlider[2]
+    
+    newModName <- paste("mod", as.character(ISTDmodNumber()), sep="")
+    dataModifiers$ISTD[[newModName]] <- list(elements=elements, method=method, whatIndex=whatIndex, inIndex=inIndex)
+    
+    modID <- names(dataModifiers$ISTD)
+    modNames <- sapply(dataModifiers$ISTD, getModifierName)
+    names(modID) <- modNames
+    currentlySelected <- c(input$ISTDmodifiers, newModName)
+    print(currentlySelected)
+    
+    #selected takes a character vector of IDs
+    updateCheckboxGroupInput(session, "ISTDmodifiers", label = "Modifiers:", choices = modID, selected = currentlySelected)
   })
   #browser()
   #Updates the slider for row and col selections when modifications are made in IS_CPS, i.e. when the extract button is hit
   observeEvent(extracted, {
     if (!isValidISTD()){return()}
-    updateSliderInput(session,"ISTDcolSlider", max=length(IS_CPS), value = c(1,length(IS_CPS)))
-    if (is.null(CPS)){return()}
+    updateSliderInput(session,"ISTDcolSlider", max=length(IS_CPS[["signal"]]), value = c(1,length(IS_CPS[["signal"]])))
+    if (is.null(CPS[["signal"]])){return()}
     updateSliderInput(session,"blkRowSlider", max=sampleNumber, value = c(1,sampleNumber))
     updateSliderInput(session,"blkColSlider", max=elementNumber, value = c(1,elementNumber))
     if (is.null(elementNames)){return()}
@@ -354,7 +379,7 @@ ICPMS_server <- function(input, output, session) {
   #browser()
   #Render ISTD table if all conditions are met
   output$blkTable <- DT::renderDT({
-    if (is.null(CPS)){return()}
+    if (is.null(CPS[["signal"]])){return()}
     blkMode = input$blkInteractionMode
     
     lc = input$blkColSlider[1]
@@ -413,14 +438,14 @@ ICPMS_server <- function(input, output, session) {
   
   #Assigns the current state of the ISTD table to the ISTD variable that will be used for calculations
   observeEvent(input$setBlkInterpolationMethod, {
-    repIndex = index[["custom"]][[input$indexBlkchoiceWhat]]
-    if (is.null(liveReplaceBlkTable())| is.null(repIndex)) {return()}
+    whatIndex = index[["custom"]][[input$indexBlkchoiceWhat]]
+    if (is.null(liveReplaceBlkTable())| is.null(whatIndex)) {return()}
 
     lc = input$blkColSlider[1]
     uc = input$blkColSlider[2]
 
-    dataMod[["blk_ratio"]][[1]][repIndex,lc:uc] <- liveReplaceBlkTable()[[1]][repIndex, lc:uc, drop = FALSE]
-    dataMod[["blk_ratio"]][[2]][repIndex,lc:uc] <- liveReplaceBlkTable()[[2]][repIndex, lc:uc, drop = FALSE]
+    dataMod[["blk_ratio"]][[1]][whatIndex,lc:uc] <- liveReplaceBlkTable()[[1]][whatIndex, lc:uc, drop = FALSE]
+    dataMod[["blk_ratio"]][[2]][whatIndex,lc:uc] <- liveReplaceBlkTable()[[2]][whatIndex, lc:uc, drop = FALSE]
   })
   
   observe({

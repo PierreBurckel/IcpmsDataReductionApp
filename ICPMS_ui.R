@@ -59,7 +59,8 @@ ICPMS_ui <- shinyUI({
                                           "Previous blank" = "prev")),
                             selectInput("indexISTDchoiceIn", "Replace in:",
                                         "All", selected = "All"),
-                            actionButton("setISTDcorrectionMethod", "Set ISTD correction")),
+                            actionButton("setISTDcorrectionMethod", "Set ISTD correction"),
+                            checkboxGroupInput("ISTDmodifiers", "Modifiers:", choices = NULL, selected = NULL)),
                           mainPanel(
                             DT::DTOutput("ISTDtable")
                           )

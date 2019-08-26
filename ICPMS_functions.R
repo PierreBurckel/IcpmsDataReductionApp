@@ -3,14 +3,19 @@ library(stringr)
 
 agilentElementNamePattern <- "[ ]{2}[A-Z]{1}[a-z]*[ ]{2}"
 
-getModifiedData <- function(dat, modifiers) {
+getModifierName <- function(modifier) {
+    return(paste(modifier[["method"]], " lines:", modifier[["whatIndex"]][1], ":", tail(modifier[["whatIndex"]], n=1), sep=""))
+}
+
+getModifiedData <- function(dat, modifiers, selectedModifiers) {
   if (length(modifiers) == 0) {return(dat)}
   else {
     dat_mod <- dat
-    for (mod in modifiers) {
-      newValues <- replaceValues(dat[["signal"]], dat[["RSD"]], mod[["elements"]], mod[["method"]], mod[["what"]], mod[["in"]])
-      dat_mod[["signal"]] <- newValues[["CPS"]]
-      dat_mod[["RSD"]] <- newValues[["RSD"]]
+    for (s in selectedModifiers) {
+      mod <- modifiers[[s]]
+      newValues <- replaceValues(dat[["signal"]], dat[["RSD"]], mod[["elements"]], mod[["method"]], mod[["whatIndex"]], mod[["inIndex"]])
+      dat_mod[["signal"]][mod[["whatIndex"]],] <- newValues[["signal"]][mod[["whatIndex"]],]
+      dat_mod[["RSD"]][mod[["whatIndex"]],] <- newValues[["RSD"]][mod[["whatIndex"]],]
     }
     return(dat_mod)
   }
@@ -254,7 +259,7 @@ replaceValues <- function(ICPsignal, RSD, colRange, replaceType, lineIndex, sour
   #This condition is useful when the signal hasn't been extracted and the function is called -> returns null
   if(is.null(ICPsignal)| is.null(RSD)){return(NULL)}
   #This condition is useful in shiny tables to return the table signal and RSD when no replacements are required
-  if (replaceType == "none" | is.null(lineIndex) | is.null(colRange)) {return(list(ICPsignal,RSD))}
+  if (replaceType == "none" | is.null(lineIndex) | is.null(colRange)) {return(list(signal=ICPsignal,RSD=RSD))}
   #Stores the line number of the signal whether it is a dataframe (nrow) or a vector (length)
   if(is.integer(nrow(ICPsignal))){
     lineNb <- nrow(ICPsignal)
