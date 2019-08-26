@@ -7,28 +7,46 @@ ICPMS_server <- function(input, output, session) {
   
   #dataList is a list of important data sets such as counts or standard concentrations
   dataList <- list()
-  dataMod <- list(ISTD = list(), ratio = list(), ratio_cor_b = list(), blk_ratio = list(), driftCorrectedElements = list(), conc = list())
-  dataModified <- reactiveValues()
-  dataModifiers <- reactiveValues(ISTD=list(), blk=list())
   index <- list()
   calibrationParameters <- list()
+  
   driftCorrectedElements <- vector()
   elementNames <- vector()
   
+  uploadedFile <- reactiveValues()
+  dataModified <- reactiveValues()
+  dataModifiers <- reactiveValues(ISTD=list(), blank=list())
+
   ISTDmodNumber <- reactiveVal(0)
   extracted <- reactiveVal(0)
-  #Setting up lists of reactiveValues variables
-  #uploadedFile contains the information about user-uploaded files
-  uploadedFile <- reactiveValues()
-  #index contains all indexes serving as masks to display/process specific lines or columns of the raw data
-  #tempDataFile stores the current file loaded by the user
+  
   tempDataFile <- reactive({input$file})
   
   #extractionReady is TRUE or FALSE, depending on whether extraction can be done or not (required files assigned, variables names inputed)
   extractionReady <- reactive({!is.null(uploadedFile$raw) & !is.null(uploadedFile$std)})
   isValidISTD <- reactive({
     extracted()
-    return(!is.null(index[["IS_CPS"]]) & !is.null(dataList[["ISTD"]]))})
+    return(!is.null(index[["IS_CPS"]]) & !is.null(dataList[["ISTD"]]))
+  })
+  
+  activeISTDmodifier <- reactive({
+    req(extracted())
+    req(isValidISTD())
+    elements <- 1:ISNumber
+    method <- input$ISTDcorrectionMethod
+    whatIndex <- index[["custom"]][[input$indexISTDchoiceWhat]]
+    inIndex <- index[["custom"]][[input$indexISTDchoiceIn]]
+    return(list(elements=elements, method=method, whatIndex=whatIndex, inIndex=inIndex))
+  })
+  
+  activeBlankModifier <- reactive({
+    req(extracted())
+    elements <- 1:elementNumber
+    method <- input$blkInterpolationMethod
+    whatIndex <- index[["custom"]][[input$indexBlkchoiceWhat]]
+    inIndex <- index[["custom"]][[input$indexBlkchoiceIn]]
+    return(list(elements=elements, method=method, whatIndex=whatIndex, inIndex=inIndex))
+  })
   
   dataModified$ISTD <- reactive({
     req(extracted())
@@ -50,29 +68,22 @@ ICPMS_server <- function(input, output, session) {
     return(list(signal=CPS[["signal"]]/ISTDmatrix(), RSD=CPS[["RSD"]]))
   })
   
-  liveReplaceISTDtable <- reactive({
-    req(isValidISTD())
-    method <- input$ISTDcorrectionMethod
-    whatIndex <- index[["custom"]][[input$indexISTDchoiceWhat]]
-    inIndex <- index[["custom"]][[input$indexISTDchoiceIn]]
-    replaceValues(IS_CPS[["signal"]], IS_CPS[["RSD"]], 1:ISNumber, method, whatIndex, inIndex)
-    })
-  
-  
-  
-  
+  dataModified$blankRatio <- reactive({
+    req(extracted())
+    return(getModifiedData(dataModified$ratio(), dataModifiers$blank, input$blankModifiers))
+  })
   
   
   # calibrationParameters$autoAdaptCalibration <- reactive(input$autoAdaptCalibration)
   # calibrationParameters$useWeithedRegression <- reactive(input$useWeithedRegression)
   # calibrationParameters$regressionWeight <- reactive(input$regressionWeight)
   
-  liveReplaceBlkTable <- reactive({
-    replaceIndexWhat = index[["custom"]][[input$indexBlkchoiceWhat]]
-    replaceIndexIn = index[["custom"]][[input$indexBlkchoiceIn]]
-    replaceValues(CPS[["signal"]]/ISTDmatrix(), RSD, 1:elementNumber, input$blkInterpolationMethod, replaceIndexWhat, replaceIndexIn)})
+  # liveReplaceBlkTable <- reactive({
+  #   replaceIndexWhat = index[["custom"]][[input$indexBlkchoiceWhat]]
+  #   replaceIndexIn = index[["custom"]][[input$indexBlkchoiceIn]]
+  #   replaceValues(CPS[["signal"]]/ISTDmatrix(), RSD, 1:elementNumber, input$blkInterpolationMethod, replaceIndexWhat, replaceIndexIn)})
   
-  dataMod[["ratio_cor_b"]] <- reactive({propagateUncertainty(a=dataMod[["ratio"]], b=dataMod[["blk_ratio"]], operation="substraction")})
+  dataModified$ratio_cor_b <- reactive({propagateUncertainty(a=dataModified$ratio(), b=dataModified$blank(), operation="substraction")})
 
   yplus <- reactive({(dataMod[["ratio_cor_b"]]()[[1]] + dataMod[["ratio_cor_b"]]()[[2]]/100*dataMod[["ratio_cor_b"]]()[[1]])[index[["drift"]],grep(input$e_drift, elementNames,fixed=TRUE)]})
   yminus <- reactive({(dataMod[["ratio_cor_b"]]()[[1]] - dataMod[["ratio_cor_b"]]()[[2]]/100*dataMod[["ratio_cor_b"]]()[[1]])[index[["drift"]],grep(input$e_drift, elementNames,fixed=TRUE)]})
@@ -266,16 +277,25 @@ ICPMS_server <- function(input, output, session) {
     if (!isValidISTD()){
       print("No available ISTD")
       return()
-      }
+    }
+    
     ISTDmode <- input$ISTDinteractionMode
-
+    ISTDviewTable <- dataModified$ISTD()
+    
+    allModifiers <- dataModifiers$ISTD
+    allModifiers[["active"]] <- activeISTDmodifier()
+    ISTDprocessTable <- getModifiedData(IS_CPS, allModifiers, c(input$ISTDmodifiers, "active"))
+    
     lc <- input$ISTDcolSlider[1]
     uc <- input$ISTDcolSlider[2]
     
-    df_view <- cbind(nameColumn, dataModified$ISTD()[["signal"]])
+    print(c(input$ISTDmodifiers, "active"))
+    
+    df_view <- cbind(nameColumn, ISTDviewTable[["signal"]])
     names(df_view) <- c("Sample Name", names(df_view)[2:length(df_view)])
     df_view <- format(df_view, digits = 3, scientific=T)
-    df_process <- cbind(nameColumn, liveReplaceISTDtable()[[1]][, lc:uc, drop = FALSE])
+    
+    df_process <- cbind(nameColumn, ISTDprocessTable[["signal"]])
     names(df_process) <- c("Sample Name", names(df_process)[2:length(df_process)])
     df_process <- format(df_process, digits = 3, scientific=T)
     
@@ -325,24 +345,18 @@ ICPMS_server <- function(input, output, session) {
   observeEvent(input$setISTDcorrectionMethod, {
     
     ISTDmodNumber(ISTDmodNumber() + 1)
-    #est-ce que isolate utile?
-    elements <- 1:ISNumber
-    method <- isolate(input$ISTDcorrectionMethod)
-    whatIndex <- isolate(index[["custom"]][[input$indexISTDchoiceWhat]])
-    inIndex <- isolate(index[["custom"]][[input$indexISTDchoiceIn]])
     
     #quand on voudra pouvoir selectionner des éléments particuliers
     #lc <- input$ISTDcolSlider[1]
     #uc <- input$ISTDcolSlider[2]
     
-    newModName <- paste("mod", as.character(ISTDmodNumber()), sep="")
-    dataModifiers$ISTD[[newModName]] <- list(elements=elements, method=method, whatIndex=whatIndex, inIndex=inIndex)
+    newModID <- paste("mod", as.character(ISTDmodNumber()), sep="")
+    dataModifiers$ISTD[[newModID]] <- activeISTDmodifier()
     
     modID <- names(dataModifiers$ISTD)
     modNames <- sapply(dataModifiers$ISTD, getModifierName)
     names(modID) <- modNames
-    currentlySelected <- c(input$ISTDmodifiers, newModName)
-    print(currentlySelected)
+    currentlySelected <- c(input$ISTDmodifiers, newModID)
     
     #selected takes a character vector of IDs
     updateCheckboxGroupInput(session, "ISTDmodifiers", label = "Modifiers:", choices = modID, selected = currentlySelected)
