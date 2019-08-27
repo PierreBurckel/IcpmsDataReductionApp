@@ -80,7 +80,8 @@ ICPMS_ui <- shinyUI({
                                           "Previous blank" = "prev")),
                             selectInput("indexBlkchoiceIn", "Replace in:",
                                         "All", selected = "All"),
-                            actionButton("setBlkInterpolationMethod", "Set blank interpolation")),
+                            actionButton("setBlkInterpolationMethod", "Set blank interpolation"),
+                            checkboxGroupInput("blankModifiers", "Modifiers:", choices = NULL, selected = NULL)),
                           mainPanel(
                             div(style="display:inline-block",sliderInput("blkColSlider", label = h3("Column range"), min = 1, 
                                                                          max = 100, value = c(1, 1))),
@@ -115,8 +116,7 @@ ICPMS_ui <- shinyUI({
                             textOutput("warningDrifr")),
                           mainPanel(
                             tableOutput("smpBlkCorTable"),
-                            plotOutput("driftPlot"),
-                            tableOutput("test")
+                            plotOutput("driftPlot")
                           )
                         )
                ),

@@ -3,6 +3,10 @@ library(stringr)
 
 agilentElementNamePattern <- "[ ]{2}[A-Z]{1}[a-z]*[ ]{2}"
 
+getUncertaintyInterval <- function(value) {
+  return(list(uBound=value[["signal"]] + value[["RSD"]]/100*value[["signal"]], lBound=value[["signal"]] - value[["RSD"]]/100*value[["signal"]]))
+}
+
 getModifierName <- function(modifier) {
     return(paste(modifier[["method"]], " lines:", modifier[["whatIndex"]][1], ":", tail(modifier[["whatIndex"]], n=1), sep=""))
 }
