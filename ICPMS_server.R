@@ -6,7 +6,8 @@ source('C:/Users/pierr/Desktop/IPGP/R/ICP-MS_process/ICPMS_functions.R')
 
 ICPMS_server <- function(input, output, session) {
   dataList <- list()
-  
+  blankList <- list()
+
   uploadedFile <- reactiveValues()
   index <- reactiveValues()
   dataModified <- reactiveValues()
@@ -31,13 +32,15 @@ ICPMS_server <- function(input, output, session) {
   analyte <- reactive({
     req(extracted())
     rawData <- dataList[["raw"]]
-    return(list(value=rawData[,index$analyte[["value"]], drop=FALSE], RSD=rawData[,index$analyte[["RSD"]], drop=FALSE]))
+    return(list(value=rawData[,index$analyte[["value"]], drop=FALSE],
+                SD=rawData[,index$analyte[["RSD"]], drop=FALSE]/100*rawData[,index$analyte[["value"]], drop=FALSE]))
   })
-  
+
   ISTD <- reactive({
     req(extracted())
     rawData <- dataList[["raw"]]
-    return(list(value=rawData[,index$ISTD[["value"]], drop=FALSE], RSD=rawData[,index$ISTD[["RSD"]], drop=FALSE]))
+    return(list(value=rawData[,index$ISTD[["value"]], drop=FALSE],
+                SD=rawData[,index$ISTD[["RSD"]], drop=FALSE]/100*rawData[,index$ISTD[["value"]], drop=FALSE]))
   })
   
   analyteNames <- reactive({
@@ -71,7 +74,7 @@ ICPMS_server <- function(input, output, session) {
     inIndex <- index$custom[[input$indexISTDchoiceIn]]
     return(list(elements=elements, method=method, whatIndex=whatIndex, inIndex=inIndex))
   })
-  
+
   activeBlankModifier <- reactive({
     req(extracted())
     elements <- 1:analyteNumber()
@@ -98,35 +101,76 @@ ICPMS_server <- function(input, output, session) {
   
   dataModified$ratio <- reactive({
     req(extracted())
-    return(list(value=analyte()[["value"]]/ISTDmatrix(), RSD=analyte()[["RSD"]]))
+    return(list(value=analyte()[["value"]]/ISTDmatrix(), SD=analyte()[["SD"]]))
   })
   
   dataModified$blankRatio <- reactive({
     req(extracted())
-    return(getModifiedData(dataModified$ratio(), dataModifiers$blank, input$blankModifiers))
+    if (input$useBlankCorrection == FALSE) {
+      return(blankList)
+    }
+    else {
+      return(getModifiedData(dataModified$ratio(), dataModifiers$blank, input$blankModifiers))
+    }
   })
-  
+
   dataModified$blankCorrectedRatio <- reactive({
     req(extracted())
     return(propagateUncertainty(a=dataModified$ratio(), b=dataModified$blankRatio(), operation="substraction"))
   })
-  
+
   dataModified$standardData <- reactive({
     req(dataModified$blankCorrectedRatio())
     signal <- dataModified$blankCorrectedRatio()
+    #aac <- processParameters$autoAdaptCalibration
     standardData <- list()
-    for (i in 1:length(signal[["value"]])) {
-      calibrationData <- getCalibrationData(elementFullName = names(signal[["value"]])[i], signal=signal,
+    for (i in seq(analyteNumber())) {
+      calibrationData <- getCalibrationData(elementFullName = analyteNames()[i], signal=signal,
                                             stdIdentificationColumn=levelColumn, stdDataFrame = dataList[["std"]])
-      standardData[[names(signal[["value"]])[i]]] <- calibrationData
+      standardData[[analyteNames()[i]]] <- calibrationData
     }
     return(standardData)
   })
-  
+
+  dataModified$calibrationModels <- reactive({
+    
+    req(dataModified$standardData())
+    fi <- processParameters$forceIntercept
+    wr <- processParameters$useWeithedRegression
+    w <- processParameters$regressionWeight
+    calibrationModels <- list()
+    for (i in seq(analyteNumber())) {
+      element <- analyteNames()[i]
+      calibrationData <- dataModified$standardData()[[element]]
+      if (fi[[element]] == TRUE) {
+        intercept <- calibrationData[1,"value"]
+        if (wr[[element]] == TRUE) {
+          calibrationWeights <- getWeights(calibrationData = calibrationData, fn = w[[element]])
+          calibrationModel <- lm(I(value-intercept) ~ 0+ concentration, data=as.data.frame(calibrationData),
+                                 weights = calibrationWeights)
+        }
+        if (wr[[element]] == FALSE) {
+          calibrationModel <- lm(I(value-intercept) ~ 0+ concentration, data=as.data.frame(calibrationData))
+        }
+      }
+      if (fi[[element]] == FALSE) {
+        if (wr[[element]] == TRUE) {
+          calibrationWeights <- getWeights(calibrationData = calibrationData, fn = w[[element]])
+          calibrationModel <- lm(value ~ concentration, data=as.data.frame(calibrationData),
+                                 weights = calibrationWeights)
+        }
+        if (wr[[element]] == FALSE) {
+          calibrationModel <- lm(value ~ concentration, data=as.data.frame(calibrationData))
+        }
+      }
+      calibrationModels[[element]] <- calibrationModel
+    }
+    return(calibrationModels)
+  })
+
   dataModified$concentration <- reactive({
     req(extracted())
     req(dataModified$blankCorrectedRatio())
-    print(1)
     return(processData(dataModified$blankCorrectedRatio(), analyteNames(), dataList[["std"]], index$drift,
                                              levelColumn, timeColumn, processParameters$driftCorrectedElement, processParameters$calibration))
   })
@@ -218,17 +262,22 @@ ICPMS_server <- function(input, output, session) {
     }
     
     #Initialisation of some variables
+    blankList <<- list(value=as.data.frame(matrix(0, nrow=sampleNumber, ncol=analyteNumber())),
+                            SD=as.data.frame(matrix(0, nrow=sampleNumber, ncol=analyteNumber())))
+    names(blankList[["value"]]) <<- analyteNames()
+    names(blankList[["SD"]]) <<- analyteNames()
+    
     index$custom[["All"]] <- which(rep(x= TRUE, sampleNumber))
     
     processParameters$driftCorrectedElement <- rep(FALSE, analyteNumber())
     names(processParameters$driftCorrectedElement) <- analyteNames()
     
-    processParameters$autoAdaptCalibration <- rep(FALSE, analyteNumber())
-    names(processParameters$autoAdaptCalibration) <- analyteNames()
-    
     processParameters$forceIntercept <- rep(FALSE, analyteNumber())
     names(processParameters$forceIntercept) <- analyteNames()
     
+    processParameters$autoAdaptCalibration <- rep(FALSE, analyteNumber())
+    names(processParameters$autoAdaptCalibration) <- analyteNames()
+
     processParameters$useWeithedRegression  <- rep(FALSE, analyteNumber())
     names(processParameters$useWeithedRegression) <- analyteNames()
     
@@ -548,6 +597,11 @@ ICPMS_server <- function(input, output, session) {
     }
   }, ignoreInit = TRUE)
   
+  observeEvent(input$forceIntercept, {
+    req(extracted())
+    processParameters$forceIntercept[[input$calibrationElement]] <- input$forceIntercept
+  }, ignoreInit = TRUE)
+  
   observeEvent(input$autoAdaptCalibration, {
     req(extracted())
     processParameters$autoAdaptCalibration[[input$calibrationElement]] <- input$autoAdaptCalibration
@@ -565,6 +619,9 @@ ICPMS_server <- function(input, output, session) {
 
   observeEvent(input$calibrationElement, {
     req(extracted())
+    if (input$forceIntercept != processParameters$forceIntercept[[input$calibrationElement]]) {
+      updateCheckboxInput(session, "forceIntercept", label = "Force intercept", value = processParameters$forceIntercept[[input$calibrationElement]])
+    }
     if (input$autoAdaptCalibration != processParameters$autoAdaptCalibration[[input$calibrationElement]]) {
       updateCheckboxInput(session, "autoAdaptCalibration", label = "Use min/max standards", value = processParameters$autoAdaptCalibration[[input$calibrationElement]])
     }
@@ -578,45 +635,31 @@ ICPMS_server <- function(input, output, session) {
   
   output$calibrationPlot <- renderPlotly({
     if (is.null(dataModified$standardData())){return()}
-
+    
     calibrationData <- dataModified$standardData()[[input$calibrationElement]]
     
-    print(calibrationData)
+    calibrationModel <- dataModified$calibrationModels()[[input$calibrationElement]]
     
-    if (input$useWeithedRegression == TRUE) {
-      calibrationWeights <- getWeights(calibrationData = calibrationData, fn = input$regressionWeight)
-      calibrationModel <- lm(value ~ 0+Concentration, data=as.data.frame(calibrationData),
-                             weights = calibrationWeights)
+    concentrationInterval <- c(0, calibrationData[nrow(calibrationData),"concentration"])
     
-    } 
-    else{
-      calibrationModel <- lm(value ~ 0+Concentration, data=as.data.frame(calibrationData))
+    if (any(grepl("(Intercept)",rownames(summary(calibrationModel)$coefficients)))) {
+      intercept <- summary(calibrationModel)$coefficients["(Intercept)",1]
+      calibrationPredict = summary(calibrationModel)$coefficients["concentration",1]*concentrationInterval + intercept
+    }
+    else {
+      calibrationPredict = summary(calibrationModel)$coefficients["concentration",1]*concentrationInterval
     }
     
     
-    concentrationInterval <- c(0, calibrationData[nrow(calibrationData),"Concentration"])
-    
-    calibrationPredict = summary(calibrationModel)$coefficients[1,1]*concentrationInterval
-    
     signalResiduals <- studres(calibrationModel)
-    print("yo:")
-    print(signalResiduals)
-    print("yo:")
-    
-    # if (input$useWeithedRegression == TRUE) {
-    #   signalResiduals <- ((calibrationData[,"value"] - summary(calibrationModel)$coefficients[1,1]*calibrationData[,"Concentration"]) * calibrationWeights)
-    # 
-    # } else{
-    #   signalResiduals <- ((calibrationData[,"value"] - summary(calibrationModel)$coefficients[1,1]*calibrationData[,"Concentration"]))
-    # }
     
     calibrationPlot <- plot_ly()
     calibrationPlot <- add_trace(calibrationPlot, x=concentrationInterval, y=calibrationPredict, type = 'scatter', mode = 'lines')
-    calibrationPlot <- add_trace(calibrationPlot, x=calibrationData[,"Concentration"], y=calibrationData[,"value"], type = 'scatter', mode = 'markers')
+    calibrationPlot <- add_trace(calibrationPlot, x=calibrationData[,"concentration"], y=calibrationData[,"value"], type = 'scatter', mode = 'markers')
     
     residualPlot <- plot_ly()
-    residualPlot <- add_trace(residualPlot, x=calibrationData[,"Concentration"], y=signalResiduals, type = 'scatter', mode = 'markers')
-
+    residualPlot <- add_trace(residualPlot, x=calibrationData[,"concentration"], y=signalResiduals, type = 'scatter', mode = 'markers')
+    
     subplot(calibrationPlot, residualPlot, nrows = 2)
 
   })
@@ -704,7 +747,7 @@ ICPMS_server <- function(input, output, session) {
     
     if (displayWhat <= 2){displayMatrix <- dataModified$concentration()[[displayWhat]]}
     else if (displayWhat == 3){
-      displayMatrix <- mergeMatrixes(matrix1 = dataModified$concentration()[[1]], matrix2 = dataModified$concentration()[[2]], name1=NULL, name2="RSD (%)")
+      displayMatrix <- mergeMatrixes(matrix1 = dataModified$concentration()[[1]], matrix2 = dataModified$concentration()[[2]], name1=NULL, name2="SD (%)")
     }
     else {}
     print(2)
@@ -717,7 +760,7 @@ ICPMS_server <- function(input, output, session) {
     content = function(file) {
       selectedIndex = index$custom[[input$viewConcentrationIndex]]
       
-      combinedConcRSD <- mergeMatrixes(matrix1 = dataModified$concentration()[[1]], matrix2 = dataModified$concentration()[[2]], name1=NULL, name2="RSD (%)")
+      combinedConcSD <- mergeMatrixes(matrix1 = dataModified$concentration()[[1]], matrix2 = dataModified$concentration()[[2]], name1=NULL, name2="SD (%)")
 
       if (strtoi(input$viewConcentrationSwitch) <= 2){
         write.csv(cbind(nameColumn,dataModified$concentration()[[strtoi(input$viewConcentrationSwitch)]])[selectedIndex,],
@@ -725,11 +768,11 @@ ICPMS_server <- function(input, output, session) {
                   row.names = FALSE, col.names = FALSE)
       }
       else if (strtoi(input$viewConcentrationSwitch) == 3){
-        write.csv(cbind(nameColumn, combinedConcRSD)[selectedIndex,],
+        write.csv(cbind(nameColumn, combinedConcSD)[selectedIndex,],
                   file, sep=";", quote = FALSE,
                   row.names = FALSE, col.names = FALSE)
       }
     })
   
-  #callModule(csvFile, "default", nameColumn = reactive(nameColumn), indexCustom = reactive(index$custom), isValidISTD = reactive(isValidISTD()), ISTD = reactive(ISTD), signal=reactive(list(ISTD,ISTD_RSD)))
+  #callModule(csvFile, "default", nameColumn = reactive(nameColumn), indexCustom = reactive(index$custom), isValidISTD = reactive(isValidISTD()), ISTD = reactive(ISTD), signal=reactive(list(ISTD,ISTD_SD)))
 }

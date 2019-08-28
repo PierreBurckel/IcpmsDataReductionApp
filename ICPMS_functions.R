@@ -13,7 +13,7 @@ subsetDfList <- function(dfList, rowLogical, columnLogical) {
 }
 
 getUncertaintyInterval <- function(signal) {
-  return(list(uBound=signal[["value"]] + signal[["RSD"]]/100*value[["value"]], lBound=signal[["value"]] - signal[["RSD"]]/100*signal[["value"]]))
+  return(list(uBound=signal[["value"]] + signal[["SD"]], lBound=signal[["value"]] - signal[["SD"]]))
 }
 
 getModifierName <- function(modifier) {
@@ -26,9 +26,9 @@ getModifiedData <- function(dat, modifiers, selectedModifiers) {
     dat_mod <- dat
     for (s in selectedModifiers) {
       mod <- modifiers[[s]]
-      newValues <- replaceValues(dat[["value"]], dat[["RSD"]], mod[["elements"]], mod[["method"]], mod[["whatIndex"]], mod[["inIndex"]])
+      newValues <- replaceValues(dat[["value"]], dat[["SD"]], mod[["elements"]], mod[["method"]], mod[["whatIndex"]], mod[["inIndex"]])
       dat_mod[["value"]][mod[["whatIndex"]],] <- newValues[["value"]][mod[["whatIndex"]],]
-      dat_mod[["RSD"]][mod[["whatIndex"]],] <- newValues[["RSD"]][mod[["whatIndex"]],]
+      dat_mod[["SD"]][mod[["whatIndex"]],] <- newValues[["SD"]][mod[["whatIndex"]],]
     }
     return(dat_mod)
   }
@@ -36,10 +36,10 @@ getModifiedData <- function(dat, modifiers, selectedModifiers) {
 
 getWeights <- function(calibrationData, fn) {
   if (fn == "1/SD") {
-    return(1/(calibrationData[,"RSD"]/100 *calibrationData[,"value"]))
+    return(1/(calibrationData[,"SD"]))
   }
   else if (fn == "1/SD^2") {
-    return(1/(calibrationData[,"RSD"]/100 *calibrationData[,"value"])^2)
+    return(1/(calibrationData[,"SD"])^2)
   }
   else {
     return()
@@ -101,14 +101,14 @@ getCalibrationData <- function(elementFullName, signal, stdIdentificationColumn,
     else {} 
     
     eValue <- signal[[1]][calibrationStdNumIndex, elementFullName]
-    eRSD <- signal[[2]][calibrationStdNumIndex, elementFullName]
+    eSD <- signal[[2]][calibrationStdNumIndex, elementFullName]
   }
   else
   {
     return(NA)
   }
   
-  return(cbind(value=eValue, RSD=eRSD, Concentration=as.numeric(stdConcentration)))
+  return(cbind(value=eValue, SD=eSD, concentration=as.numeric(stdConcentration)))
 }
 
 getElementName <- function(elementFullName, pattern) {
@@ -190,42 +190,31 @@ getClosestInIndex <- function(refPosition, numericalIndex, searchWhere){
   else{return(NULL)}
 }
 
-##Function that calculates the RSD of a collection of numerical values
-calculateRSD <- function(values){
-  if (length(values) > 1){
-    return(sd(values)/mean(values)*100)
-  }
-  else{
-    return(NULL)
-  }
-}
-
-
 propagateUncertainty <- function(a, b, operation){
   
   a_value = a[[1]]
   b_value = b[[1]]
-  a_RSD = a[[2]]
-  b_RSD = b[[2]]
+  a_SD = a[[2]]
+  b_SD = b[[2]]
   if (operation == "addition"){
     value <- a_value + b_value
-    RSD <- sqrt((a_RSD/100*a_value)^2+(b_RSD/100*b_value)^2)/value*100
+    SD <- sqrt((a_SD)^2+(b_SD)^2)
   }
   else if (operation == "substraction"){
     value <- a_value - b_value
-    RSD <- sqrt((a_RSD/100*a_value)^2+(b_RSD/100*b_value)^2)/value*100
+    SD <- sqrt((a_SD)^2+(b_SD)^2)
   }
   else if (operation == "multiplication"){
     value <- a_value * b_value
-    RSD <- sqrt((a_RSD/100)^2+(b_RSD/100)^2)*100
+    SD <- sqrt((a_SD/a_value)^2+(b_SD/b_value)^2)*value
   }
   else if (operation == "division"){
     value <- a_value / b_value
-    RSD <- sqrt((a_RSD/100)^2+(b_RSD/100)^2)*100
+    SD <- sqrt((a_SD/a_value)^2+(b_SD/b_value)^2)*value
   }
   else {return(NULL)}
   
-  return(list(value=value, RSD=RSD))
+  return(list(value=value, SD=SD))
 }
 
 ##Function that replaces each value in a text vector by its previous value if the current value is empty (=="")
@@ -265,14 +254,14 @@ removeDuplicateLines <- function(df){
 ##Values are replaced by new values, based on the sourceLineIndex index
 ##If the sourceLineIndex are set to NULL, the lines that are not in the lineIndex (i.e. !lineIndex) are used as source
 ##The new values can be the mean and SD of previous and following sourceLineIndex or the value and SD of the previous sourceLine
-##ICPsignal and RSD are the dataframe containing the signal and RSD of the signal 
+##ICPsignal and SD are the dataframe containing the signal and SD of the signal 
 ##col_range is the column range for line index replacement,
 ##replace_type is the replacement type (mean or previous value)
-replaceValues <- function(ICPvalue, RSD, colRange, replaceType, lineIndex, sourceLineIndex){
+replaceValues <- function(ICPvalue, SD, colRange, replaceType, lineIndex, sourceLineIndex){
   #This condition is useful when the signal hasn't been extracted and the function is called -> returns null
-  if(is.null(ICPvalue)| is.null(RSD)){return(NULL)}
-  #This condition is useful in shiny tables to return the table signal and RSD when no replacements are required
-  if (replaceType == "none" | is.null(lineIndex) | is.null(colRange)) {return(list(value=ICPvalue,RSD=RSD))}
+  if(is.null(ICPvalue)| is.null(SD)){return(NULL)}
+  #This condition is useful in shiny tables to return the table signal and SD when no replacements are required
+  if (replaceType == "none" | is.null(lineIndex) | is.null(colRange)) {return(list(value=ICPvalue,SD=SD))}
   #Stores the line number of the signal whether it is a dataframe (nrow) or a vector (length)
   if(is.integer(nrow(ICPvalue))){
     lineNb <- nrow(ICPvalue)
@@ -303,24 +292,24 @@ replaceValues <- function(ICPvalue, RSD, colRange, replaceType, lineIndex, sourc
   for (j in colRange){
     #Apply modifications only on lines in the lineIndex
     for (nLine in nLineIndex){
-      #Replaces the values in the signal and RSD matrix based on replacement type
+      #Replaces the values in the signal and SD matrix based on replacement type
       prevLine <- getClosestInIndex(nLine, nSourceLineIndex, "prev")
       prevValue <- ICPvalue[prevLine,j]
-      prevValueRSD <- RSD[prevLine,j]
+      prevValueSD <- SD[prevLine,j]
 
       if (replaceType == "mean"){
         nextLine <- getClosestInIndex(nLine, nSourceLineIndex, "next")
         nextValue <- ICPvalue[nextLine,j]
         ICPvalue[nLine,j] <- mean(c(prevValue,nextValue))
-        RSD[nLine,j] <- calculateRSD(c(prevValue,nextValue))
+        SD[nLine,j] <- sd(c(prevValue,nextValue))
       } 
       else if (replaceType == "prev"){
         ICPvalue[nLine,j] <- prevValue
-        RSD[nLine,j] <- prevValueRSD
+        SD[nLine,j] <- prevValueSD
       }
     }
   }
-  return(list(value=ICPvalue,RSD=RSD))
+  return(list(value=ICPvalue,SD=SD))
 }
 
 ##Function to create the ISTD template based on raw datafile
@@ -349,7 +338,7 @@ createISTDtemplate <- function(dataFileName){
 
 ##Function that takes the raw data and standard file along with some options
 ##and returns the extracted information from these file. Extracted information
-##is CPS, RSD, IS.CPS, IS.RSD, etc...
+##is CPS, SD, IS.CPS, IS.SD, etc...
 extractData <- function(dataFileName, stdFileName){
   
   #header_1 contains the first line of the file
@@ -466,12 +455,12 @@ processData <- function(signal, eFullNames, StdDataframe, drift_ind, levelColumn
   # }
   # 
   # signalDriftCorrectedRatio <- signal[[1]] / driftDataFrame
-  # signalDriftCorrectedRSD <- signal[[2]]
+  # signalDriftCorrectedSD <- signal[[2]]
   # concentration <- t(t(signalDriftCorrectedRatio)*coefVector)
   # concentration[concentration < 0] <- "<blk"
   # 
-  # concentrationRSD <- signalDriftCorrectedRSD
-  # concentrationRSD[concentration < 0] <- "N/A"
+  # concentrationSD <- signalDriftCorrectedSD
+  # concentrationSD[concentration < 0] <- "N/A"
   
-  return(list(concentration,concentrationRSD))
+  return(list(concentration,concentrationSD))
 }

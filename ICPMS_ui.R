@@ -71,6 +71,7 @@ ICPMS_ui <- shinyUI({
                         sidebarLayout(
                           sidebarPanel(
                             shinyjs::useShinyjs(),
+                            checkboxInput("useBlankCorrection", "Check to perform blank correction", value=FALSE),
                             selectInput("blkInteractionMode", "Select a mode:",
                                         c("View" = "view", "Process" = "process")),
                             selectInput("indexBlkchoiceWhat", "Replace what:",
@@ -93,6 +94,7 @@ ICPMS_ui <- shinyUI({
                tabPanel("Calibration verification",
                         sidebarLayout(
                           sidebarPanel(
+                            checkboxInput("forceIntercept", "Force intercept", value = FALSE),
                             checkboxInput("autoAdaptCalibration", "Use min/max standards", value = FALSE),
                             checkboxInput("useWeithedRegression", "Use weighted linear regression", value = FALSE),
                             selectInput("regressionWeight", "Weight:", c("1/SD" = "1/SD", "1/SD^2" = "1/SD^2")),
