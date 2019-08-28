@@ -591,6 +591,7 @@ ICPMS_server <- function(input, output, session) {
   observeEvent(input$setRegressionALL, {
     req(extracted())
     for (i in 1:analyteNumber()) {
+      processParameters$forceIntercept[[i]] <- input$forceIntercept
       processParameters$autoAdaptCalibration[[i]] <- input$autoAdaptCalibration
       processParameters$useWeithedRegression[[i]] <- input$useWeithedRegression
       processParameters$regressionWeight[[i]] <- input$regressionWeight
