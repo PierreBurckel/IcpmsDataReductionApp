@@ -3,8 +3,17 @@ library(stringr)
 
 agilentElementNamePattern <- "[ ]{2}[A-Z]{1}[a-z]*[ ]{2}"
 
-getUncertaintyInterval <- function(value) {
-  return(list(uBound=value[["signal"]] + value[["RSD"]]/100*value[["signal"]], lBound=value[["signal"]] - value[["RSD"]]/100*value[["signal"]]))
+subsetDfList <- function(dfList, rowLogical, columnLogical) {
+  subDfList <- list()
+  for (i in 1:length(dfList)) {
+    subDfList[[i]] <- dfList[[i]][rowLogical, columnLogical]
+    names(subDfList)[i] <- names(dfList)[i]
+  }
+  return(subDfList)
+}
+
+getUncertaintyInterval <- function(signal) {
+  return(list(uBound=signal[["value"]] + signal[["RSD"]]/100*value[["value"]], lBound=signal[["value"]] - signal[["RSD"]]/100*signal[["value"]]))
 }
 
 getModifierName <- function(modifier) {
@@ -17,8 +26,8 @@ getModifiedData <- function(dat, modifiers, selectedModifiers) {
     dat_mod <- dat
     for (s in selectedModifiers) {
       mod <- modifiers[[s]]
-      newValues <- replaceValues(dat[["signal"]], dat[["RSD"]], mod[["elements"]], mod[["method"]], mod[["whatIndex"]], mod[["inIndex"]])
-      dat_mod[["signal"]][mod[["whatIndex"]],] <- newValues[["signal"]][mod[["whatIndex"]],]
+      newValues <- replaceValues(dat[["value"]], dat[["RSD"]], mod[["elements"]], mod[["method"]], mod[["whatIndex"]], mod[["inIndex"]])
+      dat_mod[["value"]][mod[["whatIndex"]],] <- newValues[["value"]][mod[["whatIndex"]],]
       dat_mod[["RSD"]][mod[["whatIndex"]],] <- newValues[["RSD"]][mod[["whatIndex"]],]
     }
     return(dat_mod)
@@ -27,10 +36,10 @@ getModifiedData <- function(dat, modifiers, selectedModifiers) {
 
 getWeights <- function(calibrationData, fn) {
   if (fn == "1/SD") {
-    return(1/(calibrationData[,"RSD"]/100 *calibrationData[,"Signal"]))
+    return(1/(calibrationData[,"RSD"]/100 *calibrationData[,"value"]))
   }
   else if (fn == "1/SD^2") {
-    return(1/(calibrationData[,"RSD"]/100 *calibrationData[,"Signal"])^2)
+    return(1/(calibrationData[,"RSD"]/100 *calibrationData[,"value"])^2)
   }
   else {
     return()
@@ -91,7 +100,7 @@ getCalibrationData <- function(elementFullName, signal, stdIdentificationColumn,
     } 
     else {} 
     
-    eSignal <- signal[[1]][calibrationStdNumIndex, elementFullName]
+    eValue <- signal[[1]][calibrationStdNumIndex, elementFullName]
     eRSD <- signal[[2]][calibrationStdNumIndex, elementFullName]
   }
   else
@@ -99,7 +108,7 @@ getCalibrationData <- function(elementFullName, signal, stdIdentificationColumn,
     return(NA)
   }
   
-  return(cbind(Signal=eSignal, RSD=eRSD, Concentration=as.numeric(stdConcentration)))
+  return(cbind(value=eValue, RSD=eRSD, Concentration=as.numeric(stdConcentration)))
 }
 
 getElementName <- function(elementFullName, pattern) {
@@ -194,29 +203,29 @@ calculateRSD <- function(values){
 
 propagateUncertainty <- function(a, b, operation){
   
-  a_signal = a[[1]]
-  b_signal = b[[1]]
+  a_value = a[[1]]
+  b_value = b[[1]]
   a_RSD = a[[2]]
   b_RSD = b[[2]]
   if (operation == "addition"){
-    signal <- a_signal + b_signal
-    RSD <- sqrt((a_RSD/100*a_signal)^2+(b_RSD/100*b_signal)^2)/signal*100
+    value <- a_value + b_value
+    RSD <- sqrt((a_RSD/100*a_value)^2+(b_RSD/100*b_value)^2)/value*100
   }
   else if (operation == "substraction"){
-    signal <- a_signal - b_signal
-    RSD <- sqrt((a_RSD/100*a_signal)^2+(b_RSD/100*b_signal)^2)/signal*100
+    value <- a_value - b_value
+    RSD <- sqrt((a_RSD/100*a_value)^2+(b_RSD/100*b_value)^2)/value*100
   }
   else if (operation == "multiplication"){
-    signal <- a_signal * b_signal
+    value <- a_value * b_value
     RSD <- sqrt((a_RSD/100)^2+(b_RSD/100)^2)*100
   }
   else if (operation == "division"){
-    signal <- a_signal / b_signal
+    value <- a_value / b_value
     RSD <- sqrt((a_RSD/100)^2+(b_RSD/100)^2)*100
   }
   else {return(NULL)}
   
-  return(list(signal=signal, RSD=RSD))
+  return(list(value=value, RSD=RSD))
 }
 
 ##Function that replaces each value in a text vector by its previous value if the current value is empty (=="")
@@ -259,16 +268,16 @@ removeDuplicateLines <- function(df){
 ##ICPsignal and RSD are the dataframe containing the signal and RSD of the signal 
 ##col_range is the column range for line index replacement,
 ##replace_type is the replacement type (mean or previous value)
-replaceValues <- function(ICPsignal, RSD, colRange, replaceType, lineIndex, sourceLineIndex){
+replaceValues <- function(ICPvalue, RSD, colRange, replaceType, lineIndex, sourceLineIndex){
   #This condition is useful when the signal hasn't been extracted and the function is called -> returns null
-  if(is.null(ICPsignal)| is.null(RSD)){return(NULL)}
+  if(is.null(ICPvalue)| is.null(RSD)){return(NULL)}
   #This condition is useful in shiny tables to return the table signal and RSD when no replacements are required
-  if (replaceType == "none" | is.null(lineIndex) | is.null(colRange)) {return(list(signal=ICPsignal,RSD=RSD))}
+  if (replaceType == "none" | is.null(lineIndex) | is.null(colRange)) {return(list(value=ICPvalue,RSD=RSD))}
   #Stores the line number of the signal whether it is a dataframe (nrow) or a vector (length)
-  if(is.integer(nrow(ICPsignal))){
-    lineNb <- nrow(ICPsignal)
+  if(is.integer(nrow(ICPvalue))){
+    lineNb <- nrow(ICPvalue)
   } else {
-    lineNb <- length(ICPsignal)
+    lineNb <- length(ICPvalue)
   }
   #The function requires a logical index. If the index is non-logical (i.e. numeric) it is converted to a logical index
   if (!is.logical(lineIndex)) {
@@ -296,22 +305,22 @@ replaceValues <- function(ICPsignal, RSD, colRange, replaceType, lineIndex, sour
     for (nLine in nLineIndex){
       #Replaces the values in the signal and RSD matrix based on replacement type
       prevLine <- getClosestInIndex(nLine, nSourceLineIndex, "prev")
-      prevValue <- ICPsignal[prevLine,j]
+      prevValue <- ICPvalue[prevLine,j]
       prevValueRSD <- RSD[prevLine,j]
 
       if (replaceType == "mean"){
         nextLine <- getClosestInIndex(nLine, nSourceLineIndex, "next")
-        nextValue <- ICPsignal[nextLine,j]
-        ICPsignal[nLine,j] <- mean(c(prevValue,nextValue))
+        nextValue <- ICPvalue[nextLine,j]
+        ICPvalue[nLine,j] <- mean(c(prevValue,nextValue))
         RSD[nLine,j] <- calculateRSD(c(prevValue,nextValue))
       } 
       else if (replaceType == "prev"){
-        ICPsignal[nLine,j] <- prevValue
+        ICPvalue[nLine,j] <- prevValue
         RSD[nLine,j] <- prevValueRSD
       }
     }
   }
-  return(list(signal=ICPsignal,RSD=RSD))
+  return(list(value=ICPvalue,RSD=RSD))
 }
 
 ##Function to create the ISTD template based on raw datafile
@@ -369,16 +378,16 @@ extractData <- function(dataFileName, stdFileName){
 }
   
   
-createISTDMatrix <- function(ISTD_file, ISTD_signal){
+createISTDMatrix <- function(ISTD_file, ISTD_value){
   
-  if(is.null(ISTD_file) | is.null(ISTD_signal)){return(1)}
+  if(is.null(ISTD_file) | is.null(ISTD_value)){return(1)}
   
   for (j in 1:nrow(ISTD_file)){
     eISTD <- ISTD_file[j,2]
     if (j == 1){
-      ISTD.matrix <- ISTD_signal[eISTD]
+      ISTD.matrix <- ISTD_value[eISTD]
     } else {
-      ISTD.matrix <- cbind(ISTD.matrix, ISTD_signal[eISTD])
+      ISTD.matrix <- cbind(ISTD.matrix, ISTD_value[eISTD])
     }
   }
   return(ISTD.matrix)
@@ -387,69 +396,82 @@ createISTDMatrix <- function(ISTD_file, ISTD_signal){
 
 processData <- function(signal, eFullNames, StdDataframe, drift_ind, levelColumn, timeColumn, eDriftChoice, calibrationParameters){
   
-  elementNumber <- length(eFullNames)
-  
-  for (i in 1:elementNumber){
-
-    eFullName <- eFullNames[i]
-
-    eCalibrationData <- getCalibrationData(elementFullName = eFullName, signal=signal,
-                                       stdIdentificationColumn=levelColumn, stdDataFrame = StdDataframe)
-
-    eDriftIndex <-  getElementDriftIndex(elementFullName = eFullName, stdDataFrame = StdDataframe, 
-                                        stdIdentificationColumn=levelColumn, driftIndex = drift_ind)
-
-    dtimeColumn <- timeColumn - timeColumn[eDriftIndex][1]
-    dtimeColumn[dtimeColumn < 0] <- 0
-
-    eDriftData <- cbind(Signal=signal[[1]][eDriftIndex,i],dt=dtimeColumn[eDriftIndex])  
-
-    #defines the calibration linear model
-    calibrationModel <- lm(Concentration ~ 0+Signal, data=as.data.frame(eCalibrationData))
-    
-    #Here be drift model creation and signal prediction along the whole sequence for the drift standard
-    #if no drift signal, don't try to create a model for the drift and set drift prediction to NA
-    #else create a model. Predict the drift signal on the whole sequence. Doesn't mean that it is going to be used
-    if (all(is.na(signal[[1]][eDriftIndex,i]))){
-      driftPredict = rep(NA, nrow(signal[[1]]))
-    }
-    else{
-      driftModel <- lm(Signal ~ poly(dt, degree=2, raw=TRUE), data = as.data.frame(eDriftData))
-      driftPredict=predict(driftModel, newdata = data.frame(dt=dtimeColumn))
-    }
-
-    #Here we fill a dataframe and a vector containing the predicted drift signals and calibration coefficient respectively for all elements
-    #If i == 1, this is the first element and we need to initialize the variables
-    #Else we can directly fill the dataframe and vector using dataframe[i] or vector[i]
-    if (i == 1){
-      driftDataFrame <- data.frame(driftPredict)
-      coefVector <- summary(calibrationModel)$coefficients[1,1]
-    }
-    else{
-      driftDataFrame[i] <- driftPredict
-      coefVector[i] <- summary(calibrationModel)$coefficients[1,1]
-    }
-    
-    #If we chose to correct for the drift (eDriftChoice[i] == TRUE)
-    #Divide the drift dataframe at the ith position by the intersect at dt = 0 of the drift model
-    #We transform the drift dataframe by a drift relative to dt = 0 so that we can apply the drift correction by simple multiplication
-    #Else, if we chose not to correct the drift, we fill the dataframe at the ith position with 1 so that multiplication produces identity
-    if (eDriftChoice[i]){
-      driftDataFrame[i] <- driftDataFrame[i] / summary(driftModel)$coefficients[1,1]
-      driftDataFrame[is.na(driftDataFrame[,i]), i] <- 1
-    } 
-    else {
-      driftDataFrame[i] <- rep(1, nrow(signal[[1]]))
-    }
-  }
-  
-  signalDriftCorrectedRatio <- signal[[1]] / driftDataFrame
-  signalDriftCorrectedRSD <- signal[[2]]
-  concentration <- t(t(signalDriftCorrectedRatio)*coefVector)
-  concentration[concentration < 0] <- "<blk"
-  
-  concentrationRSD <- signalDriftCorrectedRSD
-  concentrationRSD[concentration < 0] <- "N/A"
+  # print("in")
+  # elementNumber <- length(eFullNames)
+  # 
+  # for (i in 1:elementNumber){
+  #   print(i)
+  #   print("1")
+  #   eFullName <- eFullNames[i]
+  #   print(eFullName)
+  #   print("2")
+  #   eCalibrationData <- getCalibrationData(elementFullName = eFullName, signal=signal,
+  #                                      stdIdentificationColumn=levelColumn, stdDataFrame = StdDataframe)
+  #   View(eCalibrationData)
+  #   print("3")
+  #   eDriftIndex <-  getElementDriftIndex(elementFullName = eFullName, stdDataFrame = StdDataframe, 
+  #                                       stdIdentificationColumn=levelColumn, driftIndex = drift_ind)
+  #   View(eDriftIndex)
+  #   print("4")
+  #   dtimeColumn <- timeColumn - timeColumn[eDriftIndex][1]
+  #   dtimeColumn[dtimeColumn < 0] <- 0
+  #   print(dtimeColumn)
+  #   print("5")
+  #   eDriftData <- cbind(Signal=signal[[1]][eDriftIndex,i],dt=dtimeColumn[eDriftIndex]) 
+  #   print(eDriftData)
+  #   print("6")
+  #   #defines the calibration linear model
+  #   calibrationModel <- lm(Concentration ~ 0+Signal, data=as.data.frame(eCalibrationData))
+  #   print(calibrationModel)
+  #   print("7")
+  #   #Here be drift model creation and signal prediction along the whole sequence for the drift standard
+  #   #if no drift signal, don't try to create a model for the drift and set drift prediction to NA
+  #   #else create a model. Predict the drift signal on the whole sequence. Doesn't mean that it is going to be used
+  #   if (all(is.na(signal[[1]][eDriftIndex,i]))){
+  #     print(10)
+  #     driftPredict = rep(NA, nrow(signal[[1]]))
+  #   }
+  #   else{
+  #     print(11)
+  #     driftModel <- lm(Signal ~ poly(dt, degree=2, raw=TRUE), data = as.data.frame(eDriftData))
+  #     driftPredict=predict(driftModel, newdata = data.frame(dt=dtimeColumn))
+  #   }
+  #   print("8")
+  #   #Here we fill a dataframe and a vector containing the predicted drift signals and calibration coefficient respectively for all elements
+  #   #If i == 1, this is the first element and we need to initialize the variables
+  #   #Else we can directly fill the dataframe and vector using dataframe[i] or vector[i]
+  #   if (i == 1){
+  #     driftDataFrame <- data.frame(driftPredict)
+  #     View(driftDataFrame)
+  #     print(summary(calibrationModel)$coefficients)
+  #     coefVector <- summary(calibrationModel)$coefficients[1,1]
+  #   }
+  #   else{
+  #     driftDataFrame[i] <- driftPredict
+  #     coefVector[i] <- summary(calibrationModel)$coefficients[1,1]
+  #   }
+  #   print("9")
+  #   #If we chose to correct for the drift (eDriftChoice[i] == TRUE)
+  #   #Divide the drift dataframe at the ith position by the intersect at dt = 0 of the drift model
+  #   #We transform the drift dataframe by a drift relative to dt = 0 so that we can apply the drift correction by simple multiplication
+  #   #Else, if we chose not to correct the drift, we fill the dataframe at the ith position with 1 so that multiplication produces identity
+  #   if (eDriftChoice[i]){
+  #     driftDataFrame[i] <- driftDataFrame[i] / summary(driftModel)$coefficients[1,1]
+  #     driftDataFrame[is.na(driftDataFrame[,i]), i] <- 1
+  #   } 
+  #   else {
+  #     driftDataFrame[i] <- rep(1, nrow(signal[[1]]))
+  #   }
+  #   print("10")
+  # }
+  # 
+  # signalDriftCorrectedRatio <- signal[[1]] / driftDataFrame
+  # signalDriftCorrectedRSD <- signal[[2]]
+  # concentration <- t(t(signalDriftCorrectedRatio)*coefVector)
+  # concentration[concentration < 0] <- "<blk"
+  # 
+  # concentrationRSD <- signalDriftCorrectedRSD
+  # concentrationRSD[concentration < 0] <- "N/A"
   
   return(list(concentration,concentrationRSD))
 }

@@ -1,10 +1,10 @@
 library(DT)
 library(stringr)
 library(plotly)
+library(MASS)
 source('C:/Users/pierr/Desktop/IPGP/R/ICP-MS_process/ICPMS_functions.R')
 
 ICPMS_server <- function(input, output, session) {
-  
   dataList <- list()
   
   uploadedFile <- reactiveValues()
@@ -25,41 +25,41 @@ ICPMS_server <- function(input, output, session) {
   #remplacer par ISTDReady et mettre une fonction isValidISTD pour check validité
   isValidISTD <- reactive({
     extracted()
-    return(!is.null(index$ISTD[["signal"]]) & !is.null(dataList[["ISTD"]]))
+    return(!is.null(index$ISTD[["value"]]) & !is.null(dataList[["ISTD"]]))
   })
   
   analyte <- reactive({
     req(extracted())
     rawData <- dataList[["raw"]]
-    return(list(signal=rawData[,index$analyte[["signal"]], drop=FALSE], RSD=rawData[,index$analyte[["RSD"]], drop=FALSE]))
+    return(list(value=rawData[,index$analyte[["value"]], drop=FALSE], RSD=rawData[,index$analyte[["RSD"]], drop=FALSE]))
   })
   
   ISTD <- reactive({
     req(extracted())
     rawData <- dataList[["raw"]]
-    return(list(signal=rawData[,index$ISTD[["signal"]], drop=FALSE], RSD=rawData[,index$ISTD[["RSD"]], drop=FALSE]))
+    return(list(value=rawData[,index$ISTD[["value"]], drop=FALSE], RSD=rawData[,index$ISTD[["RSD"]], drop=FALSE]))
   })
   
   analyteNames <- reactive({
     req(extracted())
     header1 <- dataList[["header_1"]]
-    return(header1[index$analyte[["signal"]]])
+    return(header1[index$analyte[["value"]]])
   })
   
   analyteNumber <- reactive({
     req(extracted())
-    return(length(which(index$analyte[["signal"]])))
+    return(length(which(index$analyte[["value"]])))
   })
   
   ISTDNames <- reactive({
     req(extracted())
     header1 <- dataList[["header_1"]]
-    return(header1[index$ISTD[["signal"]]])
+    return(header1[index$ISTD[["value"]]])
   })
   
   ISTDNumber <- reactive({
     req(extracted())
-    return(length(which(index$ISTD[["signal"]])))
+    return(length(which(index$ISTD[["value"]])))
   })
   
   activeISTDmodifier <- reactive({
@@ -92,13 +92,13 @@ ICPMS_server <- function(input, output, session) {
       return(matrix(1,sampleNumber,analyteNumber()))
     }
     else{
-      return(createISTDMatrix(dataList[["ISTD"]], dataModified$ISTD()[["signal"]]))
+      return(createISTDMatrix(dataList[["ISTD"]], dataModified$ISTD()[["value"]]))
     }
   })
   
   dataModified$ratio <- reactive({
     req(extracted())
-    return(list(signal=analyte()[["signal"]]/ISTDmatrix(), RSD=analyte()[["RSD"]]))
+    return(list(value=analyte()[["value"]]/ISTDmatrix(), RSD=analyte()[["RSD"]]))
   })
   
   dataModified$blankRatio <- reactive({
@@ -111,21 +111,25 @@ ICPMS_server <- function(input, output, session) {
     return(propagateUncertainty(a=dataModified$ratio(), b=dataModified$blankRatio(), operation="substraction"))
   })
   
+  dataModified$standardData <- reactive({
+    req(dataModified$blankCorrectedRatio())
+    signal <- dataModified$blankCorrectedRatio()
+    standardData <- list()
+    for (i in 1:length(signal[["value"]])) {
+      calibrationData <- getCalibrationData(elementFullName = names(signal[["value"]])[i], signal=signal,
+                                            stdIdentificationColumn=levelColumn, stdDataFrame = dataList[["std"]])
+      standardData[[names(signal[["value"]])[i]]] <- calibrationData
+    }
+    return(standardData)
+  })
+  
   dataModified$concentration <- reactive({
     req(extracted())
     req(dataModified$blankCorrectedRatio())
-    processData(dataModified$blankCorrectedRatio(), analyteNames(), dataList[["std"]], index$drift,
-                                             levelColumn, timeColumn, processParameters$driftCorrectedElement, processParameters$calibration)
+    print(1)
+    return(processData(dataModified$blankCorrectedRatio(), analyteNames(), dataList[["std"]], index$drift,
+                                             levelColumn, timeColumn, processParameters$driftCorrectedElement, processParameters$calibration))
   })
-
-  yplus <- reactive({
-    req(extracted())
-    (dataModified$blankCorrectedRatio()[[1]] + dataModified$blankCorrectedRatio()[[2]]/100*dataModified$blankCorrectedRatio()[[1]])[index$drift,input$e_ind_drift]})
-  yminus <- reactive({
-    req(extracted())
-    (dataModified$blankCorrectedRatio()[[1]] - dataModified$blankCorrectedRatio()[[2]]/100*dataModified$blankCorrectedRatio()[[1]])[index$drift,input$e_ind_drift]})
-  
-  
   ###########################File import and viewing###########################
   
   #Text display of imported file
@@ -187,11 +191,11 @@ ICPMS_server <- function(input, output, session) {
     
     dataList <<-  extractData(raw_file$datapath, std_file$datapath)
     
-    index$analyte <- list(signal=dataList[["header_2"]] == "CPS" & !grepl("ISTD", dataList[["header_1"]]), 
+    index$analyte <- list(value=dataList[["header_2"]] == "CPS" & !grepl("ISTD", dataList[["header_1"]]), 
                       RSD=dataList[["header_2"]] == "CPS RSD" & !grepl("ISTD", dataList[["header_1"]]))
-    index$ISTD <- list(signal=dataList[["header_2"]] == "CPS" & grepl("ISTD", dataList[["header_1"]]),
+    index$ISTD <- list(value=dataList[["header_2"]] == "CPS" & grepl("ISTD", dataList[["header_1"]]),
                          RSD=dataList[["header_2"]] == "CPS RSD" & grepl("ISTD", dataList[["header_1"]]))
-    index$numericalColumns <- min(which(index$analyte[["signal"]])):length(dataList[["raw"]])
+    index$numericalColumns <- min(which(index$analyte[["value"]])):length(dataList[["raw"]])
     
     dataList[["raw"]][,index$numericalColumns] <<- sapply(dataList[["raw"]][,index$numericalColumns], as.numeric)
     
@@ -213,9 +217,23 @@ ICPMS_server <- function(input, output, session) {
       dataList[["ISTD"]]  <<- read.table(ISTD_file$datapath, header = TRUE, sep=';', stringsAsFactors=FALSE)
     }
     
+    #Initialisation of some variables
     index$custom[["All"]] <- which(rep(x= TRUE, sampleNumber))
-    ##Creates a boolean vector containing the decision of whether or not to correct signal drift for each element
-    processParameters$driftCorrectedElement <- rep(FALSE,analyteNumber())
+    
+    processParameters$driftCorrectedElement <- rep(FALSE, analyteNumber())
+    names(processParameters$driftCorrectedElement) <- analyteNames()
+    
+    processParameters$autoAdaptCalibration <- rep(FALSE, analyteNumber())
+    names(processParameters$autoAdaptCalibration) <- analyteNames()
+    
+    processParameters$forceIntercept <- rep(FALSE, analyteNumber())
+    names(processParameters$forceIntercept) <- analyteNames()
+    
+    processParameters$useWeithedRegression  <- rep(FALSE, analyteNumber())
+    names(processParameters$useWeithedRegression) <- analyteNames()
+    
+    processParameters$regressionWeight <- rep("1/SD", analyteNumber())
+    names(processParameters$regressionWeight) <- analyteNames()
   })
 
   #Here we render warnings texts to help the user
@@ -229,7 +247,7 @@ ICPMS_server <- function(input, output, session) {
   ##################################Index creation######################
   output$indexTable <- DT::renderDT({
 
-    if (is.null(analyte()[["signal"]])){return()}
+    if (is.null(analyte()[["value"]])){return()}
     
     searchWhere = input$searchIndexwhere
     firstColumnName = ""
@@ -257,15 +275,15 @@ ICPMS_server <- function(input, output, session) {
       index$temp <- grep(searchWhat, headerRows)
     }
     
-    if (displayWhat == "ISTD" & !is.null(ISTD()[["signal"]])){
-      indexTable <- cbind(headerRows[index$temp], ISTD()[["signal"]][index$temp,])
+    if (displayWhat == "ISTD" & !is.null(ISTD()[["value"]])){
+      indexTable <- cbind(headerRows[index$temp], ISTD()[["value"]][index$temp,])
     }
-    else if (displayWhat == "analytes" & !is.null(analyte()[["signal"]])){
-      indexTable <- cbind(headerRows[index$temp], analyte()[["signal"]][index$temp,])
+    else if (displayWhat == "analytes" & !is.null(analyte()[["value"]])){
+      indexTable <- cbind(headerRows[index$temp], analyte()[["value"]][index$temp,])
     }
     else {return()}
     
-    colnames(indexTable) <- c(firstColumnName, colnames(ISTD()[["signal"]])[1:length(ISTD()[["signal"]])])
+    colnames(indexTable) <- c(firstColumnName, colnames(ISTD()[["value"]])[1:length(ISTD()[["value"]])])
     
     indexTable
     
@@ -324,11 +342,11 @@ ICPMS_server <- function(input, output, session) {
     lc <- input$ISTDcolSlider[1]
     uc <- input$ISTDcolSlider[2]
     
-    df_view <- cbind(nameColumn, ISTDviewTable[["signal"]])
+    df_view <- cbind(nameColumn, ISTDviewTable[["value"]])
     names(df_view) <- c("Sample Name", names(df_view)[2:length(df_view)])
     df_view <- format(df_view, digits = 3, scientific=T)
     
-    df_process <- cbind(nameColumn, ISTDprocessTable[["signal"]])
+    df_process <- cbind(nameColumn, ISTDprocessTable[["value"]])
     names(df_process) <- c("Sample Name", names(df_process)[2:length(df_process)])
     df_process <- format(df_process, digits = 3, scientific=T)
     
@@ -394,20 +412,6 @@ ICPMS_server <- function(input, output, session) {
     #selected takes a character vector of IDs
     updateCheckboxGroupInput(session, "ISTDmodifiers", label = "Modifiers:", choices = modID, selected = currentlySelected)
   })
-  #browser()
-  #Updates the slider for row and col selections when modifications are made in ISTD, i.e. when the extract button is hit
-  # observeEvent(extracted, {
-  #   if (!isValidISTD()){return()}
-  #   updateSliderInput(session,"ISTDcolSlider", max=length(ISTD[["signal"]]), value = c(1,length(ISTD()[["signal"]])))
-  #   if (is.null(analyte()[["signal"]])){return()}
-  #   updateSliderInput(session,"blkRowSlider", max=sampleNumber, value = c(1,sampleNumber))
-  #   updateSliderInput(session,"blkColSlider", max=analyteNumber(), value = c(1,analyteNumber()))
-  #   if (is.null(analyteNames())){return()}
-  #   updateSelectInput(session,"calibrationElement",choices=analyteNames(),selected=analyteNames()[1])
-  #   print("in update")
-  #   print(analyteNames())
-  #   updateSelectInput(session,"e_drift",choices=analyteNames(),selected=analyteNames()[1])
-  # }, ignoreInit = TRUE)
   
   observe({
     updateSelectInput(session,"calibrationElement",choices=analyteNames(),selected=analyteNames()[1])
@@ -430,7 +434,7 @@ ICPMS_server <- function(input, output, session) {
   #browser()
   #Render ISTD table if all conditions are met
   output$blkTable <- DT::renderDT({
-    if (is.null(analyte()[["signal"]])){return()}
+    if (is.null(analyte()[["value"]])){return()}
     
     blkMode <- input$blkInteractionMode
     blankViewTable <- dataModified$blankRatio()
@@ -442,11 +446,11 @@ ICPMS_server <- function(input, output, session) {
     lc <- input$blankColSlider[1]
     uc <- input$blankColSlider[2]
     
-    df_view <- cbind(nameColumn, blankViewTable[["signal"]])
+    df_view <- cbind(nameColumn, blankViewTable[["value"]])
     names(df_view) <- c("Sample Name", names(df_view)[2:length(df_view)])
     df_view <- format(df_view, digits = 3, scientific=T)
     
-    df_process <- cbind(nameColumn, blankProcessTable[["signal"]])
+    df_process <- cbind(nameColumn, blankProcessTable[["value"]])
     names(df_process) <- c("Sample Name", names(df_process)[2:length(df_process)])
     df_process <- format(df_process, digits = 3, scientific=T)
 
@@ -535,22 +539,58 @@ ICPMS_server <- function(input, output, session) {
   })
   
   ################################## Calibration verification ######################
+  observeEvent(input$setRegressionALL, {
+    req(extracted())
+    for (i in 1:analyteNumber()) {
+      processParameters$autoAdaptCalibration[[i]] <- input$autoAdaptCalibration
+      processParameters$useWeithedRegression[[i]] <- input$useWeithedRegression
+      processParameters$regressionWeight[[i]] <- input$regressionWeight
+    }
+  }, ignoreInit = TRUE)
+  
+  observeEvent(input$autoAdaptCalibration, {
+    req(extracted())
+    processParameters$autoAdaptCalibration[[input$calibrationElement]] <- input$autoAdaptCalibration
+  }, ignoreInit = TRUE)
+  
+  observeEvent(input$useWeithedRegression, {
+    req(extracted())
+    processParameters$useWeithedRegression[[input$calibrationElement]] <- input$useWeithedRegression
+  }, ignoreInit = TRUE)
+  
+  observeEvent(input$regressionWeight, {
+    req(extracted())
+    processParameters$regressionWeight[[input$calibrationElement]] <- input$regressionWeight
+  }, ignoreInit = TRUE)
+
+  observeEvent(input$calibrationElement, {
+    req(extracted())
+    if (input$autoAdaptCalibration != processParameters$autoAdaptCalibration[[input$calibrationElement]]) {
+      updateCheckboxInput(session, "autoAdaptCalibration", label = "Use min/max standards", value = processParameters$autoAdaptCalibration[[input$calibrationElement]])
+    }
+    if (input$useWeithedRegression != processParameters$useWeithedRegression[[input$calibrationElement]]) {
+      updateCheckboxInput(session, "useWeithedRegression", label = "Use weighted linear regression", value = processParameters$useWeithedRegression[[input$calibrationElement]])
+    }
+    if (input$regressionWeight != processParameters$regressionWeight[[input$calibrationElement]]) {
+      updateCheckboxInput(session, "regressionWeight", label = "Weight:", value = processParameters$regressionWeight[[input$calibrationElement]])
+    }
+  }, ignoreInit = TRUE)
   
   output$calibrationPlot <- renderPlotly({
-    if (is.null(dataMod[["ratio_cor_b"]]()[[1]]) | input$calibrationElement ==""){return()}
+    if (is.null(dataModified$standardData())){return()}
+
+    calibrationData <- dataModified$standardData()[[input$calibrationElement]]
     
-    eFullName <- input$calibrationElement
-    
-    calibrationData <- getCalibrationData(elementFullName = eFullName, signal=dataMod[["ratio_cor_b"]](),
-                       stdIdentificationColumn=levelColumn, stdDataFrame = dataList[["std"]])
+    print(calibrationData)
     
     if (input$useWeithedRegression == TRUE) {
       calibrationWeights <- getWeights(calibrationData = calibrationData, fn = input$regressionWeight)
-      calibrationModel <- lm(Signal ~ 0+Concentration, data=as.data.frame(calibrationData),
+      calibrationModel <- lm(value ~ 0+Concentration, data=as.data.frame(calibrationData),
                              weights = calibrationWeights)
-
-    } else{
-      calibrationModel <- lm(Signal ~ 0+Concentration, data=as.data.frame(calibrationData))
+    
+    } 
+    else{
+      calibrationModel <- lm(value ~ 0+Concentration, data=as.data.frame(calibrationData))
     }
     
     
@@ -558,20 +598,25 @@ ICPMS_server <- function(input, output, session) {
     
     calibrationPredict = summary(calibrationModel)$coefficients[1,1]*concentrationInterval
     
-    if (input$useWeithedRegression == TRUE) {
-      signalResiduals <- ((calibrationData[,"Signal"] - summary(calibrationModel)$coefficients[1,1]*calibrationData[,"Concentration"]) * calibrationWeights)
-
-    } else{
-      signalResiduals <- ((calibrationData[,"Signal"] - summary(calibrationModel)$coefficients[1,1]*calibrationData[,"Concentration"]))
-    }
+    signalResiduals <- studres(calibrationModel)
+    print("yo:")
+    print(signalResiduals)
+    print("yo:")
+    
+    # if (input$useWeithedRegression == TRUE) {
+    #   signalResiduals <- ((calibrationData[,"value"] - summary(calibrationModel)$coefficients[1,1]*calibrationData[,"Concentration"]) * calibrationWeights)
+    # 
+    # } else{
+    #   signalResiduals <- ((calibrationData[,"value"] - summary(calibrationModel)$coefficients[1,1]*calibrationData[,"Concentration"]))
+    # }
     
     calibrationPlot <- plot_ly()
     calibrationPlot <- add_trace(calibrationPlot, x=concentrationInterval, y=calibrationPredict, type = 'scatter', mode = 'lines')
-    calibrationPlot <- add_trace(calibrationPlot, x=calibrationData[,"Concentration"], y=calibrationData[,"Signal"], type = 'scatter', mode = 'markers') 
+    calibrationPlot <- add_trace(calibrationPlot, x=calibrationData[,"Concentration"], y=calibrationData[,"value"], type = 'scatter', mode = 'markers')
     
     residualPlot <- plot_ly()
     residualPlot <- add_trace(residualPlot, x=calibrationData[,"Concentration"], y=signalResiduals, type = 'scatter', mode = 'markers')
-    
+
     subplot(calibrationPlot, residualPlot, nrows = 2)
 
   })
@@ -636,14 +681,10 @@ ICPMS_server <- function(input, output, session) {
       lines(x=timeInterval, y=driftPredict, col="red")
     }
     
-    #a voir si marche. Peut être que driftData ne contiendra plus signal et RSD nécessaure à getUncertaintyInterval...
-    logicalDriftIndex <- convertToLogical(index$drift, sampleNumber)
-    logicalSelectedElement <- convertToLogical(input$e_ind_drift, analyteNumber())
-    
-    driftData <- lapply(dataModified$blankCorrectedRatio(), subset, logicalDriftIndex, logicalSelectedElement)
+    driftData <- subsetDfList(dataModified$blankCorrectedRatio(),index$drift, input$e_ind_drift)
     uncertainty <- getUncertaintyInterval(driftData)
-
-    arrows(dtimeColumn[index$drift], as.matrix(uncertainty[["lBound"]]), dtimeColumn[index$drift], as.matrix(uncertainty[["uBound"]]), length=0.05, angle=90, code=3)
+    
+    suppressWarnings(arrows(dtimeColumn[index$drift], as.matrix(uncertainty[["lBound"]]), dtimeColumn[index$drift], as.matrix(uncertainty[["uBound"]]), length=0.05, angle=90, code=3))
   })
   
   observeEvent(input$setDriftCorrection, {
@@ -653,14 +694,11 @@ ICPMS_server <- function(input, output, session) {
   })
 
   ####################Process
-  # observeEvent(input$process, {
-  #   if (is.null(processParameters$driftCorrectedElement)){return()}
-  #   dataModified$concentration() <- processData(dataModified$blankCorrectedRatio(), analyteNames(), dataList[["std"]], index$drift,levelColumn, timeColumn, processParameters$driftCorrectedElement, processParameters$calibration)
-  # })
   
   output$conc <- renderTable({
     if (is.null(dataModified$concentration())){return()}
-    
+    print(1)
+    print(dataModified$concentration())
     displayWhat = strtoi(input$viewConcentrationSwitch)
     displayIndex = input$viewConcentrationIndex
     
@@ -669,7 +707,7 @@ ICPMS_server <- function(input, output, session) {
       displayMatrix <- mergeMatrixes(matrix1 = dataModified$concentration()[[1]], matrix2 = dataModified$concentration()[[2]], name1=NULL, name2="RSD (%)")
     }
     else {}
-    
+    print(2)
     cbind(nameColumn, displayMatrix)[index$custom[[displayIndex]],]
   })
   
