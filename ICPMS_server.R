@@ -133,7 +133,6 @@ ICPMS_server <- function(input, output, session) {
   })
 
   dataModified$calibrationModels <- reactive({
-    
     req(dataModified$standardData())
     fi <- processParameters$forceIntercept
     wr <- processParameters$useWeithedRegression
