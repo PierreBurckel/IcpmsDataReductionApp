@@ -5,6 +5,7 @@ library(MASS)
 source('C:/Users/pierr/Desktop/IPGP/R/ICP-MS_process/ICPMS_functions.R')
 
 ICPMS_server <- function(input, output, session) {
+  
   dataList <- list()
   blankList <- list()
 
@@ -134,35 +135,11 @@ ICPMS_server <- function(input, output, session) {
 
   dataModified$calibrationModels <- reactive({
     req(dataModified$standardData())
-    fi <- processParameters$forceIntercept
-    wr <- processParameters$useWeithedRegression
-    w <- processParameters$regressionWeight
     calibrationModels <- list()
     for (i in seq(analyteNumber())) {
       element <- analyteNames()[i]
       calibrationData <- dataModified$standardData()[[element]]
-      if (fi[[element]] == TRUE) {
-        intercept <- calibrationData[1,"value"]
-        if (wr[[element]] == TRUE) {
-          calibrationWeights <- getWeights(calibrationData = calibrationData, fn = w[[element]])
-          calibrationModel <- lm(I(value-intercept) ~ 0+ concentration, data=as.data.frame(calibrationData),
-                                 weights = calibrationWeights)
-        }
-        if (wr[[element]] == FALSE) {
-          calibrationModel <- lm(I(value-intercept) ~ 0+ concentration, data=as.data.frame(calibrationData))
-        }
-      }
-      if (fi[[element]] == FALSE) {
-        if (wr[[element]] == TRUE) {
-          calibrationWeights <- getWeights(calibrationData = calibrationData, fn = w[[element]])
-          calibrationModel <- lm(value ~ concentration, data=as.data.frame(calibrationData),
-                                 weights = calibrationWeights)
-        }
-        if (wr[[element]] == FALSE) {
-          calibrationModel <- lm(value ~ concentration, data=as.data.frame(calibrationData))
-        }
-      }
-      calibrationModels[[element]] <- calibrationModel
+      calibrationModels[[element]] <- getCalibrationModel(element, processParameters, calibrationData)
     }
     return(calibrationModels)
   })

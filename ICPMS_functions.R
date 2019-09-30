@@ -3,6 +3,36 @@ library(stringr)
 
 agilentElementNamePattern <- "[ ]{2}[A-Z]{1}[a-z]*[ ]{2}"
 
+getCalibrationModel <- function(element, processParameters, calibrationData) {
+  fi <- processParameters$forceIntercept
+  wr <- processParameters$useWeithedRegression
+  w <- processParameters$regressionWeight
+  
+  if (fi[[element]] == TRUE) {
+    intercept <- calibrationData[1,"value"]
+    if (wr[[element]] == TRUE) {
+      calibrationWeights <- getWeights(calibrationData = calibrationData, fn = w[[element]])
+      calibrationModel <- lm(I(value-intercept) ~ 0+ concentration, data=as.data.frame(calibrationData),
+                             weights = calibrationWeights)
+    }
+    if (wr[[element]] == FALSE) {
+      calibrationModel <- lm(I(value-intercept) ~ 0+ concentration, data=as.data.frame(calibrationData))
+    }
+  }
+  if (fi[[element]] == FALSE) {
+    if (wr[[element]] == TRUE) {
+      calibrationWeights <- getWeights(calibrationData = calibrationData, fn = w[[element]])
+      calibrationModel <- lm(value ~ concentration, data=as.data.frame(calibrationData),
+                             weights = calibrationWeights)
+    }
+    if (wr[[element]] == FALSE) {
+      calibrationModel <- lm(value ~ concentration, data=as.data.frame(calibrationData))
+    }
+  }
+  
+  return(calibrationModel)
+}
+
 subsetDfList <- function(dfList, rowLogical, columnLogical) {
   subDfList <- list()
   for (i in 1:length(dfList)) {
