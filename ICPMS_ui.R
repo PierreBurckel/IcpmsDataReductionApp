@@ -114,11 +114,12 @@ ICPMS_ui <- shinyUI({
                             actionButton("setAsDriftIndex", "Set drift index"),
                             selectInput("e_drift", "Choose element:", "", selected = ""),
                             numericInput("e_ind_drift", "Element number", 1),
+                            selectInput("driftModelSelection", "Choose regression:", c("None" = "None", "Linear" = "Linear", "Quadratic" = "Quadratic"), selected = "None"),
                             actionButton("setDriftCorrection", "Set ISTD correction"),
                             textOutput("warningDrifr")),
                           mainPanel(
                             tableOutput("smpBlkCorTable"),
-                            plotOutput("driftPlot")
+                            plotlyOutput("driftPlot")
                           )
                         )
                ),

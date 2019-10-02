@@ -12,11 +12,11 @@ getCalibrationModel <- function(element, processParameters, calibrationData) {
     intercept <- calibrationData[1,"value"]
     if (wr[[element]] == TRUE) {
       calibrationWeights <- getWeights(calibrationData = calibrationData, fn = w[[element]])
-      calibrationModel <- lm(I(value-intercept) ~ 0+ concentration, data=as.data.frame(calibrationData),
+      calibrationModel <- lm(I(value-intercept) ~ 0 + concentration, data=as.data.frame(calibrationData),
                              weights = calibrationWeights)
     }
     if (wr[[element]] == FALSE) {
-      calibrationModel <- lm(I(value-intercept) ~ 0+ concentration, data=as.data.frame(calibrationData))
+      calibrationModel <- lm(I(value-intercept) ~ 0 + concentration,data=as.data.frame(calibrationData))
     }
   }
   if (fi[[element]] == FALSE) {
@@ -70,6 +70,9 @@ getWeights <- function(calibrationData, fn) {
   }
   else if (fn == "1/SD^2") {
     return(1/(calibrationData[,"SD"])^2)
+  }
+  else if (fn == "Y") {
+    return(1/(calibrationData[,"signal"]))
   }
   else {
     return()
@@ -397,35 +400,38 @@ extractData <- function(dataFileName, stdFileName){
 }
   
   
-createISTDMatrix <- function(ISTD_file, ISTD_value){
+createISTDMatrix <- function(ISTD_file, ISTDcount){
   
-  if(is.null(ISTD_file) | is.null(ISTD_value)){return(1)}
+  if(is.null(ISTD_file) | is.null(ISTDcount)){return(1)}
   
   for (j in 1:nrow(ISTD_file)){
     eISTD <- ISTD_file[j,2]
     if (j == 1){
-      ISTD.matrix <- ISTD_value[eISTD]
+      ISTDmatrixValue <- ISTDcount[["value"]][eISTD]
+      ISTDmatrixSD <- ISTDcount[["SD"]][eISTD]
     } else {
-      ISTD.matrix <- cbind(ISTD.matrix, ISTD_value[eISTD])
+      ISTDmatrixValue <- cbind(ISTDmatrixValue, ISTDcount[["value"]][eISTD])
+      ISTDmatrixSD <- cbind(ISTDmatrixSD, ISTDcount[["SD"]][eISTD])
     }
   }
-  return(ISTD.matrix)
+  return(list(value=ISTDmatrixValue, SD=ISTDmatrixSD))
 }
 
 
 processData <- function(signal, eFullNames, StdDataframe, drift_ind, levelColumn, timeColumn, eDriftChoice, calibrationParameters){
   
-  # print("in")
-  # elementNumber <- length(eFullNames)
-  # 
-  # for (i in 1:elementNumber){
-  #   print(i)
-  #   print("1")
-  #   eFullName <- eFullNames[i]
-  #   print(eFullName)
-  #   print("2")
-  #   eCalibrationData <- getCalibrationData(elementFullName = eFullName, signal=signal,
-  #                                      stdIdentificationColumn=levelColumn, stdDataFrame = StdDataframe)
+  print("in")
+  elementNumber <- length(eFullNames)
+   
+  for (i in 1:elementNumber){
+     print(i)
+     print("1")
+     eFullName <- eFullNames[i]
+     print(eFullName)
+     print("2")
+     #Je peux direct passer la liste des calib
+     eCalibrationData <- getCalibrationData(elementFullName = eFullName, signal=signal,
+                                        stdIdentificationColumn=levelColumn, stdDataFrame = StdDataframe)
   #   View(eCalibrationData)
   #   print("3")
   #   eDriftIndex <-  getElementDriftIndex(elementFullName = eFullName, stdDataFrame = StdDataframe, 
@@ -482,7 +488,7 @@ processData <- function(signal, eFullNames, StdDataframe, drift_ind, levelColumn
   #     driftDataFrame[i] <- rep(1, nrow(signal[[1]]))
   #   }
   #   print("10")
-  # }
+   }
   # 
   # signalDriftCorrectedRatio <- signal[[1]] / driftDataFrame
   # signalDriftCorrectedSD <- signal[[2]]
@@ -491,6 +497,8 @@ processData <- function(signal, eFullNames, StdDataframe, drift_ind, levelColumn
   # 
   # concentrationSD <- signalDriftCorrectedSD
   # concentrationSD[concentration < 0] <- "N/A"
+  value = 1
+  SD = 1
   
-  return(list(concentration,concentrationSD))
+  return(list(value,SD))
 }

@@ -1,6 +1,8 @@
 library(DT)
 library(stringr)
 library(plotly)
+library(chemCal)
+library(propagate)
 library(MASS)
 source('C:/Users/pierr/Desktop/IPGP/R/ICP-MS_process/ICPMS_functions.R')
 
@@ -13,7 +15,7 @@ ICPMS_server <- function(input, output, session) {
   index <- reactiveValues()
   dataModified <- reactiveValues()
   dataModifiers <- reactiveValues(ISTD=list(), blank=list())
-  processParameters <- reactiveValues(driftCorrectedElement=logical(), calibration=list())
+  processParameters <- reactiveValues(driftCorrectedElement=character(), calibration=list())
   
   ISTDmodNumber <- reactiveVal(0)
   blankModNumber <- reactiveVal(0)
@@ -96,13 +98,13 @@ ICPMS_server <- function(input, output, session) {
       return(matrix(1,sampleNumber,analyteNumber()))
     }
     else{
-      return(createISTDMatrix(dataList[["ISTD"]], dataModified$ISTD()[["value"]]))
+      return(createISTDMatrix(dataList[["ISTD"]], dataModified$ISTD()))
     }
   })
   
   dataModified$ratio <- reactive({
     req(extracted())
-    return(list(value=analyte()[["value"]]/ISTDmatrix(), SD=analyte()[["SD"]]))
+    return(propagateUncertainty(a=analyte(), b=ISTDmatrix(), operation="division"))
   })
   
   dataModified$blankRatio <- reactive({
@@ -119,6 +121,52 @@ ICPMS_server <- function(input, output, session) {
     req(extracted())
     return(propagateUncertainty(a=dataModified$ratio(), b=dataModified$blankRatio(), operation="substraction"))
   })
+  
+  driftData <- reactive({
+    req(index$drift, dataModified$blankCorrectedRatio)
+    return(list(value=dataModified$blankCorrectedRatio()[["value"]][index$drift,],
+                SD=dataModified$blankCorrectedRatio()[["SD"]][index$drift,]))
+  })
+  
+  dataModified$driftModels <- reactive({
+    req(driftData())
+    driftModels <- list()
+    for (i in seq(analyteNumber())) {
+      element <- analyteNames()[i]
+      driftTime <- as.numeric(dtimeColumn[index$drift])
+      driftValues <- driftData()[["value"]][,element]
+
+      if (processParameters$driftCorrectedElement[[element]] == "None") {
+        driftModels[[element]] <- "None"
+      }
+      else if (processParameters$driftCorrectedElement[[element]] == "Linear") {
+        driftModels[[element]] <- lm(driftValues ~ driftTime)
+      }
+      else if (processParameters$driftCorrectedElement[[element]] == "Quadratic") {
+        driftModels[[element]] <- lm(driftValues ~ poly(driftTime, 2, raw = TRUE))
+      }
+    }
+    return(driftModels)
+  })
+  # 
+  # driftMatrix <- reactive({
+  #   req(extracted())
+  #   for (i in seq(analyteNumber())) {
+  #     elementDriftIndex <-  getElementDriftIndex(elementFullName = analyteNames()[i], stdDataFrame = dataList[["std"]], 
+  #                                                stdIdentificationColumn = levelColumn, driftIndex = index$drift)
+  #     calibrationData <- getCalibrationData(elementFullName = analyteNames()[i], signal=signal,
+  #                                           stdIdentificationColumn=levelColumn, stdDataFrame = dataList[["std"]])
+  #     standardData[[analyteNames()[i]]] <- calibrationData
+  #   }
+  #   return(propagateUncertainty(a=dataModified$ratio(), b=dataModified$blankRatio(), operation="substraction"))
+  # })
+  # 
+  # dataModified$driftCorrectedRatio <- reactive({
+  #   req(extracted())
+  #   eDriftIndex <-  getElementDriftIndex(elementFullName = eFullName, stdDataFrame = StdDataframe, 
+  #                                        stdIdentificationColumn=levelColumn, driftIndex = drift_ind)
+  #   return(propagateUncertainty(a=dataModified$ratio(), b=dataModified$blankRatio(), operation="substraction"))
+  # })
 
   dataModified$standardData <- reactive({
     req(dataModified$blankCorrectedRatio())
@@ -144,12 +192,12 @@ ICPMS_server <- function(input, output, session) {
     return(calibrationModels)
   })
 
-  dataModified$concentration <- reactive({
-    req(extracted())
-    req(dataModified$blankCorrectedRatio())
-    return(processData(dataModified$blankCorrectedRatio(), analyteNames(), dataList[["std"]], index$drift,
-                                             levelColumn, timeColumn, processParameters$driftCorrectedElement, processParameters$calibration))
-  })
+  # dataModified$concentration <- reactive({
+  #   req(extracted())
+  #   req(dataModified$blankCorrectedRatio())
+  #   return(processData(dataModified$blankCorrectedRatio(), analyteNames(), dataList[["std"]], index$drift,
+  #                                            levelColumn, timeColumn, processParameters$driftCorrectedElement, processParameters$calibration))
+  #})
   ###########################File import and viewing###########################
   
   #Text display of imported file
@@ -245,7 +293,7 @@ ICPMS_server <- function(input, output, session) {
     
     index$custom[["All"]] <- which(rep(x= TRUE, sampleNumber))
     
-    processParameters$driftCorrectedElement <- rep(FALSE, analyteNumber())
+    processParameters$driftCorrectedElement <- rep("None", analyteNumber())
     names(processParameters$driftCorrectedElement) <- analyteNames()
     
     processParameters$forceIntercept <- rep(FALSE, analyteNumber())
@@ -620,15 +668,19 @@ ICPMS_server <- function(input, output, session) {
     concentrationInterval <- c(0, calibrationData[nrow(calibrationData),"concentration"])
     
     if (any(grepl("(Intercept)",rownames(summary(calibrationModel)$coefficients)))) {
-      intercept <- summary(calibrationModel)$coefficients["(Intercept)",1]
-      calibrationPredict = summary(calibrationModel)$coefficients["concentration",1]*concentrationInterval + intercept
+      calibrationPredict = predict(calibrationModel, data.frame(concentration=concentrationInterval))
+      #intercept <- summary(calibrationModel)$coefficients["(Intercept)",1]
+      #calibrationPredict = summary(calibrationModel)$coefficients["concentration",1]*concentrationInterval + intercept
     }
     else {
-      calibrationPredict = summary(calibrationModel)$coefficients["concentration",1]*concentrationInterval
+      intercept <- calibrationData[1, "value"]
+      calibrationPredict = predict(calibrationModel, data.frame(concentration=concentrationInterval)) + intercept
     }
     
+    print(summary(calibrationModel))
     
-    signalResiduals <- studres(calibrationModel)
+    
+    signalResiduals <- rstandard(calibrationModel)
     
     calibrationPlot <- plot_ly()
     calibrationPlot <- add_trace(calibrationPlot, x=concentrationInterval, y=calibrationPredict, type = 'scatter', mode = 'lines')
@@ -680,37 +732,61 @@ ICPMS_server <- function(input, output, session) {
     updateSelectInput(session,"e_drift",selected=analyteNames()[input$e_ind_drift])
   }, ignoreInit = TRUE)
   
-  output$driftPlot <- renderPlot({
-    req(setDrift())
+  output$driftPlot <- renderPlotly({
+    
     req(index$drift)
-    if (is.null(dataModified$blankCorrectedRatio()[[1]]) | is.null(index$drift)){return()}
+    if (is.null(dataModified$blankCorrectedRatio()[["value"]]) | is.null(index$drift)){return()}
+    
+    print(1)
     driftTime = dtimeColumn[index$drift]
-    driftValue = dataModified$blankCorrectedRatio()[[1]][index$drift,input$e_ind_drift]
-    plot(x=driftTime,y=driftValue,xlab = "Time (seconds)", ylab = input$e_drift, pch=21, bg="lightblue")
+    driftValue = driftData()[["value"]][,input$e_ind_drift]
+    driftSD = driftData()[["SD"]][,input$e_ind_drift]
+    print(driftTime)
+    print(2)
 
-    if (processParameters$driftCorrectedElement[input$e_ind_drift] == TRUE){
-      time_0 = driftTime[1]
-      time_f = driftTime[length(driftTime)]
-      timeInterval = seq(from=as.numeric(time_0), to=as.numeric(time_f), by=as.numeric((time_f - time_0)/100))
-      
-      dt = as.numeric(driftTime)
-      driftModel <- lm(driftValue ~ poly(dt, degree=2, raw=TRUE))
-      
-      driftPredict=predict(driftModel, newdata = data.frame(dt = timeInterval))
-      
-      lines(x=timeInterval, y=driftPredict, col="red")
+    driftPlot <- plot_ly()
+    driftPlot <- add_trace(driftPlot, x=driftTime, y=driftValue, type = 'scatter', mode = 'markers', error_y = list(array=driftSD, color = '#000000'))
+    print(dataModified$driftModels())
+    print(input$e_ind_drift)
+    print(dataModified$driftModels()[[input$e_ind_drift]])
+    if (processParameters$driftCorrectedElement[input$e_ind_drift] != "None") {
+      print("a")
+      iTime = driftTime[1]
+      fTime = driftTime[length(driftTime)]
+      timeInterval = seq(from=as.numeric(iTime), to=as.numeric(fTime), by=as.numeric((fTime - iTime)/100))
+      driftModel <- dataModified$driftModels()[[input$e_ind_drift]]
+      print(summary(driftModel)$adj.r.squared)
+      driftPredict=predict(driftModel, newdata = data.frame(driftTime = timeInterval))
+      driftPlot <- add_trace(driftPlot, x=timeInterval, y=driftPredict, type = 'scatter', mode = 'lines')
+      driftPlot <- add_annotations(driftPlot,x= 0,y= 1,xref = "paper",yref = "paper",
+                                   text = paste("Adjusted R squared: ", summary(driftModel)$adj.r.squared), showarrow = F)
     }
     
-    driftData <- subsetDfList(dataModified$blankCorrectedRatio(),index$drift, input$e_ind_drift)
-    uncertainty <- getUncertaintyInterval(driftData)
+    driftPlot
+    #driftPlot <- add_trace(driftPlot, x=driftTime, y=driftValue, type = 'scatter', mode = 'markers', error_y = list(array=driftSD, color = '#000000'))
+    # if (processParameters$driftCorrectedElement[input$e_ind_drift] == TRUE){
+    #   time_0 = driftTime[1]
+    #   time_f = driftTime[length(driftTime)]
+    #   timeInterval = seq(from=as.numeric(time_0), to=as.numeric(time_f), by=as.numeric((time_f - time_0)/100))
+    #   
+    #   dt = as.numeric(driftTime)
+    #   driftModel <- lm(driftValue ~ poly(dt, degree=2, raw=TRUE))
+    #   
+    #   driftPredict=predict(driftModel, newdata = data.frame(dt = timeInterval))
+    #   
+    #   lines(x=timeInterval, y=driftPredict, col="red")
+    # }
     
-    suppressWarnings(arrows(dtimeColumn[index$drift], as.matrix(uncertainty[["lBound"]]), dtimeColumn[index$drift], as.matrix(uncertainty[["uBound"]]), length=0.05, angle=90, code=3))
+    # driftData <- subsetDfList(dataModified$blankCorrectedRatio(),index$drift, input$e_ind_drift)
+    # uncertainty <- getUncertaintyInterval(driftData)
+    # 
+    # suppressWarnings(arrows(dtimeColumn[index$drift], as.matrix(uncertainty[["lBound"]]), dtimeColumn[index$drift], as.matrix(uncertainty[["uBound"]]), length=0.05, angle=90, code=3))
   })
   
   observeEvent(input$setDriftCorrection, {
     req(setDrift())
     if (is.null(processParameters$driftCorrectedElement)){return()}
-    processParameters$driftCorrectedElement[input$e_ind_drift] <- !processParameters$driftCorrectedElement[input$e_ind_drift]
+    processParameters$driftCorrectedElement[input$e_ind_drift] <- input$driftModelSelection
   })
 
   ####################Process
