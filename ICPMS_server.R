@@ -660,32 +660,33 @@ ICPMS_server <- function(input, output, session) {
   
   output$calibrationPlot <- renderPlotly({
     if (is.null(dataModified$standardData())){return()}
-    
+    print("marmadouk!!!!!")
     calibrationData <- dataModified$standardData()[[input$calibrationElement]]
-    
+    print(2)
+    stdNb <- nrow(calibrationData)
+    print(3)
     calibrationModel <- dataModified$calibrationModels()[[input$calibrationElement]]
-    
-    concentrationInterval <- c(0, calibrationData[nrow(calibrationData),"concentration"])
-    
-    if (any(grepl("(Intercept)",rownames(summary(calibrationModel)$coefficients)))) {
-      calibrationPredict = predict(calibrationModel, data.frame(concentration=concentrationInterval))
-      #intercept <- summary(calibrationModel)$coefficients["(Intercept)",1]
-      #calibrationPredict = summary(calibrationModel)$coefficients["concentration",1]*concentrationInterval + intercept
-    }
-    else {
+    print(calibrationData)
+    concentrationInterval <- c(0, tail(calibrationData[,"concentration"], n = 1))
+    print(55)
+    print(calibrationModel)
+    calibrationPredict <-  getConcentration(m = calibrationModel[["modelParam"]], Cm = calibrationModel[["covMatrix"]],
+                                            sig = calibrationData[, "value"], vsig = calibrationData[, "SD"]^2, dft = rep(1, stdNb), vdft = rep(0, stdNb))
+    print(6)
+    print(calibrationPredict)
+    print(6)
+    if (all(dim(calibrationModel[["modelParam"]]) == c(1,1))) {
+      print(7)
       intercept <- calibrationData[1, "value"]
-      calibrationPredict = predict(calibrationModel, data.frame(concentration=concentrationInterval)) + intercept
+      calibrationPredict[,"value"] <- calibrationPredict[,"value"] + intercept
     }
-    
-    print(summary(calibrationModel))
-    
-    
-    signalResiduals <- rstandard(calibrationModel)
-    
+    print(8)
+    signalResiduals <- calibrationData[,"concentration"] - calibrationPredict[,"value"]
+    print(9)
     calibrationPlot <- plot_ly()
     calibrationPlot <- add_trace(calibrationPlot, x=concentrationInterval, y=calibrationPredict, type = 'scatter', mode = 'lines')
     calibrationPlot <- add_trace(calibrationPlot, x=calibrationData[,"concentration"], y=calibrationData[,"value"], type = 'scatter', mode = 'markers')
-    
+    print(10)
     residualPlot <- plot_ly()
     residualPlot <- add_trace(residualPlot, x=calibrationData[,"concentration"], y=signalResiduals, type = 'scatter', mode = 'markers')
     

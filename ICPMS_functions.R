@@ -1,36 +1,100 @@
 library(shiny)
 library(stringr)
+library(matlib)
 
 agilentElementNamePattern <- "[ ]{2}[A-Z]{1}[a-z]*[ ]{2}"
+
+getConcentration <- function(m, Cm, sig, vsig, dft, vdft) {
+  print(1)
+  print(m)
+  slope <- as.numeric(m[2])
+  intercept <- as.numeric(m[1])
+  concentrations <- numeric()
+  print(2)
+  for (i in seq(length(sig))) {
+    print(3)
+    J <- t(c(-1/slope,-((sig[i]-intercept)/(dft[i]*(slope^2))),1/(dft[i]*slope),-sig[i]/(dft[i]^2*slope)))
+    print(4)
+    Cy <- cbind(Cm,matrix(0,2,2))
+    print(5)
+    Cy <- rbind(Cy,matrix(0,2,4))
+    print(6)
+    Cy[3,3] <- vsig[i]
+    print(7)
+    Cy[4,4] <- vdft[i]
+    print(8)
+    concentrations <- rbind(concentrations, t(c(value = (sig[i]/dft[i]-intercept)/slope, SE = sqrt(as.numeric(J%*%Cy%*%t(J))))))
+    print(9)
+  }
+  
+  return(concentrations)
+}
 
 getCalibrationModel <- function(element, processParameters, calibrationData) {
   fi <- processParameters$forceIntercept
   wr <- processParameters$useWeithedRegression
   w <- processParameters$regressionWeight
   
+  stdValue <- calibrationData[, "value"]
+  stdConcentrations <- calibrationData[, "concentration"]
+  print(1)
   if (fi[[element]] == TRUE) {
+    print(2)
+    dfRegression <- length(stdConcentrations) - 1
+    
     intercept <- calibrationData[1,"value"]
-    if (wr[[element]] == TRUE) {
-      calibrationWeights <- getWeights(calibrationData = calibrationData, fn = w[[element]])
-      calibrationModel <- lm(I(value-intercept) ~ 0 + concentration, data=as.data.frame(calibrationData),
-                             weights = calibrationWeights)
-    }
-    if (wr[[element]] == FALSE) {
-      calibrationModel <- lm(I(value-intercept) ~ 0 + concentration,data=as.data.frame(calibrationData))
-    }
+    stdValue <- stdValue - intercept
+    
+    G <- stdConcentrations
   }
-  if (fi[[element]] == FALSE) {
-    if (wr[[element]] == TRUE) {
-      calibrationWeights <- getWeights(calibrationData = calibrationData, fn = w[[element]])
-      calibrationModel <- lm(value ~ concentration, data=as.data.frame(calibrationData),
-                             weights = calibrationWeights)
-    }
-    if (wr[[element]] == FALSE) {
-      calibrationModel <- lm(value ~ concentration, data=as.data.frame(calibrationData))
-    }
+  else {
+    print(3)
+    dfRegression <- length(stdConcentrations) - 2
+    
+    G <- matrix(cbind(rep(1, length(stdConcentrations)), stdConcentrations), ncol=2)# 1-Intercept 2-Slope
   }
   
-  return(calibrationModel)
+  if (wr[[element]] == TRUE) {
+    print(4)
+    calibrationWeights <- getWeights(calibrationData = calibrationData, fn = w[[element]])
+    Cd <- diag(x=calibrationWeights, nrow=length(stdConcentrations), ncol=length(stdConcentrations))
+  }
+  else {
+    print(5)
+    Cd <- diag(x=1, nrow=length(stdConcentrations), ncol=length(stdConcentrations))
+  }
+  
+  # if (fi[[element]] == TRUE) {
+  #   intercept <- calibrationData[1,"value"]
+  #   if (wr[[element]] == TRUE) {
+  #     # calibrationWeights <- getWeights(calibrationData = calibrationData, fn = w[[element]])
+  #     # calibrationModel <- lm(I(value-intercept) ~ 0 + concentration, data=as.data.frame(calibrationData),
+  #     #                        weights = calibrationWeights)
+  #   }
+  #   if (wr[[element]] == FALSE) {
+  #     # calibrationModel <- lm(I(value-intercept) ~ 0 + concentration,data=as.data.frame(calibrationData))
+  #   }
+  # }
+  # if (fi[[element]] == FALSE) {
+  #   if (wr[[element]] == TRUE) {
+  #     Cd <- diag(x=y_var, nrow=length(y), ncol=length(y))
+  #     # calibrationWeights <- getWeights(calibrationData = calibrationData, fn = w[[element]])
+  #     # calibrationModel <- lm(value ~ concentration, data=as.data.frame(calibrationData),
+  #     #                        weights = calibrationWeights)
+  #   }
+  #   if (wr[[element]] == FALSE) {
+  #     Cd <- diag(x=1, nrow=length(y), ncol=length(y))
+  #     # calibrationModel <- lm(value ~ concentration, data=as.data.frame(calibrationData))
+  #   }
+  # }
+  print(6)
+  m <- solve(t(G)%*%solve(Cd)%*%G)%*%t(G)%*%solve(Cd)%*%stdValue
+  print(7)
+  chi2 <- as.vector((t(stdValue-G%*%m)%*%solve(Cd)%*%(stdValue-G%*%m)))/dfRegression
+  print(8)
+  Cm <- solve(t(G)%*%solve(Cd)%*%G)*chi2
+  
+  return(list(modelParam = m, covMatrix = Cm))
 }
 
 subsetDfList <- function(dfList, rowLogical, columnLogical) {
@@ -65,14 +129,16 @@ getModifiedData <- function(dat, modifiers, selectedModifiers) {
 }
 
 getWeights <- function(calibrationData, fn) {
-  if (fn == "1/SD") {
-    return(1/(calibrationData[,"SD"]))
-  }
-  else if (fn == "1/SD^2") {
+  if (fn == "1/var") {
     return(1/(calibrationData[,"SD"])^2)
   }
-  else if (fn == "Y") {
+  else if (fn == "1/Y") {
     return(1/(calibrationData[,"signal"]))
+  }
+  else if (fn == "1/max(var,Y)") {
+    bindedCols <- cbind((calibrationData[,"SD"])^2, calibrationData[,"signal"])
+    maxCol <- apply(X=bindedCols,MARGIN=1,FUN=max)
+    return(1/(maxCol))
   }
   else {
     return()
