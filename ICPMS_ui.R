@@ -97,7 +97,7 @@ ICPMS_ui <- shinyUI({
                             checkboxInput("forceIntercept", "Force intercept", value = FALSE),
                             checkboxInput("autoAdaptCalibration", "Use min/max standards", value = FALSE),
                             checkboxInput("useWeithedRegression", "Use weighted linear regression", value = FALSE),
-                            selectInput("regressionWeight", "Weight:", c("1/var" = "1/var", "1/Y" = "1/Y", "1/max(var,Y)" = "1/max(var,Y)")),
+                            selectInput("regressionWeight", "Weight:", c("1/var" = "1/var", "1/Y" = "1/Y", "1/max(var,Y)" = "1/max(var,Y)"), selected = "1/var"),
                             actionButton("setRegression", "Set regression"),
                             actionButton("setRegressionALL", "Set to all")),
                           mainPanel(

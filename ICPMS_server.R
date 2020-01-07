@@ -148,6 +148,45 @@ ICPMS_server <- function(input, output, session) {
     }
     return(driftModels)
   })
+  
+  dataModified$driftFactor <- reactive({
+    req(index$drift)
+    print("In driftFactor")
+    driftFactor <- list(value = vector(), SD = vector())
+    analyteDriftFactor <- list(value = vector(), SD = vector())
+    for (i in seq(analyteNumber())) {
+      print(1)
+      element <- analyteNames()[i]
+      print(2)
+      analyteDriftFactor[["value"]] <- rep(1, sampleNumber)
+      analyteDriftFactor[["SD"]] <- rep(0, sampleNumber)
+      print(3)
+      driftStart <- getElementDriftIndex(element, dataList[["std"]], levelColumn, index$drift)[1]
+      print(4)
+      t0 <- as.numeric(dtimeColumn[driftStart])
+      print(5)
+      driftModel <- dataModified$driftModels()[[element]]
+      print(6)
+      if (driftModel != "None") {
+        timeInterval <- as.numeric(dtimeColumn[as.numeric(dtimeColumn) >= t0])
+        print(7)
+        driftPredict <- predict(driftModel, newdata = data.frame(driftTime = timeInterval),interval="predict", confidence = 0.68)
+        print(8)
+        driftPredictList <- list(value = driftPredict[,"fit"], SD = (driftPredict[,"upr"] - driftPredict[,"fit"]))
+        print(9)
+        analyteDriftFactor <- propagateUncertainty(a=driftPredictList, b=list(value = driftPredictList[["value"]][1], SD = driftPredictList[["SD"]][1]), operation="division")
+        print(10)
+        analyteDriftFactor[["value"]][1] <- 1
+        print(11)
+        analyteDriftFactor[["SD"]][1] <- 0
+        print(12)
+        driftFactor[["value"]] <- cbind(driftFactor[["value"]], analyteDriftFactor[["value"]])
+        print(13)
+        driftFactor[["SD"]] <- cbind(driftFactor[["SD"]], analyteDriftFactor[["SD"]])
+      }
+    }
+    return(driftFactor)
+  })
   # 
   # driftMatrix <- reactive({
   #   req(extracted())
@@ -192,12 +231,35 @@ ICPMS_server <- function(input, output, session) {
     return(calibrationModels)
   })
 
-  # dataModified$concentration <- reactive({
-  #   req(extracted())
-  #   req(dataModified$blankCorrectedRatio())
-  #   return(processData(dataModified$blankCorrectedRatio(), analyteNames(), dataList[["std"]], index$drift,
-  #                                            levelColumn, timeColumn, processParameters$driftCorrectedElement, processParameters$calibration))
-  #})
+  dataModified$concentration <- reactive({
+    req(extracted())
+    req(dataModified$blankCorrectedRatio())
+    print("In concentration")
+    concentrationTable <- vector()
+    for (i in seq(analyteNumber())) {
+      print(1)
+      element <- analyteNames()[i]
+      print(2)
+      modelParam <- dataModified$calibrationModels()[[element]][["modelParam"]]
+      print(3)
+      covMatrix <- dataModified$calibrationModels()[[element]][["covMatrix"]]
+      print(4)
+      signal <- dataModified$blankCorrectedRatio()[["value"]][,i]
+      print(signal)
+      print(5)
+      vSignal <- dataModified$blankCorrectedRatio()[["SD"]][,i]^2
+      print(vSignal)
+      print(6)
+      drift <- dataModified$driftFactor()[["value"]][,i]
+      print(7)
+      vDrift <- dataModified$driftFactor()[["SD"]][,i]^2
+      print(8)
+      analyteConcentrations <- getConcentration(m = modelParam, Cm = covMatrix, sig = signal, vsig = vSignal, dft = drift, vdft = vDrift)
+      print(9)
+      concentrationTable <- cbind(concentrationTable, analyteConcentrations)
+    }
+    return(concentrationTable)
+  })
   ###########################File import and viewing###########################
   
   #Text display of imported file
@@ -305,7 +367,7 @@ ICPMS_server <- function(input, output, session) {
     processParameters$useWeithedRegression  <- rep(FALSE, analyteNumber())
     names(processParameters$useWeithedRegression) <- analyteNames()
     
-    processParameters$regressionWeight <- rep("1/SD", analyteNumber())
+    processParameters$regressionWeight <- rep("1/var", analyteNumber())
     names(processParameters$regressionWeight) <- analyteNames()
   })
 
@@ -660,33 +722,24 @@ ICPMS_server <- function(input, output, session) {
   
   output$calibrationPlot <- renderPlotly({
     if (is.null(dataModified$standardData())){return()}
-    print("marmadouk!!!!!")
     calibrationData <- dataModified$standardData()[[input$calibrationElement]]
-    print(2)
     stdNb <- nrow(calibrationData)
-    print(3)
     calibrationModel <- dataModified$calibrationModels()[[input$calibrationElement]]
-    print(calibrationData)
     concentrationInterval <- c(0, tail(calibrationData[,"concentration"], n = 1))
-    print(55)
     print(calibrationModel)
     calibrationPredict <-  getConcentration(m = calibrationModel[["modelParam"]], Cm = calibrationModel[["covMatrix"]],
                                             sig = calibrationData[, "value"], vsig = calibrationData[, "SD"]^2, dft = rep(1, stdNb), vdft = rep(0, stdNb))
-    print(6)
-    print(calibrationPredict)
-    print(6)
-    if (all(dim(calibrationModel[["modelParam"]]) == c(1,1))) {
-      print(7)
-      intercept <- calibrationData[1, "value"]
-      calibrationPredict[,"value"] <- calibrationPredict[,"value"] + intercept
-    }
-    print(8)
+
     signalResiduals <- calibrationData[,"concentration"] - calibrationPredict[,"value"]
-    print(9)
+    
+    ####Faire les incertitudes!!!!!! Polygones sur plot
+    # x_polygon <- c(x, rev(x))
+    # y_polygon <- c(predictions[,"lwr"], rev(predictions[,"upr"]))
+    
     calibrationPlot <- plot_ly()
-    calibrationPlot <- add_trace(calibrationPlot, x=concentrationInterval, y=calibrationPredict, type = 'scatter', mode = 'lines')
+    calibrationPlot <- add_trace(calibrationPlot, x=calibrationPredict[,"value"], y=calibrationData[,"value"], type = 'scatter', mode = 'lines')
     calibrationPlot <- add_trace(calibrationPlot, x=calibrationData[,"concentration"], y=calibrationData[,"value"], type = 'scatter', mode = 'markers')
-    print(10)
+
     residualPlot <- plot_ly()
     residualPlot <- add_trace(residualPlot, x=calibrationData[,"concentration"], y=signalResiduals, type = 'scatter', mode = 'markers')
     
@@ -757,8 +810,8 @@ ICPMS_server <- function(input, output, session) {
       timeInterval = seq(from=as.numeric(iTime), to=as.numeric(fTime), by=as.numeric((fTime - iTime)/100))
       driftModel <- dataModified$driftModels()[[input$e_ind_drift]]
       print(summary(driftModel)$adj.r.squared)
-      driftPredict=predict(driftModel, newdata = data.frame(driftTime = timeInterval))
-      driftPlot <- add_trace(driftPlot, x=timeInterval, y=driftPredict, type = 'scatter', mode = 'lines')
+      driftPredict=predict(driftModel, newdata = data.frame(driftTime = timeInterval),interval="predict")
+      driftPlot <- add_trace(driftPlot, x=timeInterval, y=driftPredict[,"fit"], type = 'scatter', mode = 'lines')
       driftPlot <- add_annotations(driftPlot,x= 0,y= 1,xref = "paper",yref = "paper",
                                    text = paste("Adjusted R squared: ", summary(driftModel)$adj.r.squared), showarrow = F)
     }
@@ -794,18 +847,19 @@ ICPMS_server <- function(input, output, session) {
   
   output$conc <- renderTable({
     if (is.null(dataModified$concentration())){return()}
-    print(1)
-    print(dataModified$concentration())
-    displayWhat = strtoi(input$viewConcentrationSwitch)
-    displayIndex = input$viewConcentrationIndex
-    
-    if (displayWhat <= 2){displayMatrix <- dataModified$concentration()[[displayWhat]]}
-    else if (displayWhat == 3){
-      displayMatrix <- mergeMatrixes(matrix1 = dataModified$concentration()[[1]], matrix2 = dataModified$concentration()[[2]], name1=NULL, name2="SD (%)")
-    }
-    else {}
-    print(2)
-    cbind(nameColumn, displayMatrix)[index$custom[[displayIndex]],]
+    dataModified$concentration()
+    # print(1)
+    # print(dataModified$concentration())
+    # displayWhat = strtoi(input$viewConcentrationSwitch)
+    # displayIndex = input$viewConcentrationIndex
+    # 
+    # if (displayWhat <= 2){displayMatrix <- dataModified$concentration()[[displayWhat]]}
+    # else if (displayWhat == 3){
+    #   displayMatrix <- mergeMatrixes(matrix1 = dataModified$concentration()[[1]], matrix2 = dataModified$concentration()[[2]], name1=NULL, name2="SD (%)")
+    # }
+    # else {}
+    # print(2)
+    # cbind(nameColumn, displayMatrix)[index$custom[[displayIndex]],]
   })
   
   #Button to download the list of analyte() and ISTD
