@@ -155,35 +155,22 @@ ICPMS_server <- function(input, output, session) {
     driftFactor <- list(value = vector(), SD = vector())
     analyteDriftFactor <- list(value = vector(), SD = vector())
     for (i in seq(analyteNumber())) {
-      print(1)
       element <- analyteNames()[i]
-      print(2)
       analyteDriftFactor[["value"]] <- rep(1, sampleNumber)
       analyteDriftFactor[["SD"]] <- rep(0, sampleNumber)
-      print(3)
       driftStart <- getElementDriftIndex(element, dataList[["std"]], levelColumn, index$drift)[1]
-      print(4)
       t0 <- as.numeric(dtimeColumn[driftStart])
-      print(5)
       driftModel <- dataModified$driftModels()[[element]]
-      print(6)
       if (driftModel != "None") {
         timeInterval <- as.numeric(dtimeColumn[as.numeric(dtimeColumn) >= t0])
-        print(7)
         driftPredict <- predict(driftModel, newdata = data.frame(driftTime = timeInterval),interval="predict", confidence = 0.68)
-        print(8)
         driftPredictList <- list(value = driftPredict[,"fit"], SD = (driftPredict[,"upr"] - driftPredict[,"fit"]))
-        print(9)
         analyteDriftFactor <- propagateUncertainty(a=driftPredictList, b=list(value = driftPredictList[["value"]][1], SD = driftPredictList[["SD"]][1]), operation="division")
-        print(10)
         analyteDriftFactor[["value"]][1] <- 1
-        print(11)
         analyteDriftFactor[["SD"]][1] <- 0
-        print(12)
-        driftFactor[["value"]] <- cbind(driftFactor[["value"]], analyteDriftFactor[["value"]])
-        print(13)
-        driftFactor[["SD"]] <- cbind(driftFactor[["SD"]], analyteDriftFactor[["SD"]])
       }
+      driftFactor[["value"]] <- cbind(driftFactor[["value"]], analyteDriftFactor[["value"]])
+      driftFactor[["SD"]] <- cbind(driftFactor[["SD"]], analyteDriftFactor[["SD"]])
     }
     return(driftFactor)
   })
@@ -237,25 +224,14 @@ ICPMS_server <- function(input, output, session) {
     print("In concentration")
     concentrationTable <- vector()
     for (i in seq(analyteNumber())) {
-      print(1)
       element <- analyteNames()[i]
-      print(2)
       modelParam <- dataModified$calibrationModels()[[element]][["modelParam"]]
-      print(3)
       covMatrix <- dataModified$calibrationModels()[[element]][["covMatrix"]]
-      print(4)
       signal <- dataModified$blankCorrectedRatio()[["value"]][,i]
-      print(signal)
-      print(5)
       vSignal <- dataModified$blankCorrectedRatio()[["SD"]][,i]^2
-      print(vSignal)
-      print(6)
       drift <- dataModified$driftFactor()[["value"]][,i]
-      print(7)
       vDrift <- dataModified$driftFactor()[["SD"]][,i]^2
-      print(8)
       analyteConcentrations <- getConcentration(m = modelParam, Cm = covMatrix, sig = signal, vsig = vSignal, dft = drift, vdft = vDrift)
-      print(9)
       concentrationTable <- cbind(concentrationTable, analyteConcentrations)
     }
     return(concentrationTable)
@@ -726,7 +702,6 @@ ICPMS_server <- function(input, output, session) {
     stdNb <- nrow(calibrationData)
     calibrationModel <- dataModified$calibrationModels()[[input$calibrationElement]]
     concentrationInterval <- c(0, tail(calibrationData[,"concentration"], n = 1))
-    print(calibrationModel)
     calibrationPredict <-  getConcentration(m = calibrationModel[["modelParam"]], Cm = calibrationModel[["covMatrix"]],
                                             sig = calibrationData[, "value"], vsig = calibrationData[, "SD"]^2, dft = rep(1, stdNb), vdft = rep(0, stdNb))
 
@@ -791,25 +766,17 @@ ICPMS_server <- function(input, output, session) {
     req(index$drift)
     if (is.null(dataModified$blankCorrectedRatio()[["value"]]) | is.null(index$drift)){return()}
     
-    print(1)
     driftTime = dtimeColumn[index$drift]
     driftValue = driftData()[["value"]][,input$e_ind_drift]
     driftSD = driftData()[["SD"]][,input$e_ind_drift]
-    print(driftTime)
-    print(2)
 
     driftPlot <- plot_ly()
     driftPlot <- add_trace(driftPlot, x=driftTime, y=driftValue, type = 'scatter', mode = 'markers', error_y = list(array=driftSD, color = '#000000'))
-    print(dataModified$driftModels())
-    print(input$e_ind_drift)
-    print(dataModified$driftModels()[[input$e_ind_drift]])
     if (processParameters$driftCorrectedElement[input$e_ind_drift] != "None") {
-      print("a")
       iTime = driftTime[1]
       fTime = driftTime[length(driftTime)]
       timeInterval = seq(from=as.numeric(iTime), to=as.numeric(fTime), by=as.numeric((fTime - iTime)/100))
       driftModel <- dataModified$driftModels()[[input$e_ind_drift]]
-      print(summary(driftModel)$adj.r.squared)
       driftPredict=predict(driftModel, newdata = data.frame(driftTime = timeInterval),interval="predict")
       driftPlot <- add_trace(driftPlot, x=timeInterval, y=driftPredict[,"fit"], type = 'scatter', mode = 'lines')
       driftPlot <- add_annotations(driftPlot,x= 0,y= 1,xref = "paper",yref = "paper",

@@ -5,30 +5,15 @@ library(matlib)
 agilentElementNamePattern <- "[ ]{2}[A-Z]{1}[a-z]*[ ]{2}"
 
 getConcentration <- function(m, Cm, sig, vsig, dft, vdft) {
-  print("a")
   slope <- as.numeric(m[2])
-  print("b")
   intercept <- as.numeric(m[1])
-  print("c")
   concentrations <- numeric()
-  print("d")
   for (i in seq(length(sig))) {
-    print("e")
     J <- t(c(-1/slope,-((sig[i]-intercept)/(dft[i]*(slope^2))),1/(dft[i]*slope),-sig[i]/(dft[i]^2*slope)))
-    print("f")
     Cy <- cbind(Cm,matrix(0,2,2))
-    print("g")
     Cy <- rbind(Cy,matrix(0,2,4))
-    print("h")
-    print(sig[i])
-    print(vsig[i])
-    print(Cy)
     Cy[3,3] <- vsig[i]
-    print("i")
-    print(vdft[i])
-    print(Cy)
     Cy[4,4] <- vdft[i]
-    print("j")
     concentrations <- rbind(concentrations, t(c(value = (sig[i]/dft[i]-intercept)/slope, SE = sqrt(as.numeric(J%*%Cy%*%t(J))))))
   }
   
@@ -58,7 +43,6 @@ getCalibrationModel <- function(element, processParameters, calibrationData) {
   
   if (wr[[element]] == TRUE) {
     calibrationWeights <- getWeights(calibrationData = calibrationData, fn = w[[element]])
-    print(calibrationWeights)
     Cd <- diag(x=calibrationWeights, nrow=length(stdConcentrations), ncol=length(stdConcentrations))
   }
   else {
@@ -112,17 +96,12 @@ getModifiedData <- function(dat, modifiers, selectedModifiers) {
 
 getWeights <- function(calibrationData, fn) {
   if (fn == "1/var") {
-    print(1)
-    print(1/(calibrationData[,"SD"])^2)
     return(1/(calibrationData[,"SD"])^2)
   }
   else if (fn == "1/Y") {
-    print(2)
-    print(calibrationData)
     return(1/(calibrationData[,"value"]))
   }
   else if (fn == "1/max(var,Y)") {
-    print(3)
     bindedCols <- cbind((calibrationData[,"SD"])^2, calibrationData[,"value"])
     maxCol <- apply(X=bindedCols,MARGIN=1,FUN=max)
     return(1/(maxCol))
@@ -146,12 +125,7 @@ getElementDriftIndex <- function(elementFullName, stdDataFrame, stdIdentificatio
   stdIndex <- which(!is.na(stdDataFrame[eName,]))
   
   if (length(stdIndex) != 0){
-    print(colnames(stdDataFrame)[stdIndex[1]])
-    print(make.names(stdIdentificationColumn))
     firstStandardNumIndex <- which(colnames(stdDataFrame)[stdIndex[1]] == make.names(stdIdentificationColumn))
-    #firstStandardNumIndex <- grep(colnames(stdDataFrame)[stdIndex[1]],make.names(stdIdentificationColumn))
-    print(driftIndex)
-    print(firstStandardNumIndex)
     eDritftIndex <- driftIndex[driftIndex >= firstStandardNumIndex]
     return(eDritftIndex)
   }
@@ -478,15 +452,10 @@ createISTDMatrix <- function(ISTD_file, ISTDcount){
 
 processData <- function(signal, eFullNames, StdDataframe, drift_ind, levelColumn, timeColumn, eDriftChoice, calibrationParameters){
   
-  print("in")
   elementNumber <- length(eFullNames)
    
   for (i in 1:elementNumber){
-     print(i)
-     print("1")
      eFullName <- eFullNames[i]
-     print(eFullName)
-     print("2")
      #Je peux direct passer la liste des calib
      eCalibrationData <- getCalibrationData(elementFullName = eFullName, signal=signal,
                                         stdIdentificationColumn=levelColumn, stdDataFrame = StdDataframe)
