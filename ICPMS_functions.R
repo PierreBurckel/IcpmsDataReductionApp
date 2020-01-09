@@ -5,18 +5,41 @@ library(matlib)
 agilentElementNamePattern <- "[ ]{2}[A-Z]{1}[a-z]*[ ]{2}"
 
 getConcentration <- function(m, Cm, sig, vsig, dft, vdft) {
-  slope <- as.numeric(m[2])
+  #Function parameters:
+  #m and Cm are the calibration linear regression parameters and their covariance matrix
+  #sig and vsig are the signal and signal variance (signal can be counts, ratio, can be blank corrected or not)
+  #dft and vdft are the drift factor and drift factor variance (the signal is drift corrected using the signal/drift factor ratio)
+  #Returns:
+  #concentrations, a matrix containing the concentrations of the the samples in the first column, and the standard error in the second column
+  
+  #m is of class matrix and of dimension (2,1) and contains the calibration linear regression parameters as double
+  #m is of class matrix and of dimension (2,2) and contains the variance and covariance of calibration linear regression parameters as double
   intercept <- as.numeric(m[1])
+  slope <- as.numeric(m[2])
   concentrations <- numeric()
-  for (i in seq(length(sig))) {
+  
+  #sig, vsig, dft, vdft are of similar class and size, they are numeric of length sampleNumber
+  sampleNumber <- length(sig)
+  
+  #The concentration of each samples is calculated independently with this loop. Results are concatenated in the concentration matrix
+  for (i in seq(sampleNumber)) {
+    #J is of class matrix and of dimension (1,4) 
+    #J is the Jacobian matrix associated with parameters intercept, slope, signal, drift in the equation concentration = (signal/drift - intercept)/slope
+    #J is used for the calculation of the standard errors on the concentrations
     J <- t(c(-1/slope,-((sig[i]-intercept)/(dft[i]*(slope^2))),1/(dft[i]*slope),-sig[i]/(dft[i]^2*slope)))
+    
+    #Cy is of class matrix and of dimension (4,4) 
+    #Cy is the covariance matrix for the parameters intercept, slope, signal, drift
+    #Cy is used for the calculation of the standard errors on the concentrations
     Cy <- cbind(Cm,matrix(0,2,2))
     Cy <- rbind(Cy,matrix(0,2,4))
     Cy[3,3] <- vsig[i]
     Cy[4,4] <- vdft[i]
+    
+    #concentrations is of class matrix and of dimension (sampleNumber,2) at the end of the for loop (addition of one row per loop) 
+    #concentrations contains the sample concentrations and their standard error
     concentrations <- rbind(concentrations, t(c(value = (sig[i]/dft[i]-intercept)/slope, SE = sqrt(as.numeric(J%*%Cy%*%t(J))))))
   }
-  
   return(concentrations)
 }
 
