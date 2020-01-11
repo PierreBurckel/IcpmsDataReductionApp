@@ -421,6 +421,8 @@ processData <- function(signal, eFullNames, StdDataframe, drift_ind, levelColumn
     }
   }
   
+  print(driftDataFrame)
+  
   signalDriftCorrectedRatio <- signal[[1]] / driftDataFrame
   signalDriftCorrectedRSD <- signal[[2]]
   concentration <- t(t(signalDriftCorrectedRatio)*coefVector)
