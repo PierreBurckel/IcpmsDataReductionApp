@@ -44,6 +44,14 @@ getConcentration <- function(m, Cm, sig, vsig, dft, vdft) {
 }
 
 getCalibrationModel <- function(element, processParameters, calibrationData) {
+  #Function parameters:
+  #element is the element full name such as it appears in the header of the original csv file
+  #processParameters is the reactiveValue that contains the parameters fi, wr and w (force intercept, weighted regression and weights)
+  #processParameters$fi and $wr are logical vectors of 
+  #dft and vdft are the drift factor and drift factor variance (the signal is drift corrected using the signal/drift factor ratio)
+  #Returns:
+  #concentrations, a matrix containing the concentrations of the the samples in the first column, and the standard error in the second column
+  
   fi <- processParameters$forceIntercept
   wr <- processParameters$useWeithedRegression
   w <- processParameters$regressionWeight
