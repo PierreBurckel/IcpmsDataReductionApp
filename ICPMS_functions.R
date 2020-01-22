@@ -47,10 +47,10 @@ getCalibrationModel <- function(element, processParameters, calibrationData) {
   #Function parameters:
   #element is the element full name such as it appears in the header of the original csv file
   #processParameters is the reactiveValue that contains the parameters fi, wr and w (force intercept, weighted regression and weights)
-  #processParameters$fi and $wr are logical vectors of 
-  #dft and vdft are the drift factor and drift factor variance (the signal is drift corrected using the signal/drift factor ratio)
+  #processParameters$fi and $wr are logical vectors of length analyte number
+  #calibrationData contains the result of the getCalibrationData function, a matrix of nrow StdNumber of ncol 3 ("Value", "SD", "Concentration")
   #Returns:
-  #concentrations, a matrix containing the concentrations of the the samples in the first column, and the standard error in the second column
+  #A list containing the linear regression model parameters as "modelParam" and the covariance matrix as "covMatrix"
   
   fi <- processParameters$forceIntercept
   wr <- processParameters$useWeithedRegression
@@ -292,6 +292,7 @@ propagateUncertainty <- function(a, b, operation){
   b_value = b[[1]]
   a_SD = a[[2]]
   b_SD = b[[2]]
+  
   if (operation == "addition"){
     value <- a_value + b_value
     SD <- sqrt((a_SD)^2+(b_SD)^2)
@@ -464,7 +465,7 @@ extractData <- function(dataFileName, stdFileName){
   
   
 createISTDMatrix <- function(ISTD_file, ISTDcount){
-  
+
   if(is.null(ISTD_file) | is.null(ISTDcount)){return(1)}
   
   for (j in 1:nrow(ISTD_file)){
@@ -472,91 +473,11 @@ createISTDMatrix <- function(ISTD_file, ISTDcount){
     if (j == 1){
       ISTDmatrixValue <- ISTDcount[["value"]][eISTD]
       ISTDmatrixSD <- ISTDcount[["SD"]][eISTD]
+      print(2)
     } else {
       ISTDmatrixValue <- cbind(ISTDmatrixValue, ISTDcount[["value"]][eISTD])
       ISTDmatrixSD <- cbind(ISTDmatrixSD, ISTDcount[["SD"]][eISTD])
     }
   }
   return(list(value=ISTDmatrixValue, SD=ISTDmatrixSD))
-}
-
-
-processData <- function(signal, eFullNames, StdDataframe, drift_ind, levelColumn, timeColumn, eDriftChoice, calibrationParameters){
-  
-  elementNumber <- length(eFullNames)
-   
-  for (i in 1:elementNumber){
-     eFullName <- eFullNames[i]
-     #Je peux direct passer la liste des calib
-     eCalibrationData <- getCalibrationData(elementFullName = eFullName, signal=signal,
-                                        stdIdentificationColumn=levelColumn, stdDataFrame = StdDataframe)
-  #   View(eCalibrationData)
-  #   print("3")
-  #   eDriftIndex <-  getElementDriftIndex(elementFullName = eFullName, stdDataFrame = StdDataframe, 
-  #                                       stdIdentificationColumn=levelColumn, driftIndex = drift_ind)
-  #   View(eDriftIndex)
-  #   print("4")
-  #   dtimeColumn <- timeColumn - timeColumn[eDriftIndex][1]
-  #   dtimeColumn[dtimeColumn < 0] <- 0
-  #   print(dtimeColumn)
-  #   print("5")
-  #   eDriftData <- cbind(Signal=signal[[1]][eDriftIndex,i],dt=dtimeColumn[eDriftIndex]) 
-  #   print(eDriftData)
-  #   print("6")
-  #   #defines the calibration linear model
-  #   calibrationModel <- lm(Concentration ~ 0+Signal, data=as.data.frame(eCalibrationData))
-  #   print(calibrationModel)
-  #   print("7")
-  #   #Here be drift model creation and signal prediction along the whole sequence for the drift standard
-  #   #if no drift signal, don't try to create a model for the drift and set drift prediction to NA
-  #   #else create a model. Predict the drift signal on the whole sequence. Doesn't mean that it is going to be used
-  #   if (all(is.na(signal[[1]][eDriftIndex,i]))){
-  #     print(10)
-  #     driftPredict = rep(NA, nrow(signal[[1]]))
-  #   }
-  #   else{
-  #     print(11)
-  #     driftModel <- lm(Signal ~ poly(dt, degree=2, raw=TRUE), data = as.data.frame(eDriftData))
-  #     driftPredict=predict(driftModel, newdata = data.frame(dt=dtimeColumn))
-  #   }
-  #   print("8")
-  #   #Here we fill a dataframe and a vector containing the predicted drift signals and calibration coefficient respectively for all elements
-  #   #If i == 1, this is the first element and we need to initialize the variables
-  #   #Else we can directly fill the dataframe and vector using dataframe[i] or vector[i]
-  #   if (i == 1){
-  #     driftDataFrame <- data.frame(driftPredict)
-  #     View(driftDataFrame)
-  #     print(summary(calibrationModel)$coefficients)
-  #     coefVector <- summary(calibrationModel)$coefficients[1,1]
-  #   }
-  #   else{
-  #     driftDataFrame[i] <- driftPredict
-  #     coefVector[i] <- summary(calibrationModel)$coefficients[1,1]
-  #   }
-  #   print("9")
-  #   #If we chose to correct for the drift (eDriftChoice[i] == TRUE)
-  #   #Divide the drift dataframe at the ith position by the intersect at dt = 0 of the drift model
-  #   #We transform the drift dataframe by a drift relative to dt = 0 so that we can apply the drift correction by simple multiplication
-  #   #Else, if we chose not to correct the drift, we fill the dataframe at the ith position with 1 so that multiplication produces identity
-  #   if (eDriftChoice[i]){
-  #     driftDataFrame[i] <- driftDataFrame[i] / summary(driftModel)$coefficients[1,1]
-  #     driftDataFrame[is.na(driftDataFrame[,i]), i] <- 1
-  #   } 
-  #   else {
-  #     driftDataFrame[i] <- rep(1, nrow(signal[[1]]))
-  #   }
-  #   print("10")
-   }
-  # 
-  # signalDriftCorrectedRatio <- signal[[1]] / driftDataFrame
-  # signalDriftCorrectedSD <- signal[[2]]
-  # concentration <- t(t(signalDriftCorrectedRatio)*coefVector)
-  # concentration[concentration < 0] <- "<blk"
-  # 
-  # concentrationSD <- signalDriftCorrectedSD
-  # concentrationSD[concentration < 0] <- "N/A"
-  value = 1
-  SD = 1
-  
-  return(list(value,SD))
 }
