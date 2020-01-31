@@ -124,8 +124,8 @@ ICPMS_server <- function(input, output, session) {
   
   driftData <- reactive({
     req(index$drift, dataModified$blankCorrectedRatio)
-    return(list(value=dataModified$blankCorrectedRatio()[["value"]][index$drift,],
-                SD=dataModified$blankCorrectedRatio()[["SD"]][index$drift,]))
+    return(list(value=dataModified$blankCorrectedRatio()[["value"]][index$drift,,drop=FALSE],
+                SD=dataModified$blankCorrectedRatio()[["SD"]][index$drift,,drop=FALSE]))
   })
   
   dataModified$driftModels <- reactive({
@@ -156,9 +156,9 @@ ICPMS_server <- function(input, output, session) {
     analyteDriftFactor <- list(value = vector(), SD = vector())
     for (i in seq(analyteNumber())) {
       element <- analyteNames()[i]
-      analyteDriftFactor[["value"]] <- rep(1, sampleNumber)
-      analyteDriftFactor[["SD"]] <- rep(0, sampleNumber)
       driftStart <- getElementDriftIndex(element, dataList[["std"]], levelColumn, index$drift)[1]
+      analyteDriftFactor[["value"]] <- as.data.frame(rep(1, sampleNumber - driftStart + 1))
+      analyteDriftFactor[["SD"]] <- as.data.frame(rep(0, sampleNumber - driftStart + 1))
       t0 <- as.numeric(dtimeColumn[driftStart])
       driftModel <- dataModified$driftModels()[[element]]
       if (driftModel != "None") {
@@ -166,11 +166,11 @@ ICPMS_server <- function(input, output, session) {
         driftPredict <- predict(driftModel, newdata = data.frame(driftTime = timeInterval),interval="predict", confidence = 0.68)
         driftPredictList <- list(value = driftPredict[,"fit"], SD = (driftPredict[,"upr"] - driftPredict[,"fit"]))
         analyteDriftFactor <- propagateUncertainty(a=driftPredictList, b=list(value = driftPredictList[["value"]][1], SD = driftPredictList[["SD"]][1]), operation="division")
-        analyteDriftFactor[["value"]][1] <- 1
-        analyteDriftFactor[["SD"]][1] <- 0
+        analyteDriftFactor[["value"]][1,] <- 1
+        analyteDriftFactor[["SD"]][1,] <- 0
       }
-      driftFactor[["value"]] <- cbind(driftFactor[["value"]], analyteDriftFactor[["value"]])
-      driftFactor[["SD"]] <- cbind(driftFactor[["SD"]], analyteDriftFactor[["SD"]])
+      driftFactor[["value"]] <- cbind(driftFactor[["value"]], c(rep(1,driftStart-1),analyteDriftFactor[["value"]][,]))
+      driftFactor[["SD"]] <- cbind(driftFactor[["SD"]], c(rep(0,driftStart-1),analyteDriftFactor[["SD"]][,]))
     }
     return(driftFactor)
   })

@@ -27,7 +27,6 @@ getConcentration <- function(m, Cm, sig, vsig, dft, vdft) {
     #J is the Jacobian matrix associated with parameters intercept, slope, signal, drift in the equation concentration = (signal/drift - intercept)/slope
     #J is used for the calculation of the standard errors on the concentrations
     J <- t(c(-1/slope,-((sig[i]-intercept)/(dft[i]*(slope^2))),1/(dft[i]*slope),-sig[i]/(dft[i]^2*slope)))
-    
     #Cy is of class matrix and of dimension (4,4) 
     #Cy is the covariance matrix for the parameters intercept, slope, signal, drift
     #Cy is used for the calculation of the standard errors on the concentrations
@@ -311,7 +310,7 @@ propagateUncertainty <- function(a, b, operation){
   }
   else {return(NULL)}
   
-  return(list(value=value, SD=SD))
+  return(list(value=as.data.frame(value), SD=as.data.frame(SD)))
 }
 
 ##Function that replaces each value in a text vector by its previous value if the current value is empty (=="")
