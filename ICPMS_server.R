@@ -80,7 +80,7 @@ ICPMS_server <- function(input, output, session) {
 
   activeBlankModifier <- reactive({
     req(extracted())
-    #browser()
+    browser()
     elements <- 1:analyteNumber()
     method <- input$blkInterpolationMethod
     whatIndex <- index$custom[[input$indexBlkchoiceWhat]]
@@ -105,11 +105,17 @@ ICPMS_server <- function(input, output, session) {
   
   dataModified$ratio <- reactive({
     req(extracted())
+    
+    browser()
+    
     return(propagateUncertainty(a=analyte(), b=ISTDmatrix(), operation="division"))
   })
   
   dataModified$blankRatio <- reactive({
     req(extracted())
+    
+    browser()
+    
     if (input$useBlankCorrection == FALSE) {
       return(blankList)
     }
@@ -408,7 +414,7 @@ ICPMS_server <- function(input, output, session) {
     if (is.null(input$indexTable_rows_selected)){
       DT::selectRows(indexTableProxy, c(1:length(index$temp)))
     }
-    else if (input$indexTable_rows_selected == c(1:length(index$temp))){
+    else if (all(input$indexTable_rows_selected == c(1:length(index$temp)))){
       DT::selectRows(indexTableProxy, NULL)
     }
     else{
@@ -540,17 +546,17 @@ ICPMS_server <- function(input, output, session) {
   output$blkTable <- DT::renderDT({
     if (is.null(analyte()[["value"]])){return()}
     
-    #browser()
+    browser()
     
     blkMode <- input$blkInteractionMode
     
-    df_view <- cbind(nameColumn, dataModified$blankRatio()[["value"]])
-    
-    names(df_view) <- c("Sample Name", names(df_view)[2:length(df_view)])
-    
-    df_view <- format(df_view, digits = 3, scientific=T)
-    
     if (blkMode == "view") {
+      
+      df_view <- cbind(nameColumn, dataModified$blankRatio()[["value"]])
+      
+      names(df_view) <- c("Sample Name", names(df_view)[2:length(df_view)])
+      
+      df_view <- format(df_view, digits = 3, scientific=T)
       
       return(df_view)
       
@@ -614,6 +620,8 @@ ICPMS_server <- function(input, output, session) {
   #Assigns the current state of the ISTD table to the ISTD variable that will be used for calculations
   observeEvent(input$setBlkInterpolationMethod, {
     
+    browser()
+    
     blankModNumber(blankModNumber() + 1)
     
     newModID <- paste("mod", as.character(blankModNumber()), sep="")
@@ -634,14 +642,12 @@ ICPMS_server <- function(input, output, session) {
       shinyjs::enable("blkColSlider")
       shinyjs::enable("blkInterpolationMethod")
       shinyjs::enable("indexBlkchoiceIn")
-      shinyjs::enable("blankModifiers")
     }
     else if(input$blkInteractionMode == "view") {
       shinyjs::disable("setBlkInterpolationMethod")
       shinyjs::disable("blkColSlider")
       shinyjs::disable("blkInterpolationMethod")
       shinyjs::disable("indexBlkchoiceIn")
-      shinyjs::disable("blankModifiers")
     }
   })
   

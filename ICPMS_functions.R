@@ -113,7 +113,7 @@ getModifierName <- function(modifier) {
 getModifiedData <- function(dat, modifiers, selectedModifiers) {
   if (length(modifiers) == 0) {return(dat)}
   else {
-    #browser()
+    browser()
     dat_mod <- dat
     for (s in selectedModifiers) {
       mod <- modifiers[[s]]
@@ -287,6 +287,8 @@ getClosestInIndex <- function(refPosition, numericalIndex, searchWhere){
 }
 
 propagateUncertainty <- function(a, b, operation){
+  
+  browser()
   
   a_value = a[[1]]
   b_value = b[[1]]
