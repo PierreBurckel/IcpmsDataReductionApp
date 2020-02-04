@@ -113,6 +113,7 @@ getModifierName <- function(modifier) {
 getModifiedData <- function(dat, modifiers, selectedModifiers) {
   if (length(modifiers) == 0) {return(dat)}
   else {
+    #browser()
     dat_mod <- dat
     for (s in selectedModifiers) {
       mod <- modifiers[[s]]

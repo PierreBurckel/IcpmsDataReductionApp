@@ -80,6 +80,7 @@ ICPMS_server <- function(input, output, session) {
 
   activeBlankModifier <- reactive({
     req(extracted())
+    #browser()
     elements <- 1:analyteNumber()
     method <- input$blkInterpolationMethod
     whatIndex <- index$custom[[input$indexBlkchoiceWhat]]
@@ -174,25 +175,6 @@ ICPMS_server <- function(input, output, session) {
     }
     return(driftFactor)
   })
-  # 
-  # driftMatrix <- reactive({
-  #   req(extracted())
-  #   for (i in seq(analyteNumber())) {
-  #     elementDriftIndex <-  getElementDriftIndex(elementFullName = analyteNames()[i], stdDataFrame = dataList[["std"]], 
-  #                                                stdIdentificationColumn = levelColumn, driftIndex = index$drift)
-  #     calibrationData <- getCalibrationData(elementFullName = analyteNames()[i], signal=signal,
-  #                                           stdIdentificationColumn=levelColumn, stdDataFrame = dataList[["std"]])
-  #     standardData[[analyteNames()[i]]] <- calibrationData
-  #   }
-  #   return(propagateUncertainty(a=dataModified$ratio(), b=dataModified$blankRatio(), operation="substraction"))
-  # })
-  # 
-  # dataModified$driftCorrectedRatio <- reactive({
-  #   req(extracted())
-  #   eDriftIndex <-  getElementDriftIndex(elementFullName = eFullName, stdDataFrame = StdDataframe, 
-  #                                        stdIdentificationColumn=levelColumn, driftIndex = drift_ind)
-  #   return(propagateUncertainty(a=dataModified$ratio(), b=dataModified$blankRatio(), operation="substraction"))
-  # })
 
   dataModified$standardData <- reactive({
     req(dataModified$blankCorrectedRatio())
@@ -236,7 +218,7 @@ ICPMS_server <- function(input, output, session) {
     }
     return(concentrationTable)
   })
-  ###########################File import and viewing###########################
+  # File import ---------------------------------------------------------------
   
   #Text display of imported file
   output$raw_assignment_txt <- renderText({
@@ -355,7 +337,7 @@ ICPMS_server <- function(input, output, session) {
     renderState(!(!is.null(uploadedFile$ISTD) & !is.null(dataList) & (isValidISTD() == FALSE)), stateTxt = "", invalidStateTxt = "Caution, ISTD not extracted", validStateTxt = NULL)
   })
   
-  ##################################Index creation######################
+  # Index creation ------------------------------------------------------------
   output$indexTable <- DT::renderDT({
 
     if (is.null(analyte()[["value"]])){return()}
@@ -434,7 +416,7 @@ ICPMS_server <- function(input, output, session) {
     }
   })
   
-  ##################################ISTD verif/process######################
+  # ISTD settings -------------------------------------------------------------
   
   #Render ISTD table if all conditions are met
   output$ISTDtable <- DT::renderDT({
@@ -541,34 +523,55 @@ ICPMS_server <- function(input, output, session) {
     }
   })
   
-##################################Blank verif/process######################
-  #browser()
-  #Render ISTD table if all conditions are met
+  # Blank settings ------------------------------------------------------------
+  
+  observeEvent(input$useBlankCorrection, {
+    if (input$useBlankCorrection == FALSE) {
+      updateSelectInput(session,"blkInteractionMode",
+                        choices = c("View" = "view"),
+                        selected= "view")
+    } else {
+      updateSelectInput(session,"blkInteractionMode",
+                        choices = c("View" = "view", "Process" = "process"),
+                        selected= "view")
+    }
+  }, ignoreInit = FALSE)
+  
   output$blkTable <- DT::renderDT({
     if (is.null(analyte()[["value"]])){return()}
     
+    #browser()
+    
     blkMode <- input$blkInteractionMode
-    blankViewTable <- dataModified$blankRatio()
     
-    allModifiers <- dataModifiers$blank
-    allModifiers[["active"]] <- activeBlankModifier()
-    blankProcessTable <- getModifiedData(dataModified$ratio(), allModifiers, c(input$blankModifiers, "active"))
+    df_view <- cbind(nameColumn, dataModified$blankRatio()[["value"]])
     
-    lc <- input$blankColSlider[1]
-    uc <- input$blankColSlider[2]
-    
-    df_view <- cbind(nameColumn, blankViewTable[["value"]])
     names(df_view) <- c("Sample Name", names(df_view)[2:length(df_view)])
+    
     df_view <- format(df_view, digits = 3, scientific=T)
     
-    df_process <- cbind(nameColumn, blankProcessTable[["value"]])
-    names(df_process) <- c("Sample Name", names(df_process)[2:length(df_process)])
-    df_process <- format(df_process, digits = 3, scientific=T)
+    if (blkMode == "view") {
+      
+      return(df_view)
+      
+    } else if (blkMode == "process") {
+      
+      df_process <- getModifiedData(dataModified$ratio(),
+                                    list(active = activeBlankModifier()),
+                                    "active")
+      
+      df_process <- cbind(nameColumn, df_process[["value"]])
+      
+      names(df_process) <- c("Sample Name", names(df_process)[2:length(df_process)])
+      
+      df_process <- format(df_process, digits = 3, scientific=T)
+      
+      return(df_process)
+      }
 
-    if (blkMode == "view") {df_view}
-    else if (blkMode == "process") {df_process}
   }, options = list(dom = '', pageLength = sampleNumber, ordering=F, autoWidth = TRUE, scrollX=T, columnDefs = list(list(width = '120px', targets = "_all"))))
-  #browser()
+  
+  
   #Defines a proxy for changing selections in the table
   blkTableProxy <- DT::dataTableProxy("blkTable", session = session)
   
@@ -613,10 +616,6 @@ ICPMS_server <- function(input, output, session) {
     
     blankModNumber(blankModNumber() + 1)
     
-    #quand on voudra pouvoir selectionner des éléments particuliers
-    #lc <- input$ISTDcolSlider[1]
-    #uc <- input$ISTDcolSlider[2]
-    
     newModID <- paste("mod", as.character(blankModNumber()), sep="")
     dataModifiers$blank[[newModID]] <- activeBlankModifier()
     
@@ -635,12 +634,14 @@ ICPMS_server <- function(input, output, session) {
       shinyjs::enable("blkColSlider")
       shinyjs::enable("blkInterpolationMethod")
       shinyjs::enable("indexBlkchoiceIn")
+      shinyjs::enable("blankModifiers")
     }
     else if(input$blkInteractionMode == "view") {
       shinyjs::disable("setBlkInterpolationMethod")
       shinyjs::disable("blkColSlider")
       shinyjs::disable("blkInterpolationMethod")
       shinyjs::disable("indexBlkchoiceIn")
+      shinyjs::disable("blankModifiers")
     }
   })
   
@@ -649,7 +650,7 @@ ICPMS_server <- function(input, output, session) {
     DT::selectRows(liveReplaceBlkTableProxy, NULL)
   })
   
-  ################################## Calibration verification ######################
+  # Calibration settings ------------------------------------------------------
   observeEvent(input$setRegressionALL, {
     req(extracted())
     for (i in 1:analyteNumber()) {
@@ -722,7 +723,7 @@ ICPMS_server <- function(input, output, session) {
 
   })
   
-  ##################################Drift verif/process######################
+  # Drift settings ------------------------------------------------------------
   observeEvent(input$setAsDriftIndex, {
     if (input$selectDriftIndex != ""){
       setDrift(setDrift() + 1)
@@ -810,7 +811,7 @@ ICPMS_server <- function(input, output, session) {
     processParameters$driftCorrectedElement[input$e_ind_drift] <- input$driftModelSelection
   })
 
-  ####################Process
+  # Data processing -----------------------------------------------------------
   
   output$conc <- renderTable({
     if (is.null(dataModified$concentration())){return()}
