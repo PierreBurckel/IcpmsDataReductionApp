@@ -8,7 +8,7 @@ source('C:/Users/pierr/Desktop/IPGP/R/ICP-MS_process/ICPMS_functions.R')
 
 ICPMS_server <- function(input, output, session) {
   
-  dataList <- list()
+  data_list <- list()
   blankList <- list()
 
   uploadedFile <- reactiveValues()
@@ -25,31 +25,31 @@ ICPMS_server <- function(input, output, session) {
   tempDataFile <- reactive({input$file})
   
   #faire une fonction isValidRaw et isValidStd qui retournent FALSE si NULL et si non valide
-  extractionReady <- reactive({!is.null(uploadedFile$raw) & !is.null(uploadedFile$std)})
+  extractionReady <- reactive({!is.null(uploadedFile$main) & !is.null(uploadedFile$std)})
   #remplacer par ISTDReady et mettre une fonction isValidISTD pour check validité
   isValidISTD <- reactive({
     extracted()
-    return(!is.null(index$ISTD[["value"]]) & !is.null(dataList[["ISTD"]]))
+    return(!is.null(index$ISTD[["value"]]) & !is.null(data_list[["ISTD"]]))
   })
   
   analyte <- reactive({
     req(extracted())
-    rawData <- dataList[["raw"]]
-    return(list(value=rawData[,index$analyte[["value"]], drop=FALSE],
-                SD=rawData[,index$analyte[["RSD"]], drop=FALSE]/100*rawData[,index$analyte[["value"]], drop=FALSE]))
+    main_data <- data_list[["main"]]
+    return(list(value=main_data[,index$analyte[["value"]], drop=FALSE],
+                SD=main_data[,index$analyte[["RSD"]], drop=FALSE]/100*main_data[,index$analyte[["value"]], drop=FALSE]))
   })
 
   ISTD <- reactive({
     req(extracted())
-    rawData <- dataList[["raw"]]
-    return(list(value=rawData[,index$ISTD[["value"]], drop=FALSE],
-                SD=rawData[,index$ISTD[["RSD"]], drop=FALSE]/100*rawData[,index$ISTD[["value"]], drop=FALSE]))
+    main_data <- data_list[["main"]]
+    return(list(value=main_data[,index$ISTD[["value"]], drop=FALSE],
+                SD=main_data[,index$ISTD[["RSD"]], drop=FALSE]/100*main_data[,index$ISTD[["value"]], drop=FALSE]))
   })
   
   analyteNames <- reactive({
     req(extracted())
-    header1 <- dataList[["header_1"]]
-    return(header1[index$analyte[["value"]]])
+    header_1 <- data_list[["header_1"]]
+    return(header_1[index$analyte[["value"]]])
   })
   
   analyteNumber <- reactive({
@@ -59,8 +59,8 @@ ICPMS_server <- function(input, output, session) {
   
   ISTDNames <- reactive({
     req(extracted())
-    header1 <- dataList[["header_1"]]
-    return(header1[index$ISTD[["value"]]])
+    header_1 <- data_list[["header_1"]]
+    return(header_1[index$ISTD[["value"]]])
   })
   
   ISTDNumber <- reactive({
@@ -95,11 +95,11 @@ ICPMS_server <- function(input, output, session) {
   
   ISTDmatrix <- reactive({
     req(extracted())
-    if(is.null(dataList[["ISTD"]])) {
+    if(is.null(data_list[["ISTD"]])) {
       return(matrix(1,sampleNumber,analyteNumber()))
     }
     else{
-      return(createISTDMatrix(dataList[["ISTD"]], dataModified$ISTD()))
+      return(createISTDMatrix(data_list[["ISTD"]], dataModified$ISTD()))
     }
   })
   
@@ -163,7 +163,7 @@ ICPMS_server <- function(input, output, session) {
     analyteDriftFactor <- list(value = vector(), SD = vector())
     for (i in seq(analyteNumber())) {
       element <- analyteNames()[i]
-      driftStart <- getElementDriftIndex(element, dataList[["std"]], levelColumn, index$drift)[1]
+      driftStart <- getElementDriftIndex(element, data_list[["std"]], levelColumn, index$drift)[1]
       analyteDriftFactor[["value"]] <- as.data.frame(rep(1, sampleNumber - driftStart + 1))
       analyteDriftFactor[["SD"]] <- as.data.frame(rep(0, sampleNumber - driftStart + 1))
       t0 <- as.numeric(dtimeColumn[driftStart])
@@ -189,7 +189,7 @@ ICPMS_server <- function(input, output, session) {
     standardData <- list()
     for (i in seq(analyteNumber())) {
       calibrationData <- getCalibrationData(elementFullName = analyteNames()[i], signal=signal,
-                                            stdIdentificationColumn=levelColumn, stdDataFrame = dataList[["std"]])
+                                            stdIdentificationColumn=levelColumn, stdDataFrame = data_list[["std"]])
       standardData[[analyteNames()[i]]] <- calibrationData
     }
     return(standardData)
@@ -227,9 +227,9 @@ ICPMS_server <- function(input, output, session) {
   # File import ---------------------------------------------------------------
   
   #Text display of imported file
-  output$raw_assignment_txt <- renderText({
-    raw_file <- uploadedFile$raw
-    renderState(!is.null(raw_file), stateTxt = "Raw file name: ", invalidStateTxt = "Unassigned", validStateTxt = raw_file$name)
+  output$main_assignment_txt <- renderText({
+    main_file <- uploadedFile$main
+    renderState(!is.null(main_file), stateTxt = "Main file name: ", invalidStateTxt = "Unassigned", validStateTxt = main_file$name)
   })
   output$std_assignment_txt <- renderText({
     std_file <- uploadedFile$std
@@ -249,10 +249,10 @@ ICPMS_server <- function(input, output, session) {
     tempDataTable[1:rowNumber, 1:columnNumber]
   })
   
-  #Buttons to set raw, std and ISTD files
-  observeEvent(input$setAsRaw, {
+  #Buttons to set main, std and ISTD files
+  observeEvent(input$setAsMain, {
     req(tempDataFile())
-    uploadedFile$raw <- tempDataFile()
+    uploadedFile$main <- tempDataFile()
   })
   observeEvent(input$setAsStd, {
     req(tempDataFile())
@@ -267,48 +267,54 @@ ICPMS_server <- function(input, output, session) {
   output$downloadISTDTemplate <- downloadHandler(
     filename = "ISTD_Template.csv",
     content = function(file) {
-      write.csv(createISTDtemplate((uploadedFile$raw)$datapath),
+      write.csv(createISTDtemplate((uploadedFile$main)$datapath),
                 file, sep=";", quote = FALSE,
                 row.names = FALSE, col.names = FALSE)
       })
 
-  #Button to extract important information and signal of the dataframe
+  # Parser --------------------------------------------------------------------
+  
   observeEvent(input$extract, {
-    #Allows extraction if extraction condition are met (see extractionReady reactive value)
+    
+    browser()
+    
     req(extractionReady())
     
-    #Defines name space
-    raw_file <- uploadedFile$raw
+    main_file <- uploadedFile$main
     std_file <- uploadedFile$std
     ISTD_file <- uploadedFile$ISTD
     
+    parse_function <- get_parser("agilent")
+    parsed_data <- parse_function(main_file$datapath, std_file$datapath)
     
-    dataList <<-  extractData(raw_file$datapath, std_file$datapath)
+    data_list <<-  extractData(main_file$datapath, std_file$datapath)
     
-    index$analyte <- list(value=dataList[["header_2"]] == "CPS" & !grepl("ISTD", dataList[["header_1"]]), 
-                      RSD=dataList[["header_2"]] == "CPS RSD" & !grepl("ISTD", dataList[["header_1"]]))
-    index$ISTD <- list(value=dataList[["header_2"]] == "CPS" & grepl("ISTD", dataList[["header_1"]]),
-                         RSD=dataList[["header_2"]] == "CPS RSD" & grepl("ISTD", dataList[["header_1"]]))
-    index$numericalColumns <- min(which(index$analyte[["value"]])):length(dataList[["raw"]])
+    main_data <- data_list[["main"]]
+    header_1 <- data_list[["header_1"]]
+    header_2 <- data_list[["header_2"]]
     
-    dataList[["raw"]][,index$numericalColumns] <<- sapply(dataList[["raw"]][,index$numericalColumns], as.numeric)
+    index$analyte <- list(value = header_2 == "CPS" & !grepl("ISTD", header_1), 
+                          RSD = header_2 == "CPS RSD" & !grepl("ISTD", header_1))
+    
+    index$ISTD <- list(value = header_2 == "CPS" & grepl("ISTD", header_1), 
+                       RSD = header_2 == "CPS RSD" & grepl("ISTD", header_1))
+    
+    index$numericalColumns <- which(header_2 == "CPS" | header_2 == "CPS RSD")
+    
+    data_list[["main"]][ ,index$numericalColumns] <<- sapply(main_data[ ,index$numericalColumns], as.numeric)
     
     extracted(extracted() + 1)
     
-    rawData <- dataList[["raw"]]
-    header1 <- dataList[["header_1"]]
-    header2 <- dataList[["header_2"]]
-    
-    sampleNumber <<- nrow(dataList[["raw"]])
-    timeColumn <<- as.POSIXct(rawData[,which(header2=="Acq. Date-Time")], format="%d/%m/%Y %H:%M")
-    nameColumn <<- rawData[,which(header2=="Sample Name")]
-    typeColumn <<- rawData[,which(header2=="Type")]
-    levelColumn <<- rawData[,which(header2=="Level")]
+    sampleNumber <<- nrow(data_list[["main"]])
+    timeColumn <<- as.POSIXct(main_data[ , which(header_2 == "Acq. Date-Time")], format="%d/%m/%Y %H:%M")
+    nameColumn <<- main_data[,which(header_2=="Sample Name")]
+    typeColumn <<- main_data[,which(header_2=="Type")]
+    levelColumn <<- main_data[,which(header_2=="Level")]
     dtimeColumn <<- timeColumn - timeColumn[1]
     
     ##If there exists an ISTD file that has been uploaded, extract and store it
     if (!is.null(ISTD_file)) {
-      dataList[["ISTD"]]  <<- read.table(ISTD_file$datapath, header = TRUE, sep=';', stringsAsFactors=FALSE)
+      data_list[["ISTD"]]  <<- read.table(ISTD_file$datapath, header = TRUE, sep=';', stringsAsFactors=FALSE)
     }
     
     #Initialisation of some variables
@@ -340,7 +346,7 @@ ICPMS_server <- function(input, output, session) {
     renderState(extractionReady(), stateTxt = "Data extraction ", invalidStateTxt = "impossible", validStateTxt = "ready")
   })
   output$ISTD_not_extracted_txt <- renderText({
-    renderState(!(!is.null(uploadedFile$ISTD) & !is.null(dataList) & (isValidISTD() == FALSE)), stateTxt = "", invalidStateTxt = "Caution, ISTD not extracted", validStateTxt = NULL)
+    renderState(!(!is.null(uploadedFile$ISTD) & !is.null(data_list) & (isValidISTD() == FALSE)), stateTxt = "", invalidStateTxt = "Caution, ISTD not extracted", validStateTxt = NULL)
   })
   
   # Index creation ------------------------------------------------------------

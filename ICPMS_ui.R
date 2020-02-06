@@ -10,7 +10,7 @@ ICPMS_ui <- shinyUI({
                  sidebarLayout(
                    sidebarPanel(
                      fileInput("file", "File upload"),
-                     actionButton("setAsRaw", "Set as raw file"),
+                     actionButton("setAsMain", "Set as main file"),
                      actionButton("setAsStd", "Set as standard file"),
                      downloadButton("downloadISTDTemplate", "Download ISTD template"),
                      actionButton("setAsISTD", "Set as ISTD file"),
@@ -18,7 +18,7 @@ ICPMS_ui <- shinyUI({
                      htmlOutput("extract_ready_txt"),
                      htmlOutput("ISTD_not_extracted_txt")),
                    mainPanel(
-                     htmlOutput("raw_assignment_txt"),
+                     htmlOutput("main_assignment_txt"),
                      htmlOutput("std_assignment_txt"),
                      htmlOutput("ISTD_assignment_txt"),
                      div(style="display:inline-block",numericInput(inputId="fileUpload_nrow", label="Rows", value = 10, min = 1)),

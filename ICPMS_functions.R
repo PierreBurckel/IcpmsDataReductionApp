@@ -2,6 +2,37 @@ library(shiny)
 library(stringr)
 library(matlib)
 
+get_parser <- function(parser_name) {
+  if (parser_name == "agilent") parse_function_agilent
+}
+
+parse_function_agilent <- function(main_file, std_file) {
+    
+    #header_1 contains the first line of the file
+    header_1 <- scan(main_file, nlines = 1, what = character(),sep=';')
+    #header_2 contains the second line of the file
+    header_2 <- scan(main_file, nlines = 1, what = character(),sep=';', skip=1)
+    
+    #fills empty values in header_1 based on previous values
+    header_1 <- fillEmptyStrings(header_1)
+    
+    #Import main data without headers as they are imported previously. header_1 is used for column names
+    dat.main <- read.csv2(main_file, skip = 2, header = FALSE, stringsAsFactors=FALSE)
+    names(dat.main) <- header_1
+    
+    #Import the standard data, we consider here that there are headers corresponding to the standard names
+    StdDataframe <- read.table(std_file, header = TRUE, sep=';', stringsAsFactors=FALSE)
+    
+    #Remove potential duplicates of element names in the standard dataframe
+    StdDataframe <- removeDuplicateLines(StdDataframe)
+    
+    #Assigns the first column of the std file to the row names then removes the first column
+    row.names(StdDataframe) <- StdDataframe[,1]
+    StdDataframe <- StdDataframe[,2:length(StdDataframe)]
+    
+    return(list(main=dat.main, std=StdDataframe, header_1=header_1, header_2=header_2))
+}
+
 agilentElementNamePattern <- "[ ]{2}[A-Z]{1}[a-z]*[ ]{2}"
 
 getConcentration <- function(m, Cm, sig, vsig, dft, vdft) {
@@ -411,7 +442,7 @@ replaceValues <- function(ICPvalue, SD, colRange, replaceType, lineIndex, source
   return(list(value=ICPvalue,SD=SD))
 }
 
-##Function to create the ISTD template based on raw datafile
+##Function to create the ISTD template based on main datafile
 ##Returns a dataframe containing a column analyte with the analyte names
 ##and a column ISTD with the ISTD names
 createISTDtemplate <- function(dataFileName){
@@ -435,7 +466,7 @@ createISTDtemplate <- function(dataFileName){
   return(data.frame(analyte=analyteColumn, ISTD=ISTDColumn))
 }
 
-##Function that takes the raw data and standard file along with some options
+##Function that takes the main data and standard file along with some options
 ##and returns the extracted information from these file. Extracted information
 ##is CPS, SD, IS.CPS, IS.SD, etc...
 extractData <- function(dataFileName, stdFileName){
@@ -448,9 +479,9 @@ extractData <- function(dataFileName, stdFileName){
   #fills empty values in header_1 based on previous values
   header_1 <- fillEmptyStrings(header_1)
   
-  #Import raw data without headers as they are imported previously. header_1 is used for column names
-  dat.raw <- read.csv2(dataFileName, skip = 2, header = FALSE, stringsAsFactors=FALSE)
-  names(dat.raw) <- header_1
+  #Import main data without headers as they are imported previously. header_1 is used for column names
+  dat.main <- read.csv2(dataFileName, skip = 2, header = FALSE, stringsAsFactors=FALSE)
+  names(dat.main) <- header_1
   
   #Import the standard data, we consider here that there are headers corresponding to the standard names
   StdDataframe <- read.table(stdFileName, header = TRUE, sep=';', stringsAsFactors=FALSE)
@@ -462,7 +493,7 @@ extractData <- function(dataFileName, stdFileName){
   row.names(StdDataframe) <- StdDataframe[,1]
   StdDataframe <- StdDataframe[,2:length(StdDataframe)]
   
-  return(list(raw=dat.raw, std=StdDataframe, header_1=header_1, header_2=header_2))
+  return(list(main=dat.main, std=StdDataframe, header_1=header_1, header_2=header_2))
 }
   
   
