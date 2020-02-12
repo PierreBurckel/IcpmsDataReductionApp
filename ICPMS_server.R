@@ -11,7 +11,7 @@ ICPMS_server <- function(input, output, session) {
   data_list <- list()
   blankList <- list()
 
-  uploadedFile <- reactiveValues()
+  uploaded_file <- reactiveValues(main_file = NULL, std_file = NULL, ISTD_file = NULL)
   index <- reactiveValues()
   dataModified <- reactiveValues()
   dataModifiers <- reactiveValues(ISTD=list(), blank=list())
@@ -25,7 +25,7 @@ ICPMS_server <- function(input, output, session) {
   tempDataFile <- reactive({input$file})
   
   #faire une fonction isValidRaw et isValidStd qui retournent FALSE si NULL et si non valide
-  extractionReady <- reactive({!is.null(uploadedFile$main) & !is.null(uploadedFile$std)})
+  extractionReady <- reactive({!is.null(uploaded_file$main) & !is.null(uploaded_file$std)})
   #remplacer par ISTDReady et mettre une fonction isValidISTD pour check validité
   isValidISTD <- reactive({
     extracted()
@@ -228,15 +228,15 @@ ICPMS_server <- function(input, output, session) {
   
   #Text display of imported file
   output$main_assignment_txt <- renderText({
-    main_file <- uploadedFile$main
+    main_file <- uploaded_file$main
     renderState(!is.null(main_file), stateTxt = "Main file name: ", invalidStateTxt = "Unassigned", validStateTxt = main_file$name)
   })
   output$std_assignment_txt <- renderText({
-    std_file <- uploadedFile$std
+    std_file <- uploaded_file$std
     renderState(!is.null(std_file), stateTxt = "Standard file name: ", invalidStateTxt = "Unassigned", validStateTxt = std_file$name)
   })
   output$ISTD_assignment_txt <- renderText({
-    ISTD_file <- uploadedFile$ISTD
+    ISTD_file <- uploaded_file$ISTD
     renderState(!is.null(ISTD_file), stateTxt = "ISTD file name: ", invalidStateTxt = "Unassigned", validStateTxt = ISTD_file$name)
   })
   
@@ -252,22 +252,22 @@ ICPMS_server <- function(input, output, session) {
   #Buttons to set main, std and ISTD files
   observeEvent(input$setAsMain, {
     req(tempDataFile())
-    uploadedFile$main <- tempDataFile()
+    uploaded_file$main <- tempDataFile()
   })
   observeEvent(input$setAsStd, {
     req(tempDataFile())
-    uploadedFile$std <- tempDataFile()
+    uploaded_file$std <- tempDataFile()
   })
   observeEvent(input$setAsISTD, {
     req(tempDataFile())
-    uploadedFile$ISTD <- tempDataFile()
+    uploaded_file$ISTD <- tempDataFile()
   })
   
   #Button to download the list of analyte and ISTD
   output$downloadISTDTemplate <- downloadHandler(
     filename = "ISTD_Template.csv",
     content = function(file) {
-      write.csv(createISTDtemplate((uploadedFile$main)$datapath),
+      write.csv(createISTDtemplate((uploaded_file$main)$datapath),
                 file, sep=";", quote = FALSE,
                 row.names = FALSE, col.names = FALSE)
       })
@@ -280,12 +280,12 @@ ICPMS_server <- function(input, output, session) {
     
     req(extractionReady())
     
-    main_file <- uploadedFile$main
-    std_file <- uploadedFile$std
-    ISTD_file <- uploadedFile$ISTD
+    main_file <- uploaded_file$main
+    std_file <- uploaded_file$std
+    ISTD_file <- uploaded_file$ISTD
     
     parse_function <- get_parser("agilent")
-    parsed_data <- parse_function(main_file$datapath, std_file$datapath)
+    parsed_data <- parse_function(main_file$datapath, std_file$datapath, ISTD_file$datapath)
     
     data_list <<-  extractData(main_file$datapath, std_file$datapath)
     
@@ -346,7 +346,7 @@ ICPMS_server <- function(input, output, session) {
     renderState(extractionReady(), stateTxt = "Data extraction ", invalidStateTxt = "impossible", validStateTxt = "ready")
   })
   output$ISTD_not_extracted_txt <- renderText({
-    renderState(!(!is.null(uploadedFile$ISTD) & !is.null(data_list) & (isValidISTD() == FALSE)), stateTxt = "", invalidStateTxt = "Caution, ISTD not extracted", validStateTxt = NULL)
+    renderState(!(!is.null(uploaded_file$ISTD) & !is.null(data_list) & (isValidISTD() == FALSE)), stateTxt = "", invalidStateTxt = "Caution, ISTD not extracted", validStateTxt = NULL)
   })
   
   # Index creation ------------------------------------------------------------

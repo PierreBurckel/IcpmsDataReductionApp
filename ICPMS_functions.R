@@ -8,29 +8,24 @@ get_parser <- function(parser_name) {
 
 parse_function_agilent <- function(main_file, std_file) {
     
-    #header_1 contains the first line of the file
     header_1 <- scan(main_file, nlines = 1, what = character(),sep=';')
-    #header_2 contains the second line of the file
     header_2 <- scan(main_file, nlines = 1, what = character(),sep=';', skip=1)
     
-    #fills empty values in header_1 based on previous values
-    header_1 <- fillEmptyStrings(header_1)
+    header_1 <- fill_empty_string(header_1)
     
-    #Import main data without headers as they are imported previously. header_1 is used for column names
-    dat.main <- read.csv2(main_file, skip = 2, header = FALSE, stringsAsFactors=FALSE)
-    names(dat.main) <- header_1
+    main_dataframe <- read.csv2(main_file, skip = 2, header = FALSE, stringsAsFactors = FALSE)
+    names(main_dataframe) <- header_1
     
-    #Import the standard data, we consider here that there are headers corresponding to the standard names
-    StdDataframe <- read.table(std_file, header = TRUE, sep=';', stringsAsFactors=FALSE)
+    std_dataframe <- read.table(std_file, header = TRUE, sep=';', stringsAsFactors=FALSE)
+    std_elements <- std_dataframe[ , 1]
     
-    #Remove potential duplicates of element names in the standard dataframe
-    StdDataframe <- removeDuplicateLines(StdDataframe)
+    # Remove duplicated elements
+    std_dataframe <- std_dataframe[!duplicated(std_elements), , drop = FALSE]
     
-    #Assigns the first column of the std file to the row names then removes the first column
-    row.names(StdDataframe) <- StdDataframe[,1]
-    StdDataframe <- StdDataframe[,2:length(StdDataframe)]
+    row.names(std_dataframe) <- std_elements
+    std_dataframe <- std_dataframe[ , 2:length(std_dataframe), drop = FALSE]
     
-    return(list(main=dat.main, std=StdDataframe, header_1=header_1, header_2=header_2))
+    return(list(main=main_dataframe, std=std_dataframe, header_1=header_1, header_2=header_2))
 }
 
 agilentElementNamePattern <- "[ ]{2}[A-Z]{1}[a-z]*[ ]{2}"
@@ -349,22 +344,22 @@ propagateUncertainty <- function(a, b, operation){
 
 ##Function that replaces each value in a text vector by its previous value if the current value is empty (=="")
 ##Note that if the first value of the vector is empty, there will be empty values in the returned vector
-fillEmptyStrings <- function(textVector){
-  for (i in 2:length(textVector)){
-    if (textVector[i] == ""){
-      textVector[i] <- textVector[i-1]
+fill_empty_string <- function(char_vector){
+  for (i in 2:length(char_vector)){
+    if (char_vector[i] == ""){
+      char_vector[i] <- char_vector[i-1]
     }
   }
   
   return(textVector)
 }
 
-removeDuplicateLines <- function(df){
-  nLine <- 1
-  while (nLine < nrow(df)){
+rm_duplicate_lines <- function(df){
+  n_line <- 1
+  while (n_line < nrow(df)){
     linesToDelete <- numeric()
-    for (i in (nLine + 1):nrow(df)){
-      if (identical(as.character(df[i,]), as.character(df[nLine,]))){
+    for (i in (n_line + 1):nrow(df)){
+      if (identical(as.character(df[i,]), as.character(df[n_line,]))){
         linesToDelete <- c(linesToDelete, i)
       }
       else{}
@@ -375,7 +370,7 @@ removeDuplicateLines <- function(df){
     }
     else {}
     
-    nLine <- nLine + 1
+    n_line <- n_line + 1
   }
   
   return(df)
@@ -453,7 +448,7 @@ createISTDtemplate <- function(dataFileName){
   header_2 <- scan(dataFileName, nlines = 1, what = character(),sep=';',skip=1)
   
   #fills empty values in header_1 based on previous values
-  header_1 <- fillEmptyStrings(header_1)
+  header_1 <- fill_empty_string(header_1)
   
   #finds the analyte and the ISTD in the headers based on the occurence of CPS and ISTD keywords
   analyteIndex <- (header_2 == "CPS") & (!grepl("ISTD", header_1))
@@ -477,7 +472,7 @@ extractData <- function(dataFileName, stdFileName){
   header_2 <- scan(dataFileName, nlines = 1, what = character(),sep=';', skip=1)
   
   #fills empty values in header_1 based on previous values
-  header_1 <- fillEmptyStrings(header_1)
+  header_1 <- fill_empty_string(header_1)
   
   #Import main data without headers as they are imported previously. header_1 is used for column names
   dat.main <- read.csv2(dataFileName, skip = 2, header = FALSE, stringsAsFactors=FALSE)
@@ -487,7 +482,7 @@ extractData <- function(dataFileName, stdFileName){
   StdDataframe <- read.table(stdFileName, header = TRUE, sep=';', stringsAsFactors=FALSE)
   
   #Remove potential duplicates of element names in the standard dataframe
-  StdDataframe <- removeDuplicateLines(StdDataframe)
+  StdDataframe <- rm_duplicate_lines(StdDataframe)
   
   #Assigns the first column of the std file to the row names then removes the first column
   row.names(StdDataframe) <- StdDataframe[,1]
