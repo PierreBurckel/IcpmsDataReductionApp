@@ -8,225 +8,336 @@ source('C:/Users/pierr/Desktop/IPGP/R/ICP-MS_process/ICPMS_functions.R')
 
 ICPMS_server <- function(input, output, session) {
   
-  data_list <- list()
-  blankList <- list()
-
+  # Variable initialization ---------------------------------------------------
+  
+  select_input_names <- c("indexISTDchoiceWhat", "indexBlkchoiceWhat", "indexISTDchoiceIn", "indexBlkchoiceIn",
+                          "selectDriftIndex", "viewConcentrationIndex")
+  
+  data_modified <- reactiveValues()
+  data_modifiers <- reactiveValues(ISTD=list(), blank=list())
+  index <- reactiveValues(custom = list())
+  parsed_data <- reactiveValues()
+  parsed_info <- reactiveValues()
+  process_parameters <- reactiveValues(driftCorrectedElement=character(), calibration=list())
   uploaded_file <- reactiveValues(main_file = NULL, std_file = NULL, ISTD_file = NULL)
-  index <- reactiveValues()
-  dataModified <- reactiveValues()
-  dataModifiers <- reactiveValues(ISTD=list(), blank=list())
-  processParameters <- reactiveValues(driftCorrectedElement=character(), calibration=list())
   
-  ISTDmodNumber <- reactiveVal(0)
-  blankModNumber <- reactiveVal(0)
+  blank_mod_nb <- reactiveVal(0)
   extracted <- reactiveVal(0)
-  setDrift <- reactiveVal(0)
+  ISTD_mod_nb <- reactiveVal(0)
+  set_drift <- reactiveVal(0)
   
-  tempDataFile <- reactive({input$file})
+  # Reactive expressions ------------------------------------------------------
   
-  #faire une fonction isValidRaw et isValidStd qui retournent FALSE si NULL et si non valide
-  extractionReady <- reactive({!is.null(uploaded_file$main) & !is.null(uploaded_file$std)})
-  #remplacer par ISTDReady et mettre une fonction isValidISTD pour check validité
-  isValidISTD <- reactive({
+  # Expression holding the current user uploaded file
+  temp_data_file <- reactive({input$file})
+  
+  
+  extraction_ready <- reactive({
+    !is.null(uploaded_file$main) & !is.null(uploaded_file$std)
+    })
+  
+  is_valid_ISTD <- reactive({
+    
     extracted()
-    return(!is.null(index$ISTD[["value"]]) & !is.null(data_list[["ISTD"]]))
+    
+    return(!is.null(index$ISTD) & !is.null(parsed_data$ISTD))
   })
   
   analyte <- reactive({
+    
     req(extracted())
-    main_data <- data_list[["main"]]
-    return(list(value=main_data[,index$analyte[["value"]], drop=FALSE],
-                SD=main_data[,index$analyte[["RSD"]], drop=FALSE]/100*main_data[,index$analyte[["value"]], drop=FALSE]))
+    
+    return(list(value = parsed_data$element_value[ , index$analyte, drop = FALSE],
+                SD = parsed_data$element_value[ , index$analyte, drop = FALSE]))
   })
-
+  
   ISTD <- reactive({
+    
     req(extracted())
-    main_data <- data_list[["main"]]
-    return(list(value=main_data[,index$ISTD[["value"]], drop=FALSE],
-                SD=main_data[,index$ISTD[["RSD"]], drop=FALSE]/100*main_data[,index$ISTD[["value"]], drop=FALSE]))
+    
+    return(list(value = parsed_data$element_value[ , index$ISTD, drop = FALSE],
+                SD = parsed_data$element_value[ , index$ISTD, drop = FALSE]))
+  })
+  
+  parsed_data$analyte_zero_val <- reactive({
+    
+    req(extracted())
+    
+    zero_df <- matrix(0, nrow = parsed_info$smp_nb, ncol = analyteNumber())
+    colnames(zero_df) <- analyteNames()
+    analyte_zero_val <- list(value = zero_df, SD = zero_df)
+    
+    return(analyte_zero_val)
   })
   
   analyteNames <- reactive({
+    
     req(extracted())
-    header_1 <- data_list[["header_1"]]
-    return(header_1[index$analyte[["value"]]])
+    
+    return(parsed_info$element_names[index$analyte])
   })
   
   analyteNumber <- reactive({
+    
     req(extracted())
-    return(length(which(index$analyte[["value"]])))
+    
+    return(sum(index$analyte))
   })
   
   ISTDNames <- reactive({
+    
     req(extracted())
-    header_1 <- data_list[["header_1"]]
-    return(header_1[index$ISTD[["value"]]])
+    
+    return(parsed_info$element_names[index$ISTD])
   })
   
   ISTDNumber <- reactive({
+    
     req(extracted())
-    return(length(which(index$ISTD[["value"]])))
+    
+    return(sum(index$ISTD))
   })
   
   activeISTDmodifier <- reactive({
+    
     req(extracted())
-    req(isValidISTD())
-    elements <- 1:ISTDNumber()
+
+    elements <- seq(ISTDNumber())
     method <- input$ISTDcorrectionMethod
     whatIndex <- index$custom[[input$indexISTDchoiceWhat]]
     inIndex <- index$custom[[input$indexISTDchoiceIn]]
-    return(list(elements=elements, method=method, whatIndex=whatIndex, inIndex=inIndex))
+    
+    return(list(elements = elements, method = method,
+                whatIndex = whatIndex, inIndex = inIndex))
   })
 
   activeBlankModifier <- reactive({
+    
     req(extracted())
-    browser()
-    elements <- 1:analyteNumber()
+    
+    elements <- seq(analyteNumber())
     method <- input$blkInterpolationMethod
     whatIndex <- index$custom[[input$indexBlkchoiceWhat]]
     inIndex <- index$custom[[input$indexBlkchoiceIn]]
-    return(list(elements=elements, method=method, whatIndex=whatIndex, inIndex=inIndex))
+    
+    return(list(elements = elements, method = method,
+                whatIndex = whatIndex, inIndex = inIndex))
   })
   
-  dataModified$ISTD <- reactive({
+  data_modified$ISTD <- reactive({
+    
     req(extracted())
-    return(getModifiedData(ISTD(), dataModifiers$ISTD, input$ISTDmodifiers))
+    
+    return(getModifiedData(dat = ISTD(), modifiers = data_modifiers$ISTD,
+                           selectedModifiers = input$ISTDmodifiers))
   })
   
   ISTDmatrix <- reactive({
+    
     req(extracted())
-    if(is.null(data_list[["ISTD"]])) {
-      return(matrix(1,sampleNumber,analyteNumber()))
-    }
-    else{
-      return(createISTDMatrix(data_list[["ISTD"]], dataModified$ISTD()))
+    
+    if(is.null(parsed_data$ISTD)) {
+      return(matrix(1, parsed_info$smp_nb, analyteNumber()))
+    } else {
+      return(createISTDMatrix(parsed_data$ISTD, data_modified$ISTD()))
     }
   })
   
-  dataModified$ratio <- reactive({
+  data_modified$ratio <- reactive({
+    
     req(extracted())
     
-    browser()
-    
-    return(propagateUncertainty(a=analyte(), b=ISTDmatrix(), operation="division"))
+    return(propagateUncertainty(a = analyte(), b = ISTDmatrix(),
+                                operation="division"))
   })
   
-  dataModified$blankRatio <- reactive({
-    req(extracted())
+  data_modified$blankRatio <- reactive({
     
-    browser()
+    req(extracted())
     
     if (input$useBlankCorrection == FALSE) {
-      return(blankList)
-    }
-    else {
-      return(getModifiedData(dataModified$ratio(), dataModifiers$blank, input$blankModifiers))
+      return(parsed_data$analyte_zero_val())
+    } else {
+      return(getModifiedData(dat = data_modified$ratio(), modifiers = data_modifiers$blank,
+                             selectedModifiers = input$blankModifiers))
     }
   })
 
-  dataModified$blankCorrectedRatio <- reactive({
+  data_modified$blankCorrectedRatio <- reactive({
+    
     req(extracted())
-    return(propagateUncertainty(a=dataModified$ratio(), b=dataModified$blankRatio(), operation="substraction"))
+    
+    return(propagateUncertainty(a = data_modified$ratio(), b = data_modified$blankRatio(),
+                                operation="substraction"))
   })
   
   driftData <- reactive({
-    req(index$drift, dataModified$blankCorrectedRatio)
-    return(list(value=dataModified$blankCorrectedRatio()[["value"]][index$drift,,drop=FALSE],
-                SD=dataModified$blankCorrectedRatio()[["SD"]][index$drift,,drop=FALSE]))
+    
+    req(index$drift, data_modified$blankCorrectedRatio)
+    
+    return(list(value = data_modified$blankCorrectedRatio()[["value"]][index$drift, , drop=FALSE],
+                SD = data_modified$blankCorrectedRatio()[["SD"]][index$drift, , drop=FALSE]))
   })
   
-  dataModified$driftModels <- reactive({
+  # Complex reactive expressions ----------------------------------------------
+  
+  # R models used for external drift correction
+  data_modified$driftModels <- reactive({
+    
     req(driftData())
+    
     driftModels <- list()
-    for (i in seq(analyteNumber())) {
-      element <- analyteNames()[i]
-      driftTime <- as.numeric(dtimeColumn[index$drift])
-      driftValues <- driftData()[["value"]][,element]
+    
+    for (element in analyteNames()) {
 
-      if (processParameters$driftCorrectedElement[[element]] == "None") {
-        driftModels[[element]] <- "None"
+      driftTime <- as.numeric(parsed_info$delta_t[index$drift])
+      driftValues <- driftData()[["value"]][ , element]
+
+      if (process_parameters$driftCorrectedElement[[element]] == "None") {
+        driftModels[[element]] <- NULL
       }
-      else if (processParameters$driftCorrectedElement[[element]] == "Linear") {
+      else if (process_parameters$driftCorrectedElement[[element]] == "Linear") {
         driftModels[[element]] <- lm(driftValues ~ driftTime)
       }
-      else if (processParameters$driftCorrectedElement[[element]] == "Quadratic") {
+      else if (process_parameters$driftCorrectedElement[[element]] == "Quadratic") {
         driftModels[[element]] <- lm(driftValues ~ poly(driftTime, 2, raw = TRUE))
       }
     }
+    
     return(driftModels)
+    
   })
   
-  dataModified$driftFactor <- reactive({
+  # External drift factors for all analytes computed from the drift models
+  data_modified$driftFactor <- reactive({
+    
     req(index$drift)
-    print("In driftFactor")
-    driftFactor <- list(value = vector(), SD = vector())
-    analyteDriftFactor <- list(value = vector(), SD = vector())
-    for (i in seq(analyteNumber())) {
-      element <- analyteNames()[i]
-      driftStart <- getElementDriftIndex(element, data_list[["std"]], levelColumn, index$drift)[1]
-      analyteDriftFactor[["value"]] <- as.data.frame(rep(1, sampleNumber - driftStart + 1))
-      analyteDriftFactor[["SD"]] <- as.data.frame(rep(0, sampleNumber - driftStart + 1))
-      t0 <- as.numeric(dtimeColumn[driftStart])
-      driftModel <- dataModified$driftModels()[[element]]
-      if (driftModel != "None") {
-        timeInterval <- as.numeric(dtimeColumn[as.numeric(dtimeColumn) >= t0])
-        driftPredict <- predict(driftModel, newdata = data.frame(driftTime = timeInterval),interval="predict", confidence = 0.68)
-        driftPredictList <- list(value = driftPredict[,"fit"], SD = (driftPredict[,"upr"] - driftPredict[,"fit"]))
-        analyteDriftFactor <- propagateUncertainty(a=driftPredictList, b=list(value = driftPredictList[["value"]][1], SD = driftPredictList[["SD"]][1]), operation="division")
-        analyteDriftFactor[["value"]][1,] <- 1
-        analyteDriftFactor[["SD"]][1,] <- 0
+    
+    driftFactor <- list(value = vector(), SD = vector()) # drift factor for all elements
+    analyteDriftFactor <- list(value = vector(), SD = vector()) # drift factor for analyte being evaluated
+    
+    delta_t <- as.numeric(parsed_info$delta_t)
+    
+    for (element in analyteNames()) {
+      
+      # Drift evaluation starts after the calibration of a given element
+      driftStart <- getElementDriftIndex(element, parsed_data$std, parsed_info$lvl_col, index$drift)[1]
+      drift_nb <- parsed_info$smp_nb - driftStart + 1
+      non_drift_nb <- parsed_info$smp_nb - drift_nb
+      
+      analyteDriftFactor[["value"]] <- rep(1, drift_nb)
+      analyteDriftFactor[["SD"]] <- rep(0, drift_nb)
+      
+      t0 <- delta_t[driftStart]
+      
+      driftModel <- data_modified$driftModels()[[element]]
+      
+      if (!is.null(driftModel)) {
+        
+        # Drift prediction and conversion to relative
+        
+        timeInterval <- delta_t[delta_t >= t0]
+        
+        driftPredict <- predict(driftModel, newdata = data.frame(driftTime = timeInterval),
+                                interval="predict", confidence = 0.68)
+        prediction_val <- list(value = driftPredict[ , "fit"],
+                               SD = (driftPredict[ , "upr"] - driftPredict[ , "fit"]))
+        first_prediction_val <- (list(value = prediction_val[["value"]][1],
+                                      SD = prediction_val[["SD"]][1]))
+        
+        analyteDriftFactor <- propagateUncertainty(a=prediction_val, b=first_prediction_val,
+                                                   operation="division")
+        # First relative drift value is of 1 and SD of 0
+        analyteDriftFactor[["value"]][1, ] <- 1
+        analyteDriftFactor[["SD"]][1, ] <- 0
       }
-      driftFactor[["value"]] <- cbind(driftFactor[["value"]], c(rep(1,driftStart-1),analyteDriftFactor[["value"]][,]))
-      driftFactor[["SD"]] <- cbind(driftFactor[["SD"]], c(rep(0,driftStart-1),analyteDriftFactor[["SD"]][,]))
+      
+      # Concatenation of values drift- and non-drift corrected
+      # Creation of the driftFactor matrix containing relative drift values for all analytes
+      
+      driftFactor[["value"]] <- cbind(driftFactor[["value"]],
+                                      c(rep(1, non_drift_nb), analyteDriftFactor[["value"]]))
+      driftFactor[["SD"]] <- cbind(driftFactor[["SD"]],
+                                   c(rep(0,driftStart-1),analyteDriftFactor[["SD"]]))
+      
     }
+    
     return(driftFactor)
+    
   })
 
-  dataModified$standardData <- reactive({
-    req(dataModified$blankCorrectedRatio())
-    signal <- dataModified$blankCorrectedRatio()
-    #aac <- processParameters$autoAdaptCalibration
+  # Standard signal (value and SD) of all analytes
+  data_modified$standardData <- reactive({
+    
+    req(data_modified$blankCorrectedRatio())
+    
+    signal <- data_modified$blankCorrectedRatio()
+
     standardData <- list()
-    for (i in seq(analyteNumber())) {
-      calibrationData <- getCalibrationData(elementFullName = analyteNames()[i], signal=signal,
-                                            stdIdentificationColumn=levelColumn, stdDataFrame = data_list[["std"]])
-      standardData[[analyteNames()[i]]] <- calibrationData
+    
+    for (element in analyteNames()) {
+      calibration_data <- getCalibrationData(elementFullName = element, signal=signal,
+                                            stdIdentificationColumn=parsed_info$lvl_col, stdDataFrame = parsed_data$std)
+      standardData[[element]] <- calibration_data
     }
+    
     return(standardData)
+    
   })
 
-  dataModified$calibrationModels <- reactive({
-    req(dataModified$standardData())
-    calibrationModels <- list()
-    for (i in seq(analyteNumber())) {
-      element <- analyteNames()[i]
-      calibrationData <- dataModified$standardData()[[element]]
-      calibrationModels[[element]] <- getCalibrationModel(element, processParameters, calibrationData)
+  # Matrix format calibration models of all analytes
+  data_modified$calibration_models <- reactive({
+    
+    req(data_modified$standardData())
+    
+    calibration_models <- list()
+    
+    for (element in analyteNames()) {
+      calibration_data <- data_modified$standardData()[[element]]
+      calibration_models[[element]] <- getCalibrationModel(element, process_parameters, calibration_data)
     }
-    return(calibrationModels)
+    
+    return(calibration_models)
+    
   })
 
-  dataModified$concentration <- reactive({
-    req(extracted())
-    req(dataModified$blankCorrectedRatio())
-    print("In concentration")
-    concentrationTable <- vector()
-    for (i in seq(analyteNumber())) {
-      element <- analyteNames()[i]
-      modelParam <- dataModified$calibrationModels()[[element]][["modelParam"]]
-      covMatrix <- dataModified$calibrationModels()[[element]][["covMatrix"]]
-      signal <- dataModified$blankCorrectedRatio()[["value"]][,i]
-      vSignal <- dataModified$blankCorrectedRatio()[["SD"]][,i]^2
-      drift <- dataModified$driftFactor()[["value"]][,i]
-      vDrift <- dataModified$driftFactor()[["SD"]][,i]^2
-      analyteConcentrations <- getConcentration(m = modelParam, Cm = covMatrix, sig = signal, vsig = vSignal, dft = drift, vdft = vDrift)
-      concentrationTable <- cbind(concentrationTable, analyteConcentrations)
+  # Analyte concentrations
+  data_modified$concentration <- reactive({
+    
+    req(data_modified$blankCorrectedRatio())
+    
+    concentration_table <- vector()
+    
+    for (element in analyteNames()) {
+      
+      calibration_model <- data_modified$calibration_models()[[element]]
+      blank_cor_value <- data_modified$blankCorrectedRatio()[["value"]]
+      blank_cor_sd <- data_modified$blankCorrectedRatio()[["SD"]]
+      drift_value <- data_modified$driftFactor()[["value"]]
+      drift_sd <- data_modified$driftFactor()[["SD"]]
+      
+      model_parameters <- calibration_model[["modelParam"]]
+      covariance_matrix <- calibration_model[["covMatrix"]]
+      signal <- blank_cor_value[ , element]
+      signal_variance <- blank_cor_sd[ , element]^2
+      drift <- drift_value[ , element]
+      drift_variance <- drift_sd[ , element]^2
+      
+      analyte_concentrations <- getConcentration(m = model_parameters, Cm = covariance_matrix,
+                                                sig = signal, vsig = signal_variance,
+                                                dft = drift, vdft = drift_variance)
+      
+      concentration_table <- cbind(concentration_table, analyte_concentrations)
     }
-    return(concentrationTable)
+    
+    return(concentration_table)
+    
   })
+  
   # File import ---------------------------------------------------------------
   
-  #Text display of imported file
+  # Text display of imported file
+  
   output$main_assignment_txt <- renderText({
     main_file <- uploaded_file$main
     renderState(!is.null(main_file), stateTxt = "Main file name: ", invalidStateTxt = "Unassigned", validStateTxt = main_file$name)
@@ -240,30 +351,43 @@ ICPMS_server <- function(input, output, session) {
     renderState(!is.null(ISTD_file), stateTxt = "ISTD file name: ", invalidStateTxt = "Unassigned", validStateTxt = ISTD_file$name)
   })
   
-  #Table rendering of current uploaded file
+  output$extract_ready_txt <- renderText({
+    renderState(extraction_ready(), stateTxt = "Data extraction ", invalidStateTxt = "impossible", validStateTxt = "ready")
+  })
+  
+  # Table rendering of current uploaded file
+  
   output$tempFilePreview <- renderTable({
-    req(tempDataFile())
-    tempDataTable <- read.table(tempDataFile()$datapath, sep =";", header = FALSE)
-    rowNumber <- min(nrow(tempDataTable), input$fileUpload_nrow) 
-    columnNumber <- min(length(tempDataTable), input$fileUpload_ncolumn) 
-    tempDataTable[1:rowNumber, 1:columnNumber]
+    
+    req(temp_data_file())
+    
+    temp_data_file <- read.table(temp_data_file()$datapath, sep =";", header = FALSE)
+    
+    rowNumber <- min(nrow(temp_data_file), input$fileUpload_nrow) 
+    columnNumber <- min(length(temp_data_file), input$fileUpload_ncolumn) 
+    
+    temp_data_file[1:rowNumber, 1:columnNumber]
   })
   
-  #Buttons to set main, std and ISTD files
+  # Set main, std and ISTD files
+  
   observeEvent(input$setAsMain, {
-    req(tempDataFile())
-    uploaded_file$main <- tempDataFile()
-  })
-  observeEvent(input$setAsStd, {
-    req(tempDataFile())
-    uploaded_file$std <- tempDataFile()
-  })
-  observeEvent(input$setAsISTD, {
-    req(tempDataFile())
-    uploaded_file$ISTD <- tempDataFile()
+    req(temp_data_file())
+    uploaded_file$main <- temp_data_file()
   })
   
-  #Button to download the list of analyte and ISTD
+  observeEvent(input$setAsStd, {
+    req(temp_data_file())
+    uploaded_file$std <- temp_data_file()
+  })
+  
+  observeEvent(input$setAsISTD, {
+    req(temp_data_file())
+    uploaded_file$ISTD <- temp_data_file()
+  })
+  
+  # Download ISTD template
+  
   output$downloadISTDTemplate <- downloadHandler(
     filename = "ISTD_Template.csv",
     content = function(file) {
@@ -272,271 +396,213 @@ ICPMS_server <- function(input, output, session) {
                 row.names = FALSE, col.names = FALSE)
       })
 
-  # Parser --------------------------------------------------------------------
+  # Extraction ----------------------------------------------------------------
   
   observeEvent(input$extract, {
     
-    browser()
-    
-    req(extractionReady())
+    req(extraction_ready())
     
     main_file <- uploaded_file$main
     std_file <- uploaded_file$std
     ISTD_file <- uploaded_file$ISTD
     
     parse_function <- get_parser("agilent")
-    parsed_data <- parse_function(main_file$datapath, std_file$datapath, ISTD_file$datapath)
     
-    data_list <<-  extractData(main_file$datapath, std_file$datapath)
+    parsed <- parse_function(main_file$datapath,
+                             std_file$datapath,
+                             ISTD_file$datapath)
     
-    main_data <- data_list[["main"]]
-    header_1 <- data_list[["header_1"]]
-    header_2 <- data_list[["header_2"]]
+    parsed_data$element_value <- parsed[["element_value"]]
+    parsed_data$element_sd <- parsed[["element_sd"]]
+    parsed_data$std <- parsed[["std"]]
     
-    index$analyte <- list(value = header_2 == "CPS" & !grepl("ISTD", header_1), 
-                          RSD = header_2 == "CPS RSD" & !grepl("ISTD", header_1))
+    parsed_info$element_names <- parsed[["element_names"]]
+    parsed_info$smp_nb <- parsed[["smp_nb"]]
+    parsed_info$time_col <- parsed[["time_col"]]
+    parsed_info$name_col <- parsed[["name_col"]]
+    parsed_info$type_col <- parsed[["type_col"]]
+    parsed_info$lvl_col <- parsed[["lvl_col"]]
+    parsed_info$delta_t <- parsed[["delta_t"]]
     
-    index$ISTD <- list(value = header_2 == "CPS" & grepl("ISTD", header_1), 
-                       RSD = header_2 == "CPS RSD" & grepl("ISTD", header_1))
-    
-    index$numericalColumns <- which(header_2 == "CPS" | header_2 == "CPS RSD")
-    
-    data_list[["main"]][ ,index$numericalColumns] <<- sapply(main_data[ ,index$numericalColumns], as.numeric)
+    index$analyte <- parsed[["analyte_index"]]
+    index$ISTD <- parsed[["ISTD_index"]]
+    index$numericalColumns <- parsed[["num_col_index"]]
+    index$custom[["All"]] <- which(rep(x= TRUE, parsed_info$smp_nb))
     
     extracted(extracted() + 1)
     
-    sampleNumber <<- nrow(data_list[["main"]])
-    timeColumn <<- as.POSIXct(main_data[ , which(header_2 == "Acq. Date-Time")], format="%d/%m/%Y %H:%M")
-    nameColumn <<- main_data[,which(header_2=="Sample Name")]
-    typeColumn <<- main_data[,which(header_2=="Type")]
-    levelColumn <<- main_data[,which(header_2=="Level")]
-    dtimeColumn <<- timeColumn - timeColumn[1]
+    # If there exists an ISTD file that has been uploaded, extract and store it
     
-    ##If there exists an ISTD file that has been uploaded, extract and store it
     if (!is.null(ISTD_file)) {
-      data_list[["ISTD"]]  <<- read.table(ISTD_file$datapath, header = TRUE, sep=';', stringsAsFactors=FALSE)
+      parsed_data$ISTD <- read.table(ISTD_file$datapath,
+                                     header = TRUE, sep=';',
+                                     stringsAsFactors=FALSE)
+      
+      parsed_data$ISTD <- as.matrix(parsed_data$ISTD)
     }
     
-    #Initialisation of some variables
-    blankList <<- list(value=as.data.frame(matrix(0, nrow=sampleNumber, ncol=analyteNumber())),
-                            SD=as.data.frame(matrix(0, nrow=sampleNumber, ncol=analyteNumber())))
-    names(blankList[["value"]]) <<- analyteNames()
-    names(blankList[["SD"]]) <<- analyteNames()
+    # Initializing process parameters
     
-    index$custom[["All"]] <- which(rep(x= TRUE, sampleNumber))
+    process_parameters$driftCorrectedElement <- rep("None", analyteNumber())
+    names(process_parameters$driftCorrectedElement) <- analyteNames()
     
-    processParameters$driftCorrectedElement <- rep("None", analyteNumber())
-    names(processParameters$driftCorrectedElement) <- analyteNames()
+    process_parameters$forceIntercept <- rep(FALSE, analyteNumber())
+    names(process_parameters$forceIntercept) <- analyteNames()
     
-    processParameters$forceIntercept <- rep(FALSE, analyteNumber())
-    names(processParameters$forceIntercept) <- analyteNames()
-    
-    processParameters$autoAdaptCalibration <- rep(FALSE, analyteNumber())
-    names(processParameters$autoAdaptCalibration) <- analyteNames()
+    process_parameters$autoAdaptCalibration <- rep(FALSE, analyteNumber())
+    names(process_parameters$autoAdaptCalibration) <- analyteNames()
 
-    processParameters$useWeithedRegression  <- rep(FALSE, analyteNumber())
-    names(processParameters$useWeithedRegression) <- analyteNames()
+    process_parameters$useWeithedRegression  <- rep(FALSE, analyteNumber())
+    names(process_parameters$useWeithedRegression) <- analyteNames()
     
-    processParameters$regressionWeight <- rep("1/var", analyteNumber())
-    names(processParameters$regressionWeight) <- analyteNames()
-  })
-
-  #Here we render warnings texts to help the user
-  output$extract_ready_txt <- renderText({
-    renderState(extractionReady(), stateTxt = "Data extraction ", invalidStateTxt = "impossible", validStateTxt = "ready")
-  })
-  output$ISTD_not_extracted_txt <- renderText({
-    renderState(!(!is.null(uploaded_file$ISTD) & !is.null(data_list) & (isValidISTD() == FALSE)), stateTxt = "", invalidStateTxt = "Caution, ISTD not extracted", validStateTxt = NULL)
+    process_parameters$regressionWeight <- rep("1/var", analyteNumber())
+    names(process_parameters$regressionWeight) <- analyteNames()
   })
   
   # Index creation ------------------------------------------------------------
-  output$indexTable <- DT::renderDT({
+  
+  # Table
+  
+  output$index_table <- DT::renderDT({
 
-    if (is.null(analyte()[["value"]])){return()}
+    req(extracted())
     
     searchWhere = input$searchIndexwhere
-    firstColumnName = ""
-    
-    if (searchWhere == 'smp'){
-      headerRows = nameColumn
-      firstColumnName = "Sample Names"}
-    else if (searchWhere == 'lvl'){
-      headerRows = levelColumn
-      firstColumnName = "Levels"}
-    else if (searchWhere == 'type'){
-      headerRows = typeColumn
-      firstColumnName = "Type"}
-    
     searchWhat = input$searchIndexwhat
     searchType = input$searchIndexhow
     displayWhat = input$searchIndexDisplay
     
-    if (searchType == 'ematch'){searchWhat = paste("^", searchWhat, "$", sep="")}
+    if (searchWhere == 'smp'){
+      header_col <- parsed_info$name_col
+      } 
+    else if (searchWhere == 'lvl'){
+      header_col = parsed_info$lvl_col
+      }
+    else if (searchWhere == 'type'){
+      header_col = parsed_info$type_col
+      }
+    
+    if (searchType == 'ematch') searchWhat <- paste("^", searchWhat, "$", sep="")
     
     if (searchWhat == ""){
-      index$temp <- c(1:sampleNumber)
-    }
-    else{
-      index$temp <- grep(searchWhat, headerRows)
+      index$temp <- seq(parsed_info$smp_nb)
+    } else {
+      index$temp <- grep(searchWhat, header_col)
     }
     
-    if (displayWhat == "ISTD" & !is.null(ISTD()[["value"]])){
-      indexTable <- cbind(headerRows[index$temp], ISTD()[["value"]][index$temp,])
+    if (displayWhat == "ISTD" & !is.null(ISTD()[["value"]])) {
+      index_table <- ISTD()[["value"]][index$temp, , drop = FALSE]
     }
-    else if (displayWhat == "analytes" & !is.null(analyte()[["value"]])){
-      indexTable <- cbind(headerRows[index$temp], analyte()[["value"]][index$temp,])
+    else if (displayWhat == "analytes" & !is.null(analyte()[["value"]])) {
+      index_table <- analyte()[["value"]][index$temp, , drop = FALSE]
     }
-    else {return()}
     
-    colnames(indexTable) <- c(firstColumnName, colnames(ISTD()[["value"]])[1:length(ISTD()[["value"]])])
+    row.names(index_table) <- header_col[index$temp]
     
-    indexTable
+    index_table
     
-  }, options = list(dom = '', pageLength = sampleNumber, ordering=T))
+  }, options = list(dom = '', pageLength = parsed_info$smp_nb, ordering=T))
   
+  # Inputs
+  
+  # Name of index autofilling while searching
   observeEvent(input$searchIndexwhat, {
     updateTextInput(session, "searchIndexName", value = input$searchIndexwhat)
   })
   
+  # Create index button
   observeEvent(input$searchIndexCreate, {
-    indexName = input$searchIndexName
-    customNumIndex = c(1:sampleNumber)[index$temp][input$indexTable_rows_selected]
-    if (is.null(index$custom)) {
-      index$custom <- list()
-    }
-    index$custom[[input$searchIndexName]] <- customNumIndex
     
-    updateSelectInput(session,"indexISTDchoiceWhat",choices=names(index$custom),names(index$custom)[1])
-    updateSelectInput(session,"indexBlkchoiceWhat",choices=names(index$custom),names(index$custom)[1])
-    updateSelectInput(session,"indexISTDchoiceIn",choices=names(index$custom),names(index$custom)[1])
-    updateSelectInput(session,"indexBlkchoiceIn",choices=names(index$custom),names(index$custom)[1])
-    updateSelectInput(session,"selectDriftIndex",choices=names(index$custom),names(index$custom)[1])
-    updateSelectInput(session,"viewConcentrationIndex",choices=c("All", names(index$custom)),"All")
+    index_name <- input$searchIndexName
+    custom_index <- index$temp[input$index_table_rows_selected]
+    
+    index$custom[[index_name]] <- custom_index
+    
+    updateMultipleSelectInput(session = session, input_names = select_input_names,
+                              choices = names(index$custom), selected = names(index$custom)[1])
+    
   }, ignoreInit = TRUE)
   
-  indexTableProxy <- DT::dataTableProxy("indexTable", session = session)
+  # Table proxy creation necessary for row selection through event
+  index_tableProxy <- DT::dataTableProxy("index_table", session = session)
   
+  # Behavior of selectAll button
   observeEvent(input$indexSelectAll, {
-    if (is.null(input$indexTable_rows_selected)){
-      DT::selectRows(indexTableProxy, c(1:length(index$temp)))
+    if (is.null(input$index_table_rows_selected)){
+      DT::selectRows(index_tableProxy, c(1:length(index$temp)))
     }
-    else if (all(input$indexTable_rows_selected == c(1:length(index$temp)))){
-      DT::selectRows(indexTableProxy, NULL)
-    }
-    else{
-      DT::selectRows(indexTableProxy, c(1:length(index$temp)))
+    else if (all(input$index_table_rows_selected == seq(index$temp))){
+      DT::selectRows(index_tableProxy, NULL)
+    } else {
+      DT::selectRows(index_tableProxy, seq(index$temp))
     }
   })
   
   # ISTD settings -------------------------------------------------------------
   
-  #Render ISTD table if all conditions are met
+  # Table
+  
   output$ISTDtable <- DT::renderDT({
-    if (!isValidISTD()){
-      print("No available ISTD")
-      return()
-    }
+    
+    if (!is_valid_ISTD()) return()
     
     ISTDmode <- input$ISTDinteractionMode
-    ISTDviewTable <- dataModified$ISTD()
     
-    allModifiers <- dataModifiers$ISTD
-    allModifiers[["active"]] <- activeISTDmodifier()
-    ISTDprocessTable <- getModifiedData(ISTD(), allModifiers, c(input$ISTDmodifiers, "active"))
-    
-    lc <- input$ISTDcolSlider[1]
-    uc <- input$ISTDcolSlider[2]
-    
-    df_view <- cbind(nameColumn, ISTDviewTable[["value"]])
-    names(df_view) <- c("Sample Name", names(df_view)[2:length(df_view)])
-    df_view <- format(df_view, digits = 3, scientific=T)
-    
-    df_process <- cbind(nameColumn, ISTDprocessTable[["value"]])
-    names(df_process) <- c("Sample Name", names(df_process)[2:length(df_process)])
-    df_process <- format(df_process, digits = 3, scientific=T)
-    
-    if (ISTDmode == "view") {df_view}
-    else if (ISTDmode == "process") {df_process}
-  }, options = list(dom = '', pageLength = sampleNumber, ordering=F, autoWidth = TRUE, scrollX=T, columnDefs = list(list(width = '150px', targets = "_all"))))
+    if (ISTDmode == "view") {
+      
+      df_view <- data_modified$ISTD()[["value"]]
+      df_view <- format(df_view, digits = 3, scientific=T)
+      
+      return(df_view)
+      
+    }
+    else if (ISTDmode == "process") {
+      
+      df_process <- getModifiedData(ISTD(),
+                                    list(active = activeISTDmodifier()),
+                                    "active")
+      df_process <- ISTDprocessTable[["value"]]
+      df_process <- format(df_process, digits = 3, scientific=T)
+      
+      return(df_process)
+      
+      }
+  }, options = list(dom = '', pageLength = parsed_info$smp_nb, ordering=F, autoWidth = TRUE, scrollX=T, columnDefs = list(list(width = '150px', targets = "_all"))))
   
-  #Defines a proxy for changing selections in the table
+  # Defines a proxy for changing selections in the table
   ISTDtableProxy <- DT::dataTableProxy("ISTDtable", session = session)
   
-  observeEvent(input$ISTDcolSlider, {
-    if (!is.null(input$indexISTDchoiceWhat) & isValidISTD()){
+  # Keep selection after table update
+  observeEvent({
+    input$indexISTDchoiceWhat
+    input$indexISTDchoiceIn
+    input$ISTDinteractionMode
+    input$ISTDcorrectionMethod
+    }, {
+    if (!is.null(input$indexISTDchoiceWhat) & is_valid_ISTD()){
       DT::selectRows(ISTDtableProxy, index$custom[[input$indexISTDchoiceWhat]])
     }
-    else {}
-  })
-  
-  observeEvent(input$indexISTDchoiceWhat, {
-    if (!is.null(input$indexISTDchoiceWhat) & isValidISTD()){
-      DT::selectRows(ISTDtableProxy, index$custom[[input$indexISTDchoiceWhat]])
-    }
-    else {}
-  })
-  
-  observeEvent(input$indexISTDchoiceIn, {
-    if (!is.null(input$indexISTDchoiceWhat) & isValidISTD()){
-      DT::selectRows(ISTDtableProxy, index$custom[[input$indexISTDchoiceWhat]])
-    }
-    else {}
-  })
-  
-  observeEvent(input$ISTDinteractionMode, {
-    if (!is.null(input$indexISTDchoiceWhat) & isValidISTD()){
-      DT::selectRows(ISTDtableProxy, index$custom[[input$indexISTDchoiceWhat]])
-    }
-    else {}
-  })
-  
-  observeEvent(input$ISTDcorrectionMethod, {
-    if (!is.null(input$indexISTDchoiceWhat) & isValidISTD()){
-      DT::selectRows(ISTDtableProxy, index$custom[[input$indexISTDchoiceWhat]])
-    }
-    else {}
   })
   
   #Assigns the current state of the ISTD table to the ISTD variable that will be used for calculations
   observeEvent(input$setISTDcorrectionMethod, {
     
-    ISTDmodNumber(ISTDmodNumber() + 1)
+    ISTD_mod_nb(ISTD_mod_nb() + 1)
     
-    #quand on voudra pouvoir selectionner des éléments particuliers
-    #lc <- input$ISTDcolSlider[1]
-    #uc <- input$ISTDcolSlider[2]
+    new_mod_id <- paste("mod", as.character(ISTD_mod_nb()), sep="")
+    data_modifiers$ISTD[[new_mod_id]] <- activeISTDmodifier()
     
-    newModID <- paste("mod", as.character(ISTDmodNumber()), sep="")
-    dataModifiers$ISTD[[newModID]] <- activeISTDmodifier()
+    mod_id <- names(data_modifiers$ISTD)
+    mod_displayed_names <- sapply(data_modifiers$ISTD, getModifierName)
+    names(mod_id) <- mod_displayed_names
+    currentlySelected <- c(input$ISTDmodifiers, new_mod_id)
     
-    modID <- names(dataModifiers$ISTD)
-    modNames <- sapply(dataModifiers$ISTD, getModifierName)
-    names(modID) <- modNames
-    currentlySelected <- c(input$ISTDmodifiers, newModID)
-    
-    #selected takes a character vector of IDs
-    updateCheckboxGroupInput(session, "ISTDmodifiers", label = "Modifiers:", choices = modID, selected = currentlySelected)
-  })
-  
-  observe({
-    updateSelectInput(session,"calibrationElement",choices=analyteNames(),selected=analyteNames()[1])
-    updateSelectInput(session,"e_drift",choices=analyteNames(),selected=analyteNames()[1])
-    if(input$ISTDinteractionMode == "process") {
-      shinyjs::enable("setISTDcorrectionMethod")
-      shinyjs::enable("ISTDcolSlider")
-      shinyjs::enable("ISTDcorrectionMethod")
-      shinyjs::enable("indexISTDchoiceIn")
-    }
-    else if(input$ISTDinteractionMode == "view") {
-      shinyjs::disable("setISTDcorrectionMethod")
-      shinyjs::disable("ISTDcolSlider")
-      shinyjs::disable("ISTDcorrectionMethod")
-      shinyjs::disable("indexISTDchoiceIn")
-    }
+    updateCheckboxGroupInput(session, "ISTDmodifiers", label = "Modifiers:", choices = mod_id, selected = currentlySelected)
   })
   
   # Blank settings ------------------------------------------------------------
   
+  # Disable blank process option when blank not corrected
   observeEvent(input$useBlankCorrection, {
     if (input$useBlankCorrection == FALSE) {
       updateSelectInput(session,"blkInteractionMode",
@@ -550,96 +616,287 @@ ICPMS_server <- function(input, output, session) {
   }, ignoreInit = FALSE)
   
   output$blkTable <- DT::renderDT({
-    if (is.null(analyte()[["value"]])){return()}
     
-    browser()
+    if (is.null(analyte()[["value"]])) return()
     
     blkMode <- input$blkInteractionMode
     
     if (blkMode == "view") {
       
-      df_view <- cbind(nameColumn, dataModified$blankRatio()[["value"]])
-      
-      names(df_view) <- c("Sample Name", names(df_view)[2:length(df_view)])
-      
+      df_view <- data_modified$blankRatio()[["value"]]
       df_view <- format(df_view, digits = 3, scientific=T)
       
       return(df_view)
       
     } else if (blkMode == "process") {
       
-      df_process <- getModifiedData(dataModified$ratio(),
+      df_process <- getModifiedData(data_modified$ratio(),
                                     list(active = activeBlankModifier()),
                                     "active")
-      
-      df_process <- cbind(nameColumn, df_process[["value"]])
-      
-      names(df_process) <- c("Sample Name", names(df_process)[2:length(df_process)])
-      
+      df_process <- df_process[["value"]]
       df_process <- format(df_process, digits = 3, scientific=T)
       
       return(df_process)
+      
       }
-
-  }, options = list(dom = '', pageLength = sampleNumber, ordering=F, autoWidth = TRUE, scrollX=T, columnDefs = list(list(width = '120px', targets = "_all"))))
+  }, options = list(dom = '', pageLength = parsed_info$smp_nb, ordering=F, autoWidth = TRUE, scrollX=T, columnDefs = list(list(width = '120px', targets = "_all"))))
   
   
   #Defines a proxy for changing selections in the table
   blkTableProxy <- DT::dataTableProxy("blkTable", session = session)
   
-  
-  observeEvent(input$blkColSlider, {
+  observeEvent({
+    input$indexBlkchoiceWhat
+    input$indexBlkchoiceIn
+    input$blkInteractionMode
+    input$blkInterpolationMethod
+    }, {
     if (!is.null(input$indexBlkchoiceWhat)){
       DT::selectRows(blkTableProxy, index$custom[[input$indexBlkchoiceWhat]])
     }
     else {}
   })
   
-  observeEvent(input$indexBlkchoiceWhat, {
-    if (!is.null(input$indexBlkchoiceWhat)){
-      DT::selectRows(blkTableProxy, index$custom[[input$indexBlkchoiceWhat]])
-    }
-    else {}
-  })
-  
-  observeEvent(input$indexBlkchoiceIn, {
-    if (!is.null(input$indexBlkchoiceWhat)){
-      DT::selectRows(blkTableProxy, index$custom[[input$indexBlkchoiceWhat]])
-    }
-    else {}
-  })
-  
-  observeEvent(input$blkInteractionMode, {
-    if (!is.null(input$indexBlkchoiceWhat)){
-      DT::selectRows(blkTableProxy, index$custom[[input$indexBlkchoiceWhat]])
-    }
-    else {}
-  })
-  
-  observeEvent(input$blkInterpolationMethod, {
-    if (!is.null(input$indexBlkchoiceWhat)){
-      DT::selectRows(blkTableProxy, index$custom[[input$indexBlkchoiceWhat]])
-    }
-    else {}
-  })
-  
-  #Assigns the current state of the ISTD table to the ISTD variable that will be used for calculations
   observeEvent(input$setBlkInterpolationMethod, {
     
-    browser()
+    blank_mod_nb(blank_mod_nb() + 1)
     
-    blankModNumber(blankModNumber() + 1)
+    new_mod_id <- paste("mod", as.character(blank_mod_nb()), sep="")
+    data_modifiers$blank[[new_mod_id]] <- activeBlankModifier()
     
-    newModID <- paste("mod", as.character(blankModNumber()), sep="")
-    dataModifiers$blank[[newModID]] <- activeBlankModifier()
+    mod_id <- names(data_modifiers$blank)
+    mod_displayed_names <- sapply(data_modifiers$blank, getModifierName)
+    names(mod_id) <- mod_displayed_names
+    currentlySelected <- c(input$blankModifiers, new_mod_id)
     
-    modID <- names(dataModifiers$blank)
-    modNames <- sapply(dataModifiers$blank, getModifierName)
-    names(modID) <- modNames
-    currentlySelected <- c(input$blankModifiers, newModID)
+    updateCheckboxGroupInput(session, "blankModifiers", label = "Modifiers:", choices = mod_id, selected = currentlySelected)
+  })
+  
+  # Calibration settings ------------------------------------------------------
+  
+  observeEvent(input$setRegressionALL, {
     
-    #selected takes a character vector of IDs
-    updateCheckboxGroupInput(session, "blankModifiers", label = "Modifiers:", choices = modID, selected = currentlySelected)
+    req(extracted())
+    
+    for (i in seq(analyteNumber())) {
+      process_parameters$forceIntercept[[i]] <- input$forceIntercept
+      process_parameters$autoAdaptCalibration[[i]] <- input$autoAdaptCalibration
+      process_parameters$useWeithedRegression[[i]] <- input$useWeithedRegression
+      process_parameters$regressionWeight[[i]] <- input$regressionWeight
+    }
+  }, ignoreInit = TRUE)
+  
+  # A serie of simple observe events to save regression parameters
+  
+  observeEvent(input$forceIntercept, {
+    
+    req(extracted())
+    
+    process_parameters$forceIntercept[[input$calibrationElement]] <- input$forceIntercept
+  }, ignoreInit = TRUE)
+  
+  observeEvent(input$autoAdaptCalibration, {
+    
+    req(extracted())
+    
+    process_parameters$autoAdaptCalibration[[input$calibrationElement]] <- input$autoAdaptCalibration
+  }, ignoreInit = TRUE)
+  
+  observeEvent(input$useWeithedRegression, {
+    
+    req(extracted())
+    
+    process_parameters$useWeithedRegression[[input$calibrationElement]] <- input$useWeithedRegression
+  }, ignoreInit = TRUE)
+  
+  observeEvent(input$regressionWeight, {
+    
+    req(extracted())
+    
+    process_parameters$regressionWeight[[input$calibrationElement]] <- input$regressionWeight
+  }, ignoreInit = TRUE)
+
+  # UI update to display saved regression parameters associated with the selected element
+  observeEvent(input$calibrationElement, {
+    
+    req(extracted())
+    
+    if (input$forceIntercept != process_parameters$forceIntercept[[input$calibrationElement]]) {
+      updateCheckboxInput(session, "forceIntercept", label = "Force intercept", value = process_parameters$forceIntercept[[input$calibrationElement]])
+    }
+    if (input$autoAdaptCalibration != process_parameters$autoAdaptCalibration[[input$calibrationElement]]) {
+      updateCheckboxInput(session, "autoAdaptCalibration", label = "Use min/max standards", value = process_parameters$autoAdaptCalibration[[input$calibrationElement]])
+    }
+    if (input$useWeithedRegression != process_parameters$useWeithedRegression[[input$calibrationElement]]) {
+      updateCheckboxInput(session, "useWeithedRegression", label = "Use weighted linear regression", value = process_parameters$useWeithedRegression[[input$calibrationElement]])
+    }
+    if (input$regressionWeight != process_parameters$regressionWeight[[input$calibrationElement]]) {
+      updateCheckboxInput(session, "regressionWeight", label = "Weight:", value = process_parameters$regressionWeight[[input$calibrationElement]])
+    }
+  }, ignoreInit = TRUE)
+  
+  # Calibration plot
+  output$calibrationPlot <- renderPlotly({
+    
+    if (is.null(data_modified$standardData())) return()
+    
+    calibration_data <- data_modified$standardData()[[input$calibrationElement]]
+    std_nb <- nrow(calibration_data)
+    calibration_model <- data_modified$calibration_models()[[input$calibrationElement]]
+    calibration_predict <-  getConcentration(m = calibration_model[["modelParam"]], Cm = calibration_model[["covMatrix"]],
+                                            sig = calibration_data[ , "value"], vsig = calibration_data[ , "SD"]^2,
+                                            dft = rep(1, std_nb), vdft = rep(0, std_nb))
+
+    signal_residuals <- calibration_data[ ,"concentration"] - calibration_predict[ ,"value"]
+    
+    # To do. Add uncertainty on plot.
+    # x_polygon <- c(x, rev(x))
+    # y_polygon <- c(predictions[,"lwr"], rev(predictions[,"upr"]))
+    
+    calibrationPlot <- plot_ly()
+    calibrationPlot <- add_trace(calibrationPlot, x=calibration_predict[,"value"], y=calibration_data[,"value"], type = 'scatter', mode = 'lines')
+    calibrationPlot <- add_trace(calibrationPlot, x=calibration_data[,"concentration"], y=calibration_data[,"value"], type = 'scatter', mode = 'markers')
+
+    residualPlot <- plot_ly()
+    residualPlot <- add_trace(residualPlot, x=calibration_data[,"concentration"], y=signal_residuals, type = 'scatter', mode = 'markers')
+    
+    subplot(calibrationPlot, residualPlot, nrows = 2)
+
+  })
+  
+  # Drift settings ------------------------------------------------------------
+  observeEvent(input$setAsDriftIndex, {
+    if (input$selectDriftIndex != ""){
+      set_drift(set_drift() + 1)
+      index$drift <- index$custom[[input$selectDriftIndex]]
+    }
+  })
+  
+  output$smpBlkCorTable <- renderTable({
+    req(set_drift())
+    if (is.null(data_modified$blankCorrectedRatio()[[1]]) | is.null(index$drift) | !is.integer(input$e_ind_drift)){return()}
+    driftSignal <- data_modified$blankCorrectedRatio()[[1]]
+    if (input$e_ind_drift < 5){
+      lc <- 1
+    }
+    else{
+      lc <- max(which((1:input$e_ind_drift)%%5 == 0))
+    }
+    uc <- min(lc + 4, analyteNumber())
+    driftTable <- cbind(parsed_info$name_col[index$drift],driftSignal[index$drift,lc:uc])
+    names(driftTable) <- c("Sample Name", names(driftTable)[2:length(driftTable)])
+    driftTable
+    
+  }, digits = -2)
+  
+  
+  
+  observeEvent(input$e_drift, {
+    req(set_drift())
+    if (is.null(input$e_drift)){return()}
+    updateNumericInput(session, "e_ind_drift", value = grep(input$e_drift,analyteNames(),fixed=TRUE))
+  }, ignoreInit = TRUE)
+  
+  observeEvent(input$e_ind_drift, {
+    req(set_drift())
+    if (is.null(input$e_ind_drift)){return()}
+    updateSelectInput(session,"e_drift",selected=analyteNames()[input$e_ind_drift])
+  }, ignoreInit = TRUE)
+  
+  output$driftPlot <- renderPlotly({
+    
+    req(index$drift)
+    if (is.null(data_modified$blankCorrectedRatio()[["value"]]) | is.null(index$drift)){return()}
+    
+    driftTime = parsed_info$delta_t[index$drift]
+    driftValue = driftData()[["value"]][,input$e_ind_drift]
+    driftSD = driftData()[["SD"]][,input$e_ind_drift]
+
+    driftPlot <- plot_ly()
+    driftPlot <- add_trace(driftPlot, x=driftTime, y=driftValue, type = 'scatter', mode = 'markers', error_y = list(array=driftSD, color = '#000000'))
+    if (process_parameters$driftCorrectedElement[input$e_ind_drift] != "None") {
+      iTime = driftTime[1]
+      fTime = driftTime[length(driftTime)]
+      timeInterval = seq(from=as.numeric(iTime), to=as.numeric(fTime), by=as.numeric((fTime - iTime)/100))
+      driftModel <- data_modified$driftModels()[[input$e_ind_drift]]
+      driftPredict=predict(driftModel, newdata = data.frame(driftTime = timeInterval),interval="predict")
+      driftPlot <- add_trace(driftPlot, x=timeInterval, y=driftPredict[,"fit"], type = 'scatter', mode = 'lines')
+      driftPlot <- add_annotations(driftPlot,x= 0,y= 1,xref = "paper",yref = "paper",
+                                   text = paste("Adjusted R squared: ", summary(driftModel)$adj.r.squared), showarrow = F)
+    }
+    
+    driftPlot
+    #driftPlot <- add_trace(driftPlot, x=driftTime, y=driftValue, type = 'scatter', mode = 'markers', error_y = list(array=driftSD, color = '#000000'))
+    # if (process_parameters$driftCorrectedElement[input$e_ind_drift] == TRUE){
+    #   time_0 = driftTime[1]
+    #   time_f = driftTime[length(driftTime)]
+    #   timeInterval = seq(from=as.numeric(time_0), to=as.numeric(time_f), by=as.numeric((time_f - time_0)/100))
+    #   
+    #   dt = as.numeric(driftTime)
+    #   driftModel <- lm(driftValue ~ poly(dt, degree=2, raw=TRUE))
+    #   
+    #   driftPredict=predict(driftModel, newdata = data.frame(dt = timeInterval))
+    #   
+    #   lines(x=timeInterval, y=driftPredict, col="red")
+    # }
+    
+    # driftData <- subsetDfList(data_modified$blankCorrectedRatio(),index$drift, input$e_ind_drift)
+    # uncertainty <- getUncertaintyInterval(driftData)
+    # 
+    # suppressWarnings(arrows(parsed_info$delta_t[index$drift], as.matrix(uncertainty[["lBound"]]), parsed_info$delta_t[index$drift], as.matrix(uncertainty[["uBound"]]), length=0.05, angle=90, code=3))
+  })
+  
+  observeEvent(input$setDriftCorrection, {
+    req(set_drift())
+    if (is.null(process_parameters$driftCorrectedElement)){return()}
+    process_parameters$driftCorrectedElement[input$e_ind_drift] <- input$driftModelSelection
+  })
+
+  # Data processing -----------------------------------------------------------
+  
+  output$conc <- renderTable({
+    if (is.null(data_modified$concentration())){return()}
+    data_modified$concentration()
+    # print(1)
+    # print(data_modified$concentration())
+    # displayWhat = strtoi(input$viewConcentrationSwitch)
+    # displayIndex = input$viewConcentrationIndex
+    # 
+    # if (displayWhat <= 2){displayMatrix <- data_modified$concentration()[[displayWhat]]}
+    # else if (displayWhat == 3){
+    #   displayMatrix <- mergeMatrixes(matrix1 = data_modified$concentration()[[1]], matrix2 = data_modified$concentration()[[2]], name1=NULL, name2="SD (%)")
+    # }
+    # else {}
+    # print(2)
+    # cbind(parsed_info$name_col, displayMatrix)[index$custom[[displayIndex]],]
+  })
+  
+  #Button to download the list of analyte() and ISTD
+  output$downloadData <- downloadHandler(
+    filename = paste("data_", input$viewConcentrationIndex, ".csv", sep = ""),
+    content = function(file) {
+      selectedIndex = index$custom[[input$viewConcentrationIndex]]
+      
+      combinedConcSD <- mergeMatrixes(matrix1 = data_modified$concentration()[[1]], matrix2 = data_modified$concentration()[[2]], name1=NULL, name2="SD (%)")
+
+      if (strtoi(input$viewConcentrationSwitch) <= 2){
+        write.csv(cbind(parsed_info$name_col,data_modified$concentration()[[strtoi(input$viewConcentrationSwitch)]])[selectedIndex,],
+                  file, sep=";", quote = FALSE,
+                  row.names = FALSE, col.names = FALSE)
+      }
+      else if (strtoi(input$viewConcentrationSwitch) == 3){
+        write.csv(cbind(parsed_info$name_col, combinedConcSD)[selectedIndex,],
+                  file, sep=";", quote = FALSE,
+                  row.names = FALSE, col.names = FALSE)
+      }
+    })
+  
+  
+  # Observers -----------------------------------------------------------------
+  
+  observe({
+    updateSelectInput(session,"calibrationElement",choices=analyteNames(),selected=analyteNames()[1])
+    updateSelectInput(session,"e_drift",choices=analyteNames(),selected=analyteNames()[1])
   })
   
   observe({
@@ -657,210 +914,18 @@ ICPMS_server <- function(input, output, session) {
     }
   })
   
-  #Assigns the current state of the ISTD table to the ISTD variable that will be used for calculations
-  observeEvent(input$searchBlkSelect, {
-    DT::selectRows(liveReplaceBlkTableProxy, NULL)
-  })
-  
-  # Calibration settings ------------------------------------------------------
-  observeEvent(input$setRegressionALL, {
-    req(extracted())
-    for (i in 1:analyteNumber()) {
-      processParameters$forceIntercept[[i]] <- input$forceIntercept
-      processParameters$autoAdaptCalibration[[i]] <- input$autoAdaptCalibration
-      processParameters$useWeithedRegression[[i]] <- input$useWeithedRegression
-      processParameters$regressionWeight[[i]] <- input$regressionWeight
+  observe({
+    if(input$ISTDinteractionMode == "process") {
+      shinyjs::enable("setISTDcorrectionMethod")
+      shinyjs::enable("ISTDcolSlider")
+      shinyjs::enable("ISTDcorrectionMethod")
+      shinyjs::enable("indexISTDchoiceIn")
     }
-  }, ignoreInit = TRUE)
-  
-  observeEvent(input$forceIntercept, {
-    req(extracted())
-    processParameters$forceIntercept[[input$calibrationElement]] <- input$forceIntercept
-  }, ignoreInit = TRUE)
-  
-  observeEvent(input$autoAdaptCalibration, {
-    req(extracted())
-    processParameters$autoAdaptCalibration[[input$calibrationElement]] <- input$autoAdaptCalibration
-  }, ignoreInit = TRUE)
-  
-  observeEvent(input$useWeithedRegression, {
-    req(extracted())
-    processParameters$useWeithedRegression[[input$calibrationElement]] <- input$useWeithedRegression
-  }, ignoreInit = TRUE)
-  
-  observeEvent(input$regressionWeight, {
-    req(extracted())
-    processParameters$regressionWeight[[input$calibrationElement]] <- input$regressionWeight
-  }, ignoreInit = TRUE)
-
-  observeEvent(input$calibrationElement, {
-    req(extracted())
-    if (input$forceIntercept != processParameters$forceIntercept[[input$calibrationElement]]) {
-      updateCheckboxInput(session, "forceIntercept", label = "Force intercept", value = processParameters$forceIntercept[[input$calibrationElement]])
-    }
-    if (input$autoAdaptCalibration != processParameters$autoAdaptCalibration[[input$calibrationElement]]) {
-      updateCheckboxInput(session, "autoAdaptCalibration", label = "Use min/max standards", value = processParameters$autoAdaptCalibration[[input$calibrationElement]])
-    }
-    if (input$useWeithedRegression != processParameters$useWeithedRegression[[input$calibrationElement]]) {
-      updateCheckboxInput(session, "useWeithedRegression", label = "Use weighted linear regression", value = processParameters$useWeithedRegression[[input$calibrationElement]])
-    }
-    if (input$regressionWeight != processParameters$regressionWeight[[input$calibrationElement]]) {
-      updateCheckboxInput(session, "regressionWeight", label = "Weight:", value = processParameters$regressionWeight[[input$calibrationElement]])
-    }
-  }, ignoreInit = TRUE)
-  
-  output$calibrationPlot <- renderPlotly({
-    if (is.null(dataModified$standardData())){return()}
-    calibrationData <- dataModified$standardData()[[input$calibrationElement]]
-    stdNb <- nrow(calibrationData)
-    calibrationModel <- dataModified$calibrationModels()[[input$calibrationElement]]
-    concentrationInterval <- c(0, tail(calibrationData[,"concentration"], n = 1))
-    calibrationPredict <-  getConcentration(m = calibrationModel[["modelParam"]], Cm = calibrationModel[["covMatrix"]],
-                                            sig = calibrationData[, "value"], vsig = calibrationData[, "SD"]^2, dft = rep(1, stdNb), vdft = rep(0, stdNb))
-
-    signalResiduals <- calibrationData[,"concentration"] - calibrationPredict[,"value"]
-    
-    ####Faire les incertitudes!!!!!! Polygones sur plot
-    # x_polygon <- c(x, rev(x))
-    # y_polygon <- c(predictions[,"lwr"], rev(predictions[,"upr"]))
-    
-    calibrationPlot <- plot_ly()
-    calibrationPlot <- add_trace(calibrationPlot, x=calibrationPredict[,"value"], y=calibrationData[,"value"], type = 'scatter', mode = 'lines')
-    calibrationPlot <- add_trace(calibrationPlot, x=calibrationData[,"concentration"], y=calibrationData[,"value"], type = 'scatter', mode = 'markers')
-
-    residualPlot <- plot_ly()
-    residualPlot <- add_trace(residualPlot, x=calibrationData[,"concentration"], y=signalResiduals, type = 'scatter', mode = 'markers')
-    
-    subplot(calibrationPlot, residualPlot, nrows = 2)
-
-  })
-  
-  # Drift settings ------------------------------------------------------------
-  observeEvent(input$setAsDriftIndex, {
-    if (input$selectDriftIndex != ""){
-      setDrift(setDrift() + 1)
-      index$drift <- index$custom[[input$selectDriftIndex]]
+    else if(input$ISTDinteractionMode == "view") {
+      shinyjs::disable("setISTDcorrectionMethod")
+      shinyjs::disable("ISTDcolSlider")
+      shinyjs::disable("ISTDcorrectionMethod")
+      shinyjs::disable("indexISTDchoiceIn")
     }
   })
-  
-  output$smpBlkCorTable <- renderTable({
-    req(setDrift())
-    if (is.null(dataModified$blankCorrectedRatio()[[1]]) | is.null(index$drift) | !is.integer(input$e_ind_drift)){return()}
-    driftSignal <- dataModified$blankCorrectedRatio()[[1]]
-    if (input$e_ind_drift < 5){
-      lc <- 1
-    }
-    else{
-      lc <- max(which((1:input$e_ind_drift)%%5 == 0))
-    }
-    uc <- min(lc + 4, analyteNumber())
-    driftTable <- cbind(nameColumn[index$drift],driftSignal[index$drift,lc:uc])
-    names(driftTable) <- c("Sample Name", names(driftTable)[2:length(driftTable)])
-    driftTable
-    
-  }, digits = -2)
-  
-  
-  
-  observeEvent(input$e_drift, {
-    req(setDrift())
-    if (is.null(input$e_drift)){return()}
-    updateNumericInput(session, "e_ind_drift", value = grep(input$e_drift,analyteNames(),fixed=TRUE))
-  }, ignoreInit = TRUE)
-  
-  observeEvent(input$e_ind_drift, {
-    req(setDrift())
-    if (is.null(input$e_ind_drift)){return()}
-    updateSelectInput(session,"e_drift",selected=analyteNames()[input$e_ind_drift])
-  }, ignoreInit = TRUE)
-  
-  output$driftPlot <- renderPlotly({
-    
-    req(index$drift)
-    if (is.null(dataModified$blankCorrectedRatio()[["value"]]) | is.null(index$drift)){return()}
-    
-    driftTime = dtimeColumn[index$drift]
-    driftValue = driftData()[["value"]][,input$e_ind_drift]
-    driftSD = driftData()[["SD"]][,input$e_ind_drift]
-
-    driftPlot <- plot_ly()
-    driftPlot <- add_trace(driftPlot, x=driftTime, y=driftValue, type = 'scatter', mode = 'markers', error_y = list(array=driftSD, color = '#000000'))
-    if (processParameters$driftCorrectedElement[input$e_ind_drift] != "None") {
-      iTime = driftTime[1]
-      fTime = driftTime[length(driftTime)]
-      timeInterval = seq(from=as.numeric(iTime), to=as.numeric(fTime), by=as.numeric((fTime - iTime)/100))
-      driftModel <- dataModified$driftModels()[[input$e_ind_drift]]
-      driftPredict=predict(driftModel, newdata = data.frame(driftTime = timeInterval),interval="predict")
-      driftPlot <- add_trace(driftPlot, x=timeInterval, y=driftPredict[,"fit"], type = 'scatter', mode = 'lines')
-      driftPlot <- add_annotations(driftPlot,x= 0,y= 1,xref = "paper",yref = "paper",
-                                   text = paste("Adjusted R squared: ", summary(driftModel)$adj.r.squared), showarrow = F)
-    }
-    
-    driftPlot
-    #driftPlot <- add_trace(driftPlot, x=driftTime, y=driftValue, type = 'scatter', mode = 'markers', error_y = list(array=driftSD, color = '#000000'))
-    # if (processParameters$driftCorrectedElement[input$e_ind_drift] == TRUE){
-    #   time_0 = driftTime[1]
-    #   time_f = driftTime[length(driftTime)]
-    #   timeInterval = seq(from=as.numeric(time_0), to=as.numeric(time_f), by=as.numeric((time_f - time_0)/100))
-    #   
-    #   dt = as.numeric(driftTime)
-    #   driftModel <- lm(driftValue ~ poly(dt, degree=2, raw=TRUE))
-    #   
-    #   driftPredict=predict(driftModel, newdata = data.frame(dt = timeInterval))
-    #   
-    #   lines(x=timeInterval, y=driftPredict, col="red")
-    # }
-    
-    # driftData <- subsetDfList(dataModified$blankCorrectedRatio(),index$drift, input$e_ind_drift)
-    # uncertainty <- getUncertaintyInterval(driftData)
-    # 
-    # suppressWarnings(arrows(dtimeColumn[index$drift], as.matrix(uncertainty[["lBound"]]), dtimeColumn[index$drift], as.matrix(uncertainty[["uBound"]]), length=0.05, angle=90, code=3))
-  })
-  
-  observeEvent(input$setDriftCorrection, {
-    req(setDrift())
-    if (is.null(processParameters$driftCorrectedElement)){return()}
-    processParameters$driftCorrectedElement[input$e_ind_drift] <- input$driftModelSelection
-  })
-
-  # Data processing -----------------------------------------------------------
-  
-  output$conc <- renderTable({
-    if (is.null(dataModified$concentration())){return()}
-    dataModified$concentration()
-    # print(1)
-    # print(dataModified$concentration())
-    # displayWhat = strtoi(input$viewConcentrationSwitch)
-    # displayIndex = input$viewConcentrationIndex
-    # 
-    # if (displayWhat <= 2){displayMatrix <- dataModified$concentration()[[displayWhat]]}
-    # else if (displayWhat == 3){
-    #   displayMatrix <- mergeMatrixes(matrix1 = dataModified$concentration()[[1]], matrix2 = dataModified$concentration()[[2]], name1=NULL, name2="SD (%)")
-    # }
-    # else {}
-    # print(2)
-    # cbind(nameColumn, displayMatrix)[index$custom[[displayIndex]],]
-  })
-  
-  #Button to download the list of analyte() and ISTD
-  output$downloadData <- downloadHandler(
-    filename = paste("data_", input$viewConcentrationIndex, ".csv", sep = ""),
-    content = function(file) {
-      selectedIndex = index$custom[[input$viewConcentrationIndex]]
-      
-      combinedConcSD <- mergeMatrixes(matrix1 = dataModified$concentration()[[1]], matrix2 = dataModified$concentration()[[2]], name1=NULL, name2="SD (%)")
-
-      if (strtoi(input$viewConcentrationSwitch) <= 2){
-        write.csv(cbind(nameColumn,dataModified$concentration()[[strtoi(input$viewConcentrationSwitch)]])[selectedIndex,],
-                  file, sep=";", quote = FALSE,
-                  row.names = FALSE, col.names = FALSE)
-      }
-      else if (strtoi(input$viewConcentrationSwitch) == 3){
-        write.csv(cbind(nameColumn, combinedConcSD)[selectedIndex,],
-                  file, sep=";", quote = FALSE,
-                  row.names = FALSE, col.names = FALSE)
-      }
-    })
-  
-  #callModule(csvFile, "default", nameColumn = reactive(nameColumn), indexCustom = reactive(index$custom), isValidISTD = reactive(isValidISTD()), ISTD = reactive(ISTD), signal=reactive(list(ISTD,ISTD_SD)))
 }

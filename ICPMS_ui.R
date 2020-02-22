@@ -39,7 +39,7 @@ ICPMS_ui <- shinyUI({
                             actionButton("searchIndexCreate", "Create new index")),
                           mainPanel(
                             selectInput("searchIndexDisplay", "Show:", c("Internal standards" = "ISTD", "Analytes" = "analytes")),
-                            DT::DTOutput("indexTable")
+                            DT::DTOutput("index_table")
                           )
                         )
                ),
@@ -56,7 +56,7 @@ ICPMS_ui <- shinyUI({
                                         "", selected = ""),
                             selectInput("ISTDcorrectionMethod", "Replace calibration ISTD:",
                                         c("None" = "none", "Average blanks" = "mean",
-                                          "Previous blank" = "prev")),
+                                          "Previous blank" = "previous")),
                             selectInput("indexISTDchoiceIn", "Replace in:",
                                         "All", selected = "All"),
                             actionButton("setISTDcorrectionMethod", "Set ISTD correction"),
@@ -78,7 +78,7 @@ ICPMS_ui <- shinyUI({
                                         "", selected = ""),
                             selectInput("blkInterpolationMethod", "Interpolate blanks:",
                                         c("None" = "none", "Average blanks" = "mean",
-                                          "Previous blank" = "prev")),
+                                          "Previous blank" = "previous")),
                             selectInput("indexBlkchoiceIn", "Replace in:",
                                         "All", selected = "All"),
                             actionButton("setBlkInterpolationMethod", "Set blank interpolation"),

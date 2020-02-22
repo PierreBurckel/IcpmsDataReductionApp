@@ -2,12 +2,18 @@ library(shiny)
 library(stringr)
 library(matlib)
 
+updateMultipleSelectInput <- function(session, input_names, choices, selected) {
+  for(input_name in input_names) {
+    updateSelectInput(session, inputId = input_name, choices = choices, selected = selected)
+  }
+}
+
 get_parser <- function(parser_name) {
   if (parser_name == "agilent") parse_function_agilent
 }
 
-parse_function_agilent <- function(main_file, std_file) {
-    
+parse_function_agilent <- function(main_file, std_file, ISTD_file) {
+  
     header_1 <- scan(main_file, nlines = 1, what = character(),sep=';')
     header_2 <- scan(main_file, nlines = 1, what = character(),sep=';', skip=1)
     
@@ -22,10 +28,37 @@ parse_function_agilent <- function(main_file, std_file) {
     # Remove duplicated elements
     std_dataframe <- std_dataframe[!duplicated(std_elements), , drop = FALSE]
     
-    row.names(std_dataframe) <- std_elements
-    std_dataframe <- std_dataframe[ , 2:length(std_dataframe), drop = FALSE]
+    row.names(std_dataframe) <- std_elements[!duplicated(std_elements)]
+    std_dataframe <- std_dataframe[ , -1, drop = FALSE]
+    std_matrix <- as.matrix(std_dataframe)
+    # std_dataframe <- std_dataframe[ , 2:length(std_dataframe), drop = FALSE]
     
-    return(list(main=main_dataframe, std=std_dataframe, header_1=header_1, header_2=header_2))
+    num_col_index <- which(header_2 == "CPS" | header_2 == "CPS RSD")
+    
+    main_dataframe[ , num_col_index] <- sapply(main_dataframe[ , num_col_index], as.numeric)
+    element_value <- as.matrix(main_dataframe[ , header_2 == "CPS", drop = FALSE])
+    element_rsd <- as.matrix(main_dataframe[ , header_2 == "CPS RSD", drop = FALSE])
+    element_sd <- element_rsd / 100 * element_value
+    element_names <- colnames(element_value)
+    
+    analyte_index <- !grepl("ISTD", colnames(element_value))
+    ISTD_index <- !analyte_index
+    
+    smp_nb <- nrow(main_dataframe)
+    time_col <- as.POSIXct(main_dataframe[ , which(header_2 == "Acq. Date-Time")], format="%d/%m/%Y %H:%M")
+    name_col <- main_dataframe[ , which(header_2 == "Sample Name")]
+    type_col <- main_dataframe[ , which(header_2 == "Type")]
+    lvl_col <- main_dataframe[ , which(header_2 == "Level")]
+    delta_t <- time_col - time_col[1]
+    
+    row.names(element_value) <- name_col
+    row.names(element_rsd) <- name_col
+    row.names(element_sd) <- name_col
+    
+    return(list(element_value = element_value, element_sd = element_sd, element_names = element_names,
+                std = std_matrix,
+                analyte_index = analyte_index, ISTD_index = ISTD_index, num_col_index = num_col_index,
+                smp_nb = smp_nb, time_col = time_col, name_col = name_col, type_col = type_col, lvl_col = lvl_col, delta_t = delta_t))
 }
 
 agilentElementNamePattern <- "[ ]{2}[A-Z]{1}[a-z]*[ ]{2}"
@@ -139,7 +172,7 @@ getModifierName <- function(modifier) {
 getModifiedData <- function(dat, modifiers, selectedModifiers) {
   if (length(modifiers) == 0) {return(dat)}
   else {
-    browser()
+    
     dat_mod <- dat
     for (s in selectedModifiers) {
       mod <- modifiers[[s]]
@@ -280,41 +313,27 @@ renderState <- function(state, stateTxt, invalidStateTxt, validStateTxt) {
   return(displayedTxt)
 }
 
-##Function that converts a numerical index to a logical index
-##Takes as argument the numerical index and the number of line expected in the logical index
-##Returns the logical index
-convertToLogical <- function(nIndex, lineNb){
-  lIndex <- rep(FALSE, lineNb)
-  lIndex[nIndex] <- TRUE
+search_closest_in_index <- function(search_position, search_in, search_where) {
   
-  return(lIndex)
-}
-##Function that returns the closest number in an array (numericalIndex) before or after a reference position
-##If there is no value matching the request, returns NULL
-getClosestInIndex <- function(refPosition, numericalIndex, searchWhere){
-  
-  if (searchWhere == "prev"){
-    if (TRUE %in% (numericalIndex <= refPosition)){
-      return(max(numericalIndex[numericalIndex <= refPosition]))
-    }
-    else{
+  if (search_where == "previous"){
+    if (TRUE %in% (search_in <= search_position)){
+      return(max(search_in[search_in <= search_position]))
+    } else {
       return(NULL)
     }
   }
-  else if (searchWhere == "next"){
-    if (TRUE %in% (numericalIndex >= refPosition)){
-      return(min(numericalIndex[numericalIndex >= refPosition]))
-    }
-    else{
+  else if (search_where == "next"){
+    if (TRUE %in% (search_in >= search_position)){
+      return(min(search_in[search_in >= search_position]))
+    } else {
       return(NULL)
     }
-  }
-  else{return(NULL)}
+  } else {
+    return(NULL)
+    }
 }
 
 propagateUncertainty <- function(a, b, operation){
-  
-  browser()
   
   a_value = a[[1]]
   b_value = b[[1]]
@@ -351,7 +370,7 @@ fill_empty_string <- function(char_vector){
     }
   }
   
-  return(textVector)
+  return(char_vector)
 }
 
 rm_duplicate_lines <- function(df){
@@ -375,66 +394,52 @@ rm_duplicate_lines <- function(df){
   
   return(df)
 }
-##Function that replaces all values in lineIndex
-##Values are replaced by new values, based on the sourceLineIndex index
-##If the sourceLineIndex are set to NULL, the lines that are not in the lineIndex (i.e. !lineIndex) are used as source
-##The new values can be the mean and SD of previous and following sourceLineIndex or the value and SD of the previous sourceLine
-##ICPsignal and SD are the dataframe containing the signal and SD of the signal 
-##col_range is the column range for line index replacement,
-##replace_type is the replacement type (mean or previous value)
-replaceValues <- function(ICPvalue, SD, colRange, replaceType, lineIndex, sourceLineIndex){
-  #This condition is useful when the signal hasn't been extracted and the function is called -> returns null
-  if(is.null(ICPvalue)| is.null(SD)){return(NULL)}
-  #This condition is useful in shiny tables to return the table signal and SD when no replacements are required
-  if (replaceType == "none" | is.null(lineIndex) | is.null(colRange)) {return(list(value=ICPvalue,SD=SD))}
-  #Stores the line number of the signal whether it is a dataframe (nrow) or a vector (length)
-  if(is.integer(nrow(ICPvalue))){
-    lineNb <- nrow(ICPvalue)
-  } else {
-    lineNb <- length(ICPvalue)
+
+# Replaces specific values of a matrix based on reference values
+replaceValues <- function(value, SD, elements, replace_how, replace_what, replace_in){
+
+  if (is.null(value) | is.null(SD)) return(NULL)
+  
+  if (replace_how == "none" | is.null(replace_what) | is.null(replace_in) | is.null(elements)) return(list(value=value,SD=SD))
+  
+  if (!is.numeric(replace_what) | !is.numeric(replace_in)) {
+    stop("In function replace_values, non-numerical index.")
+    return(NULL)
   }
-  #The function requires a logical index. If the index is non-logical (i.e. numeric) it is converted to a logical index
-  if (!is.logical(lineIndex)) {
-    lineIndex <- convertToLogical(lineIndex, lineNb)
-  }
-  #The function accepts a NULL sourceLineIndex. The sourceLineIndex variable takes the opposite value of the logical lineIndex (!lineIndex)
-  if (is.null(sourceLineIndex)){
-    sourceLineIndex <- !lineIndex
-  }
-  #As for lineIndex, if sourceLineIndex is numerical it needs to be converted to a logical index
-  else if (!is.logical(sourceLineIndex)) {
-    sourceLineIndex <- convertToLogical(sourceLineIndex, lineNb)
-  }
-  #If the source line index is the "all" index, converts the index to the inverse of the lineIndex
-  if (all(sourceLineIndex == rep(TRUE, rep=lineNb))){
-    sourceLineIndex <- !lineIndex
+  
+  # Replaced values cannot be in reference values
+  if (any(replace_what %in% replace_in)) return(list(value=value,SD=SD))
+  
+  line_nb <- nrow(value)
+  
+  # Replace in selected "All" index case
+  if (all(replace_in == seq(line_nb))){
+    replace_in <- seq(line_nb)[-replace_what]
   }
 
-  #Now that we are sure that lineIndex and sourceLineIndex are logical, we create their numerical equivalent
-  nLineIndex <- which(lineIndex)
-  nSourceLineIndex <- which(sourceLineIndex)
-  #Apply modifications only on colRange columns
-  for (j in colRange){
-    #Apply modifications only on lines in the lineIndex
-    for (nLine in nLineIndex){
-      #Replaces the values in the signal and SD matrix based on replacement type
-      prevLine <- getClosestInIndex(nLine, nSourceLineIndex, "prev")
-      prevValue <- ICPvalue[prevLine,j]
-      prevValueSD <- SD[prevLine,j]
+  for (element in elements){
+    for (n_line in replace_what){
+      # Replaces the values in the signal and SD matrix based on replacement type
+      previous_line <- search_closest_in_index(search_position = n_line,
+                                          search_in = replace_in,
+                                          search_where = "previous")
+      previous_value <- value[previous_line, element]
+      previous_SD <- SD[previous_line, element]
 
-      if (replaceType == "mean"){
-        nextLine <- getClosestInIndex(nLine, nSourceLineIndex, "next")
-        nextValue <- ICPvalue[nextLine,j]
-        ICPvalue[nLine,j] <- mean(c(prevValue,nextValue))
-        SD[nLine,j] <- sd(c(prevValue,nextValue))
+      if (replace_how == "mean"){
+        next_line <- search_closest_in_index(n_line, replace_in, "next")
+        next_value <- value[next_line, element]
+        
+        value[n_line, element] <- mean(c(previous_value, next_value))
+        SD[n_line, element] <- sd(c(previous_value, next_value))
       } 
-      else if (replaceType == "prev"){
-        ICPvalue[nLine,j] <- prevValue
-        SD[nLine,j] <- prevValueSD
+      else if (replace_how == "previous"){
+        value[n_line, element] <- previous_value
+        SD[n_line, element] <- previous_SD
       }
     }
   }
-  return(list(value=ICPvalue,SD=SD))
+  return(list(value = value,SD = SD))
 }
 
 ##Function to create the ISTD template based on main datafile
@@ -460,37 +465,6 @@ createISTDtemplate <- function(dataFileName){
 
   return(data.frame(analyte=analyteColumn, ISTD=ISTDColumn))
 }
-
-##Function that takes the main data and standard file along with some options
-##and returns the extracted information from these file. Extracted information
-##is CPS, SD, IS.CPS, IS.SD, etc...
-extractData <- function(dataFileName, stdFileName){
-  
-  #header_1 contains the first line of the file
-  header_1 <- scan(dataFileName, nlines = 1, what = character(),sep=';')
-  #header_2 contains the second line of the file
-  header_2 <- scan(dataFileName, nlines = 1, what = character(),sep=';', skip=1)
-  
-  #fills empty values in header_1 based on previous values
-  header_1 <- fill_empty_string(header_1)
-  
-  #Import main data without headers as they are imported previously. header_1 is used for column names
-  dat.main <- read.csv2(dataFileName, skip = 2, header = FALSE, stringsAsFactors=FALSE)
-  names(dat.main) <- header_1
-  
-  #Import the standard data, we consider here that there are headers corresponding to the standard names
-  StdDataframe <- read.table(stdFileName, header = TRUE, sep=';', stringsAsFactors=FALSE)
-  
-  #Remove potential duplicates of element names in the standard dataframe
-  StdDataframe <- rm_duplicate_lines(StdDataframe)
-  
-  #Assigns the first column of the std file to the row names then removes the first column
-  row.names(StdDataframe) <- StdDataframe[,1]
-  StdDataframe <- StdDataframe[,2:length(StdDataframe)]
-  
-  return(list(main=dat.main, std=StdDataframe, header_1=header_1, header_2=header_2))
-}
-  
   
 createISTDMatrix <- function(ISTD_file, ISTDcount){
 
