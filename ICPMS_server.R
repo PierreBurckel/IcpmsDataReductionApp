@@ -14,11 +14,11 @@ ICPMS_server <- function(input, output, session) {
                           "selectDriftIndex", "viewConcentrationIndex")
   
   data_modified <- reactiveValues()
-  data_modifiers <- reactiveValues(ISTD=list(), blank=list())
+  data_modifiers <- reactiveValues(ISTD = list(), blank = list())
   index <- reactiveValues(custom = list())
   parsed_data <- reactiveValues()
   parsed_info <- reactiveValues()
-  process_parameters <- reactiveValues(driftCorrectedElement=character(), calibration=list())
+  process_parameters <- reactiveValues(driftCorrectedElement = character(), calibration = list())
   uploaded_file <- reactiveValues(main_file = NULL, std_file = NULL, ISTD_file = NULL)
   
   blank_mod_nb <- reactiveVal(0)
@@ -48,7 +48,7 @@ ICPMS_server <- function(input, output, session) {
     req(extracted())
     
     return(list(value = parsed_data$element_value[ , index$analyte, drop = FALSE],
-                SD = parsed_data$element_value[ , index$analyte, drop = FALSE]))
+                SD = parsed_data$element_sd[ , index$analyte, drop = FALSE]))
   })
   
   ISTD <- reactive({
@@ -56,7 +56,7 @@ ICPMS_server <- function(input, output, session) {
     req(extracted())
     
     return(list(value = parsed_data$element_value[ , index$ISTD, drop = FALSE],
-                SD = parsed_data$element_value[ , index$ISTD, drop = FALSE]))
+                SD = parsed_data$element_sd[ , index$ISTD, drop = FALSE]))
   })
   
   parsed_data$analyte_zero_val <- reactive({
@@ -65,6 +65,7 @@ ICPMS_server <- function(input, output, session) {
     
     zero_df <- matrix(0, nrow = parsed_info$smp_nb, ncol = analyteNumber())
     colnames(zero_df) <- analyteNames()
+    row.names(zero_df) <- parsed_info$name_col
     analyte_zero_val <- list(value = zero_df, SD = zero_df)
     
     return(analyte_zero_val)
@@ -239,7 +240,7 @@ ICPMS_server <- function(input, output, session) {
         timeInterval <- delta_t[delta_t >= t0]
         
         driftPredict <- predict(driftModel, newdata = data.frame(driftTime = timeInterval),
-                                interval="predict", confidence = 0.68)
+                                interval = "predict", confidence = 0.68)
         prediction_val <- list(value = driftPredict[ , "fit"],
                                SD = (driftPredict[ , "upr"] - driftPredict[ , "fit"]))
         first_prediction_val <- (list(value = prediction_val[["value"]][1],
@@ -277,7 +278,8 @@ ICPMS_server <- function(input, output, session) {
     
     for (element in analyteNames()) {
       calibration_data <- getCalibrationData(elementFullName = element, signal=signal,
-                                            stdIdentificationColumn=parsed_info$lvl_col, stdDataFrame = parsed_data$std)
+                                            stdIdentificationColumn=parsed_info$lvl_col,
+                                            stdDataFrame = parsed_data$std)
       standardData[[element]] <- calibration_data
     }
     
@@ -561,7 +563,7 @@ ICPMS_server <- function(input, output, session) {
       df_process <- getModifiedData(ISTD(),
                                     list(active = activeISTDmodifier()),
                                     "active")
-      df_process <- ISTDprocessTable[["value"]]
+      df_process <- df_process[["value"]]
       df_process <- format(df_process, digits = 3, scientific=T)
       
       return(df_process)
@@ -743,28 +745,41 @@ ICPMS_server <- function(input, output, session) {
     calibration_data <- data_modified$standardData()[[input$calibrationElement]]
     std_nb <- nrow(calibration_data)
     calibration_model <- data_modified$calibration_models()[[input$calibrationElement]]
-    calibration_predict <-  getConcentration(m = calibration_model[["modelParam"]], Cm = calibration_model[["covMatrix"]],
-                                            sig = calibration_data[ , "value"], vsig = calibration_data[ , "SD"]^2,
-                                            dft = rep(1, std_nb), vdft = rep(0, std_nb))
+    calibration_parameters <- calibration_model[["modelParam"]]
 
-    signal_residuals <- calibration_data[ ,"concentration"] - calibration_predict[ ,"value"]
+    calibration_predict <- calibration_data[ ,"concentration"] * calibration_parameters["slope"] +
+                           calibration_parameters["intercept"]
+    
+    signal_residuals <- calibration_data[ ,"value"] - calibration_predict
     
     # To do. Add uncertainty on plot.
     # x_polygon <- c(x, rev(x))
     # y_polygon <- c(predictions[,"lwr"], rev(predictions[,"upr"]))
     
     calibrationPlot <- plot_ly()
-    calibrationPlot <- add_trace(calibrationPlot, x=calibration_predict[,"value"], y=calibration_data[,"value"], type = 'scatter', mode = 'lines')
-    calibrationPlot <- add_trace(calibrationPlot, x=calibration_data[,"concentration"], y=calibration_data[,"value"], type = 'scatter', mode = 'markers')
+
+    calibrationPlot <- add_trace(calibrationPlot,
+                                 x=calibration_data[ ,"concentration"],
+                                 y=calibration_predict,
+                                 type = 'scatter', mode = 'lines')
+    calibrationPlot <- add_trace(calibrationPlot,
+                                 x=calibration_data[ ,"concentration"],
+                                 y=calibration_data[ ,"value"],
+                                 type = 'scatter', mode = 'markers',
+                                 error_y = list(array=calibration_data[ ,"SD"], color = '#000000'))
 
     residualPlot <- plot_ly()
-    residualPlot <- add_trace(residualPlot, x=calibration_data[,"concentration"], y=signal_residuals, type = 'scatter', mode = 'markers')
+    residualPlot <- add_trace(residualPlot,
+                              x=calibration_data[,"concentration"],
+                              y=signal_residuals,
+                              type = 'scatter', mode = 'markers')
     
     subplot(calibrationPlot, residualPlot, nrows = 2)
 
   })
   
   # Drift settings ------------------------------------------------------------
+  
   observeEvent(input$setAsDriftIndex, {
     if (input$selectDriftIndex != ""){
       set_drift(set_drift() + 1)
@@ -772,19 +787,25 @@ ICPMS_server <- function(input, output, session) {
     }
   })
   
+  # Drift index table
+  
   output$smpBlkCorTable <- renderTable({
-    req(set_drift())
-    if (is.null(data_modified$blankCorrectedRatio()[[1]]) | is.null(index$drift) | !is.integer(input$e_ind_drift)){return()}
-    driftSignal <- data_modified$blankCorrectedRatio()[[1]]
-    if (input$e_ind_drift < 5){
-      lc <- 1
+    
+    req(index$drift, is.integer(input$e_ind_drift))
+    
+    drift_ncol_display <- 5
+    
+    driftSignal <- data_modified$blankCorrectedRatio()[["value"]]
+    
+    if (input$e_ind_drift < drift_ncol_display){
+      low_col <- 1
     }
     else{
-      lc <- max(which((1:input$e_ind_drift)%%5 == 0))
+      #low_col <- max(which((seq(input$e_ind_drift)) %% drift_ncol_display  == 0))
+      low_col <- as.integer((input$e_ind_drift - 1) / drift_ncol_display) * drift_ncol_display + 1
     }
-    uc <- min(lc + 4, analyteNumber())
-    driftTable <- cbind(parsed_info$name_col[index$drift],driftSignal[index$drift,lc:uc])
-    names(driftTable) <- c("Sample Name", names(driftTable)[2:length(driftTable)])
+    up_col <- min(low_col + drift_ncol_display - 1, analyteNumber())
+    driftTable <- driftSignal[index$drift, low_col:up_col, drop=FALSE]
     driftTable
     
   }, digits = -2)
@@ -805,89 +826,81 @@ ICPMS_server <- function(input, output, session) {
   
   output$driftPlot <- renderPlotly({
     
-    req(index$drift)
-    if (is.null(data_modified$blankCorrectedRatio()[["value"]]) | is.null(index$drift)){return()}
+    req(index$drift, is.integer(input$e_ind_drift))
     
     driftTime = parsed_info$delta_t[index$drift]
-    driftValue = driftData()[["value"]][,input$e_ind_drift]
-    driftSD = driftData()[["SD"]][,input$e_ind_drift]
+    driftValue = driftData()[["value"]][ ,input$e_ind_drift]
+    driftSD = driftData()[["SD"]][ ,input$e_ind_drift]
 
     driftPlot <- plot_ly()
-    driftPlot <- add_trace(driftPlot, x=driftTime, y=driftValue, type = 'scatter', mode = 'markers', error_y = list(array=driftSD, color = '#000000'))
+    driftPlot <- add_trace(driftPlot, x=driftTime, y=driftValue,
+                           type = 'scatter', mode = 'markers',
+                           error_y = list(array=driftSD, color = '#000000'))
+    
     if (process_parameters$driftCorrectedElement[input$e_ind_drift] != "None") {
-      iTime = driftTime[1]
-      fTime = driftTime[length(driftTime)]
-      timeInterval = seq(from=as.numeric(iTime), to=as.numeric(fTime), by=as.numeric((fTime - iTime)/100))
+      
+      iTime <- driftTime[1]
+      fTime <- tail(driftTime, 1)
+      
+      timeInterval <- seq(from = as.numeric(iTime), to = as.numeric(fTime),
+                          by=as.numeric((fTime - iTime)/100))
+      
       driftModel <- data_modified$driftModels()[[input$e_ind_drift]]
-      driftPredict=predict(driftModel, newdata = data.frame(driftTime = timeInterval),interval="predict")
-      driftPlot <- add_trace(driftPlot, x=timeInterval, y=driftPredict[,"fit"], type = 'scatter', mode = 'lines')
-      driftPlot <- add_annotations(driftPlot,x= 0,y= 1,xref = "paper",yref = "paper",
+      
+      driftPredict <- predict(driftModel, newdata = data.frame(driftTime = timeInterval), interval="predict")
+      
+      driftPlot <- add_trace(driftPlot, x = timeInterval, y = driftPredict[ ,"fit"],
+                             type = 'scatter', mode = 'lines')
+      
+      driftPlot <- add_annotations(driftPlot, x = 0, y = 1,
+                                   xref = "paper", yref = "paper",
                                    text = paste("Adjusted R squared: ", summary(driftModel)$adj.r.squared), showarrow = F)
     }
     
     driftPlot
-    #driftPlot <- add_trace(driftPlot, x=driftTime, y=driftValue, type = 'scatter', mode = 'markers', error_y = list(array=driftSD, color = '#000000'))
-    # if (process_parameters$driftCorrectedElement[input$e_ind_drift] == TRUE){
-    #   time_0 = driftTime[1]
-    #   time_f = driftTime[length(driftTime)]
-    #   timeInterval = seq(from=as.numeric(time_0), to=as.numeric(time_f), by=as.numeric((time_f - time_0)/100))
-    #   
-    #   dt = as.numeric(driftTime)
-    #   driftModel <- lm(driftValue ~ poly(dt, degree=2, raw=TRUE))
-    #   
-    #   driftPredict=predict(driftModel, newdata = data.frame(dt = timeInterval))
-    #   
-    #   lines(x=timeInterval, y=driftPredict, col="red")
-    # }
     
-    # driftData <- subsetDfList(data_modified$blankCorrectedRatio(),index$drift, input$e_ind_drift)
-    # uncertainty <- getUncertaintyInterval(driftData)
-    # 
-    # suppressWarnings(arrows(parsed_info$delta_t[index$drift], as.matrix(uncertainty[["lBound"]]), parsed_info$delta_t[index$drift], as.matrix(uncertainty[["uBound"]]), length=0.05, angle=90, code=3))
   })
   
   observeEvent(input$setDriftCorrection, {
-    req(set_drift())
-    if (is.null(process_parameters$driftCorrectedElement)){return()}
+    
+    req(index$drift, process_parameters$driftCorrectedElement)
+
     process_parameters$driftCorrectedElement[input$e_ind_drift] <- input$driftModelSelection
+    
   })
 
   # Data processing -----------------------------------------------------------
   
+  # Concentration table
+  
   output$conc <- renderTable({
-    if (is.null(data_modified$concentration())){return()}
+    
+    req(data_modified$concentration())
+    
     data_modified$concentration()
-    # print(1)
-    # print(data_modified$concentration())
-    # displayWhat = strtoi(input$viewConcentrationSwitch)
-    # displayIndex = input$viewConcentrationIndex
-    # 
-    # if (displayWhat <= 2){displayMatrix <- data_modified$concentration()[[displayWhat]]}
-    # else if (displayWhat == 3){
-    #   displayMatrix <- mergeMatrixes(matrix1 = data_modified$concentration()[[1]], matrix2 = data_modified$concentration()[[2]], name1=NULL, name2="SD (%)")
-    # }
-    # else {}
-    # print(2)
-    # cbind(parsed_info$name_col, displayMatrix)[index$custom[[displayIndex]],]
   })
   
-  #Button to download the list of analyte() and ISTD
+  # Download table
+  
   output$downloadData <- downloadHandler(
     filename = paste("data_", input$viewConcentrationIndex, ".csv", sep = ""),
     content = function(file) {
-      selectedIndex = index$custom[[input$viewConcentrationIndex]]
       
-      combinedConcSD <- mergeMatrixes(matrix1 = data_modified$concentration()[[1]], matrix2 = data_modified$concentration()[[2]], name1=NULL, name2="SD (%)")
+      selectedIndex <- index$custom[[input$viewConcentrationIndex]]
+      selectedMode <- strtoi(input$viewConcentrationSwitch)
+      
+      combinedConcSD <- mergeMatrixes(matrix1 = data_modified$concentration()[["value"]],
+                                      matrix2 = data_modified$concentration()[["SD"]],
+                                      name1=NULL,
+                                      name2="SD")
 
-      if (strtoi(input$viewConcentrationSwitch) <= 2){
-        write.csv(cbind(parsed_info$name_col,data_modified$concentration()[[strtoi(input$viewConcentrationSwitch)]])[selectedIndex,],
-                  file, sep=";", quote = FALSE,
-                  row.names = FALSE, col.names = FALSE)
+      if (selectedMode <= 2){
+        write.csv(data_modified$concentration()[[selectedMode]][selectedIndex, ],
+                  file, sep=";", quote = FALSE, row.names = FALSE, col.names = FALSE)
       }
-      else if (strtoi(input$viewConcentrationSwitch) == 3){
-        write.csv(cbind(parsed_info$name_col, combinedConcSD)[selectedIndex,],
-                  file, sep=";", quote = FALSE,
-                  row.names = FALSE, col.names = FALSE)
+      else if (selectedMode == 3){
+        write.csv(combinedConcSD[selectedIndex,],
+                  file, sep=";", quote = FALSE, row.names = FALSE, col.names = FALSE)
       }
     })
   

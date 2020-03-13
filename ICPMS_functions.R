@@ -73,12 +73,16 @@ getConcentration <- function(m, Cm, sig, vsig, dft, vdft) {
   
   #m is of class matrix and of dimension (2,1) and contains the calibration linear regression parameters as double
   #m is of class matrix and of dimension (2,2) and contains the variance and covariance of calibration linear regression parameters as double
+  
   intercept <- as.numeric(m[1])
   slope <- as.numeric(m[2])
-  concentrations <- numeric()
   
   #sig, vsig, dft, vdft are of similar class and size, they are numeric of length sampleNumber
   sampleNumber <- length(sig)
+  
+  concentrations <- matrix(rep(NA, sampleNumber * 2), nrow = sampleNumber, ncol = 2)
+  row.names(concentrations) <- row.names(sig)
+  colnames(concentrations) <- c("value", "SD")
   
   #The concentration of each samples is calculated independently with this loop. Results are concatenated in the concentration matrix
   for (i in seq(sampleNumber)) {
@@ -96,7 +100,7 @@ getConcentration <- function(m, Cm, sig, vsig, dft, vdft) {
     
     #concentrations is of class matrix and of dimension (sampleNumber,2) at the end of the for loop (addition of one row per loop) 
     #concentrations contains the sample concentrations and their standard error
-    concentrations <- rbind(concentrations, t(c(value = (sig[i]/dft[i]-intercept)/slope, SE = sqrt(as.numeric(J%*%Cy%*%t(J))))))
+    concentrations[i , ] <- c(sig[i]/dft[i]-intercept, sqrt(as.numeric(J%*%Cy%*%t(J))))
   }
   return(concentrations)
 }
@@ -148,6 +152,8 @@ getCalibrationModel <- function(element, processParameters, calibrationData) {
     Cm <- matrix(0,2,2)
     Cm[2,2] <- Cslope
   }
+  
+  names(m) <- c("intercept","slope")
   
   return(list(modelParam = m, covMatrix = Cm))
 }
@@ -237,12 +243,12 @@ getCalibrationData <- function(elementFullName, signal, stdIdentificationColumn,
   else {}
   
   #stdConcentration contains the concentrations of the element eName in the standards
-  stdConcentration <- t(stdDataFrame[eName,])
+  stdConcentration <- t(stdDataFrame[eName, , drop = FALSE])
   #if the element eName has concentrations associated to it, calibrate
   if (sum(stdConcentration, na.rm=TRUE) != 0)
   {
     #Discard non numeric values in stdConcentration
-    stdConcentration <- stdConcentration[!is.na(stdConcentration),1, drop = FALSE]
+    stdConcentration <- stdConcentration[!is.na(stdConcentration), 1, drop = FALSE]
     
     #Searches for the standard names (row names in stdConcentration) that are associated with numeric values in
     #the level column to create an index that will be used to find the signal associated to the standards
@@ -358,7 +364,7 @@ propagateUncertainty <- function(a, b, operation){
   }
   else {return(NULL)}
   
-  return(list(value=as.data.frame(value), SD=as.data.frame(SD)))
+  return(list(value = value , SD=  SD))
 }
 
 ##Function that replaces each value in a text vector by its previous value if the current value is empty (=="")
@@ -407,15 +413,15 @@ replaceValues <- function(value, SD, elements, replace_how, replace_what, replac
     return(NULL)
   }
   
-  # Replaced values cannot be in reference values
-  if (any(replace_what %in% replace_in)) return(list(value=value,SD=SD))
-  
   line_nb <- nrow(value)
   
   # Replace in selected "All" index case
-  if (all(replace_in == seq(line_nb))){
+  if (length(replace_in) == line_nb){
     replace_in <- seq(line_nb)[-replace_what]
   }
+  
+  # Replaced values cannot be in reference values
+  if (any(replace_what %in% replace_in)) return(list(value=value,SD=SD))
 
   for (element in elements){
     for (n_line in replace_what){
@@ -467,18 +473,18 @@ createISTDtemplate <- function(dataFileName){
 }
   
 createISTDMatrix <- function(ISTD_file, ISTDcount){
-
+  
   if(is.null(ISTD_file) | is.null(ISTDcount)){return(1)}
   
   for (j in 1:nrow(ISTD_file)){
-    eISTD <- ISTD_file[j,2]
+    eISTD <- ISTD_file[j, 2]
     if (j == 1){
-      ISTDmatrixValue <- ISTDcount[["value"]][eISTD]
-      ISTDmatrixSD <- ISTDcount[["SD"]][eISTD]
+      ISTDmatrixValue <- ISTDcount[["value"]][ , eISTD, drop = FALSE]
+      ISTDmatrixSD <- ISTDcount[["SD"]][ , eISTD, drop = FALSE]
       print(2)
     } else {
-      ISTDmatrixValue <- cbind(ISTDmatrixValue, ISTDcount[["value"]][eISTD])
-      ISTDmatrixSD <- cbind(ISTDmatrixSD, ISTDcount[["SD"]][eISTD])
+      ISTDmatrixValue <- cbind(ISTDmatrixValue, ISTDcount[["value"]][ , eISTD, drop = FALSE])
+      ISTDmatrixSD <- cbind(ISTDmatrixSD, ISTDcount[["SD"]][ , eISTD, drop = FALSE])
     }
   }
   return(list(value=ISTDmatrixValue, SD=ISTDmatrixSD))
