@@ -11,10 +11,11 @@ ICPMS_server <- function(input, output, session) {
   # Variable initialization ---------------------------------------------------
   
   select_input_names <- c("indexISTDchoiceWhat", "indexBlkchoiceWhat", "indexISTDchoiceIn", "indexBlkchoiceIn",
-                          "selectDriftIndex", "viewConcentrationIndex")
+                          "selectDriftIndex", "viewConcentrationIndex", "blkPlotIndex")
   
   data_modified <- reactiveValues()
   data_modifiers <- reactiveValues(ISTD = list(), blank = list())
+  data_tables <- reactiveValues(ISTD = matrix(), blank = matrix())
   index <- reactiveValues(custom = list())
   parsed_data <- reactiveValues()
   parsed_info <- reactiveValues()
@@ -182,6 +183,69 @@ ICPMS_server <- function(input, output, session) {
   
   # Complex reactive expressions ----------------------------------------------
   
+  # Displayed ISTD table
+  data_tables$ISTD <- reactive({
+    
+    if (!is_valid_ISTD()) return()
+    
+    ISTDmode <- input$ISTDinteractionMode
+    
+    if (ISTDmode == "view") {
+      
+      df_view <- data_modified$ISTD()[["value"]]
+      
+      return(df_view)
+      
+    }
+    else if (ISTDmode == "process") {
+      
+      df_process <- getModifiedData(ISTD(),
+                                    list(active = activeISTDmodifier()),
+                                    "active")
+      df_process <- df_process[["value"]]
+      
+      return(df_process)
+      
+    }
+  })
+  
+  # Displayed blank table
+  data_tables$blank <- reactive({
+    if (is.null(analyte()[["value"]])) return()
+    
+    blkMode <- input$blkInteractionMode
+    blkDisplay <- input$blkDisplayMode
+    
+    if (blkMode == "view") {
+      
+      if (blkDisplay == "blank") {
+        df_view <- data_modified$blankRatio()[["value"]]
+      }
+      else if (blkDisplay == "sig_minus_blk") {
+        df_view <- data_modified$blankCorrectedRatio()[["value"]]
+      }
+      
+      return(df_view)
+      
+    } else if (blkMode == "process") {
+      
+      df_blank <- getModifiedData(data_modified$ratio(),
+                                  list(active = activeBlankModifier()),
+                                  "active")[["value"]]
+      
+      if (blkDisplay == "blank") {
+        df_process <- df_blank
+      }
+      else if (blkDisplay == "sig_minus_blk") {
+        df_sig_minus_blk <- data_modified$ratio()[["value"]] - df_blank
+        df_process <- df_sig_minus_blk
+      }
+      
+      return(df_process)
+      
+    }
+  })
+  
   # R models used for external drift correction
   data_modified$driftModels <- reactive({
     
@@ -213,6 +277,8 @@ ICPMS_server <- function(input, output, session) {
   data_modified$driftFactor <- reactive({
     
     req(index$drift)
+    
+    browser()
     
     driftFactor <- list(value = vector(), SD = vector()) # drift factor for all elements
     analyteDriftFactor <- list(value = vector(), SD = vector()) # drift factor for analyte being evaluated
@@ -249,8 +315,8 @@ ICPMS_server <- function(input, output, session) {
         analyteDriftFactor <- propagateUncertainty(a=prediction_val, b=first_prediction_val,
                                                    operation="division")
         # First relative drift value is of 1 and SD of 0
-        analyteDriftFactor[["value"]][1, ] <- 1
-        analyteDriftFactor[["SD"]][1, ] <- 0
+        analyteDriftFactor[["value"]][1] <- 1
+        analyteDriftFactor[["SD"]][1] <- 0
       }
       
       # Concatenation of values drift- and non-drift corrected
@@ -260,6 +326,9 @@ ICPMS_server <- function(input, output, session) {
                                       c(rep(1, non_drift_nb), analyteDriftFactor[["value"]]))
       driftFactor[["SD"]] <- cbind(driftFactor[["SD"]],
                                    c(rep(0,driftStart-1),analyteDriftFactor[["SD"]]))
+      
+      colnames(driftFactor[["value"]]) <- analyteNames()
+      colnames(driftFactor[["SD"]]) <- analyteNames()
       
     }
     
@@ -307,6 +376,8 @@ ICPMS_server <- function(input, output, session) {
   data_modified$concentration <- reactive({
     
     req(data_modified$blankCorrectedRatio())
+    
+    browser()
     
     concentration_table <- vector()
     
@@ -464,8 +535,9 @@ ICPMS_server <- function(input, output, session) {
   # Index creation ------------------------------------------------------------
   
   # Table
+  # for DT extensions see: https://rstudio.github.io/DT/extensions.html
   
-  output$index_table <- DT::renderDT({
+  output$index_table <- DT::renderDT(datatable({
 
     req(extracted())
     
@@ -503,7 +575,11 @@ ICPMS_server <- function(input, output, session) {
     
     index_table
     
-  }, options = list(dom = '', pageLength = parsed_info$smp_nb, ordering=T))
+  }, extensions = c('Scroller', 'Buttons'),
+  options = list(dom = 'Bt', ordering=F, autoWidth = TRUE,
+                 scrollX = TRUE, scrollY = 300, deferRender = TRUE, scroller = TRUE,
+                 buttons = c('copy', 'csv'),
+                 columnDefs = list(list(width = '120px', targets = "_all")))))
   
   # Inputs
   
@@ -542,34 +618,20 @@ ICPMS_server <- function(input, output, session) {
   
   # ISTD settings -------------------------------------------------------------
   
-  # Table
-  
-  output$ISTDtable <- DT::renderDT({
-    
-    if (!is_valid_ISTD()) return()
-    
-    ISTDmode <- input$ISTDinteractionMode
-    
-    if (ISTDmode == "view") {
-      
-      df_view <- data_modified$ISTD()[["value"]]
-      df_view <- format(df_view, digits = 3, scientific=T)
-      
-      return(df_view)
-      
-    }
-    else if (ISTDmode == "process") {
-      
-      df_process <- getModifiedData(ISTD(),
-                                    list(active = activeISTDmodifier()),
-                                    "active")
-      df_process <- df_process[["value"]]
-      df_process <- format(df_process, digits = 3, scientific=T)
-      
-      return(df_process)
-      
-      }
-  }, options = list(dom = '', pageLength = parsed_info$smp_nb, ordering=F, autoWidth = TRUE, scrollX=T, columnDefs = list(list(width = '150px', targets = "_all"))))
+  # Display ISTD table
+  output$ISTDtable <- DT::renderDT(datatable(
+    {
+
+    if(!is.matrix(data_tables$ISTD())) return()
+
+    format(data_tables$ISTD(), digits = 3, scientific=T)
+
+    },
+    extensions = c('Scroller', 'FixedColumns', 'Buttons'),
+    options = list(dom = 'Bt', ordering=F, autoWidth = TRUE,
+                   scrollX = TRUE, scrollY = 300, deferRender = TRUE, scroller = TRUE, fixedColumns = TRUE,
+                   buttons = c('copy', 'csv'),
+                   columnDefs = list(list(width = '120px', targets = "_all")))))
   
   # Defines a proxy for changing selections in the table
   ISTDtableProxy <- DT::dataTableProxy("ISTDtable", session = session)
@@ -617,32 +679,36 @@ ICPMS_server <- function(input, output, session) {
     }
   }, ignoreInit = FALSE)
   
-  output$blkTable <- DT::renderDT({
+  # Display blank table
+  output$blkTable <- DT::renderDT(datatable({
     
-    if (is.null(analyte()[["value"]])) return()
+    if(!is.matrix(data_tables$blank())) return()
     
-    blkMode <- input$blkInteractionMode
+    format(data_tables$blank(), digits = 3, scientific=T)
     
-    if (blkMode == "view") {
-      
-      df_view <- data_modified$blankRatio()[["value"]]
-      df_view <- format(df_view, digits = 3, scientific=T)
-      
-      return(df_view)
-      
-    } else if (blkMode == "process") {
-      
-      df_process <- getModifiedData(data_modified$ratio(),
-                                    list(active = activeBlankModifier()),
-                                    "active")
-      df_process <- df_process[["value"]]
-      df_process <- format(df_process, digits = 3, scientific=T)
-      
-      return(df_process)
-      
-      }
-  }, options = list(dom = '', pageLength = parsed_info$smp_nb, ordering=F, autoWidth = TRUE, scrollX=T, columnDefs = list(list(width = '120px', targets = "_all"))))
+  },
+  extensions = c('Scroller', 'FixedColumns', 'Buttons'),
+  options = list(dom = 'Bt', ordering=F, autoWidth = TRUE,
+                 scrollX = TRUE, scrollY = 300, deferRender = TRUE, scroller = TRUE, fixedColumns = TRUE,
+                 buttons = c('copy', 'csv'),
+                 columnDefs = list(list(width = '120px', targets = "_all")))))
   
+  # Display blank plot
+  output$blankPlot <- renderPlotly({
+    
+    element <- input$blkPlotElement
+    index <- index$custom[[input$blkPlotIndex]]
+    
+    if(!(element %in% colnames(data_tables$blank()))) return()
+    
+    x <- make.unique(parsed_info$name_col[index], sep = ".")
+    y <- as.numeric(data_tables$blank()[index, element])
+    
+    blankPlot <- plot_ly(x=x, y=y, type = 'scatter', mode = 'markers')
+    
+    layout(blankPlot, xaxis = list(type = "category", categoryorder="array", categoryarray=x))
+    
+  })
   
   #Defines a proxy for changing selections in the table
   blkTableProxy <- DT::dataTableProxy("blkTable", session = session)
@@ -752,30 +818,42 @@ ICPMS_server <- function(input, output, session) {
     
     signal_residuals <- calibration_data[ ,"value"] - calibration_predict
     
-    # To do. Add uncertainty on plot.
-    # x_polygon <- c(x, rev(x))
-    # y_polygon <- c(predictions[,"lwr"], rev(predictions[,"upr"]))
-    
     calibrationPlot <- plot_ly()
-
-    calibrationPlot <- add_trace(calibrationPlot,
-                                 x=calibration_data[ ,"concentration"],
-                                 y=calibration_predict,
-                                 type = 'scatter', mode = 'lines')
-    calibrationPlot <- add_trace(calibrationPlot,
-                                 x=calibration_data[ ,"concentration"],
-                                 y=calibration_data[ ,"value"],
-                                 type = 'scatter', mode = 'markers',
-                                 error_y = list(array=calibration_data[ ,"SD"], color = '#000000'))
-
-    residualPlot <- plot_ly()
-    residualPlot <- add_trace(residualPlot,
-                              x=calibration_data[,"concentration"],
-                              y=signal_residuals,
-                              type = 'scatter', mode = 'markers')
     
-    subplot(calibrationPlot, residualPlot, nrows = 2)
-
+    if (is.null(calibration_parameters)) {
+      
+      calibrationPlot <- add_trace(calibrationPlot,
+                                   x=NULL, y=NULL, type = 'scatter', mode = 'markers')
+      
+      calibrationPlot <- add_annotations(calibrationPlot, x = 0.1, y = 0.5,
+                                   xref = "paper", yref = "paper",
+                                   text = paste("Linear model impossible to compute. Verify that 1/SD or
+                                                1/Y weights are not infinite (Y or SD = 0)."),
+                                   xanchor = 'left', showarrow = FALSE, font = list(color = "red"))
+      
+    } else {
+      
+      calibrationPlot <- add_trace(calibrationPlot,
+                                   x=calibration_data[ ,"concentration"],
+                                   y=calibration_predict,
+                                   type = 'scatter', mode = 'lines')
+      
+      calibrationPlot <- add_trace(calibrationPlot,
+                                   x=calibration_data[ ,"concentration"],
+                                   y=calibration_data[ ,"value"],
+                                   type = 'scatter', mode = 'markers',
+                                   error_y = list(array=calibration_data[ ,"SD"], color = '#000000'))
+      
+      residualPlot <- plot_ly()
+      
+      residualPlot <- add_trace(residualPlot,
+                                x=calibration_data[,"concentration"],
+                                y=signal_residuals,
+                                type = 'scatter', mode = 'markers')
+      
+      subplot(calibrationPlot, residualPlot, nrows = 2)
+      
+    }
   })
   
   # Drift settings ------------------------------------------------------------
@@ -908,9 +986,18 @@ ICPMS_server <- function(input, output, session) {
   # Observers -----------------------------------------------------------------
   
   observe({
+    updateSelectInput(session,"blkPlotElement",choices=analyteNames(),selected=analyteNames()[1])
     updateSelectInput(session,"calibrationElement",choices=analyteNames(),selected=analyteNames()[1])
     updateSelectInput(session,"e_drift",choices=analyteNames(),selected=analyteNames()[1])
   })
+  
+  observeEvent(input$useBlankCorrection,{
+    if(input$useBlankCorrection == TRUE) {
+      shinyjs::enable("blkInteractionMode")
+    } else {
+      shinyjs::disable("blkInteractionMode")
+    }
+  }, ignoreInit = FALSE)
   
   observe({
     if(input$blkInteractionMode == "process") {
@@ -918,12 +1005,14 @@ ICPMS_server <- function(input, output, session) {
       shinyjs::enable("blkColSlider")
       shinyjs::enable("blkInterpolationMethod")
       shinyjs::enable("indexBlkchoiceIn")
+      shinyjs::enable("indexBlkchoiceWhat")
     }
     else if(input$blkInteractionMode == "view") {
       shinyjs::disable("setBlkInterpolationMethod")
       shinyjs::disable("blkColSlider")
       shinyjs::disable("blkInterpolationMethod")
       shinyjs::disable("indexBlkchoiceIn")
+      shinyjs::disable("indexBlkchoiceWhat")
     }
   })
   
@@ -933,12 +1022,14 @@ ICPMS_server <- function(input, output, session) {
       shinyjs::enable("ISTDcolSlider")
       shinyjs::enable("ISTDcorrectionMethod")
       shinyjs::enable("indexISTDchoiceIn")
+      shinyjs::enable("indexISTDchoiceWhat")
     }
     else if(input$ISTDinteractionMode == "view") {
       shinyjs::disable("setISTDcorrectionMethod")
       shinyjs::disable("ISTDcolSlider")
       shinyjs::disable("ISTDcorrectionMethod")
       shinyjs::disable("indexISTDchoiceIn")
+      shinyjs::disable("indexISTDchoiceWhat")
     }
   })
 }

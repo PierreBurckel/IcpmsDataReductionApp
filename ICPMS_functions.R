@@ -31,7 +31,6 @@ parse_function_agilent <- function(main_file, std_file, ISTD_file) {
     row.names(std_dataframe) <- std_elements[!duplicated(std_elements)]
     std_dataframe <- std_dataframe[ , -1, drop = FALSE]
     std_matrix <- as.matrix(std_dataframe)
-    # std_dataframe <- std_dataframe[ , 2:length(std_dataframe), drop = FALSE]
     
     num_col_index <- which(header_2 == "CPS" | header_2 == "CPS RSD")
     
@@ -100,7 +99,7 @@ getConcentration <- function(m, Cm, sig, vsig, dft, vdft) {
     
     #concentrations is of class matrix and of dimension (sampleNumber,2) at the end of the for loop (addition of one row per loop) 
     #concentrations contains the sample concentrations and their standard error
-    concentrations[i , ] <- c(sig[i]/dft[i]-intercept, sqrt(as.numeric(J%*%Cy%*%t(J))))
+    concentrations[i , ] <- c((sig[i]/dft[i]-intercept) / slope, sqrt(as.numeric(J%*%Cy%*%t(J))))
   }
   return(concentrations)
 }
@@ -113,6 +112,8 @@ getCalibrationModel <- function(element, processParameters, calibrationData) {
   #calibrationData contains the result of the getCalibrationData function, a matrix of nrow StdNumber of ncol 3 ("Value", "SD", "Concentration")
   #Returns:
   #A list containing the linear regression model parameters as "modelParam" and the covariance matrix as "covMatrix"
+  
+  
   
   fi <- processParameters$forceIntercept
   wr <- processParameters$useWeithedRegression
@@ -136,6 +137,9 @@ getCalibrationModel <- function(element, processParameters, calibrationData) {
   
   if (wr[[element]] == TRUE) {
     calibrationWeights <- getWeights(calibrationData = calibrationData, fn = w[[element]])
+    
+    if (Inf %in% calibrationWeights) return(list(modelParam = NULL, covMatrix = NULL))
+    
     Cd <- diag(x=calibrationWeights, nrow=length(stdConcentrations), ncol=length(stdConcentrations))
   }
   else {

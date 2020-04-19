@@ -48,8 +48,6 @@ ICPMS_ui <- shinyUI({
                         sidebarLayout(
                           sidebarPanel(
                             shinyjs::useShinyjs(),
-                            sliderInput("ISTDcolSlider", label = NULL, min = 1, 
-                                      max = 100, value = c(1, 1)),
                             selectInput("ISTDinteractionMode", "Select a mode:",
                                         c("View" = "view", "Process" = "process")),
                             selectInput("indexISTDchoiceWhat", "Replace what:",
@@ -72,6 +70,8 @@ ICPMS_ui <- shinyUI({
                           sidebarPanel(
                             shinyjs::useShinyjs(),
                             checkboxInput("useBlankCorrection", "Check to perform blank correction", value=FALSE),
+                            selectInput("blkDisplayMode", "Display:",
+                                        c("Blank" = "blank", "Signal - Blank" = "sig_minus_blk")),
                             selectInput("blkInteractionMode", "Select a mode:",
                                         c("View" = "view", "Process" = "process")),
                             selectInput("indexBlkchoiceWhat", "Replace what:",
@@ -84,9 +84,15 @@ ICPMS_ui <- shinyUI({
                             actionButton("setBlkInterpolationMethod", "Set blank interpolation"),
                             checkboxGroupInput("blankModifiers", "Modifiers:", choices = NULL, selected = NULL)),
                           mainPanel(
-                            div(style="display:inline-block",sliderInput("blkColSlider", label = h3("Column range"), min = 1, 
-                                                                         max = 100, value = c(1, 1))),
-                            DT::DTOutput("blkTable")
+                            checkboxInput("plotview", "Plot View"),
+                            conditionalPanel(
+                              condition = "input.plotview == true",
+                              div(style="display:inline-block;vertical-align:top; width: 200px;",selectInput("blkPlotElement", "Element:", choices = "", selected = "")),
+                              div(style="display:inline-block;vertical-align:top; width: 200px;",selectInput("blkPlotIndex", "Index:", choices = "", selected = "")),
+                              plotlyOutput("blankPlot")),
+                            conditionalPanel(
+                              condition = "input.plotview == false",
+                              DT::DTOutput("blkTable"))
                           )
                         )
                ),
@@ -101,7 +107,7 @@ ICPMS_ui <- shinyUI({
                             actionButton("setRegression", "Set regression"),
                             actionButton("setRegressionALL", "Set to all")),
                           mainPanel(
-                            selectInput("calibrationElement", "Element:", "", selected = ""),
+                            selectInput("calibrationElement", "Element:", choices = "", selected = ""),
                             plotlyOutput("calibrationPlot")
                           )
                         )
