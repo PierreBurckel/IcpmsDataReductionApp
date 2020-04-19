@@ -1,0 +1,800 @@
+---
+title: "Untitled"
+output: slidy_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## Testing concentrations calculations
+
+For linear regression with matrix see <https://www.stat.purdue.edu/~boli/stat512/lectures/topic3.pdf>.
+
+
+```{r setup system, echo = FALSE, eval = TRUE}
+
+sig_smp <- 1000 # CPS
+sig_sd <- 100 
+ISTD_smp <- 2000 # CPS
+ISTD_sd <- 100 
+measurement_time <- 50 # min
+
+# Blank: time (min), values (ratio)
+times_blk <- seq(5, 100, by = 5)
+values_blk <- 0.1 - (seq(times_blk) - 1)* 0.005 + rnorm(n = length(times_blk), mean = 0, sd = 0.001)
+
+# Drift: time (min), values (ratio)
+times_drift <- seq(4, 100, by = 10)
+values_drift <- 1 + (seq(times_drift) - 1)* 0.05 + rnorm(n = length(times_drift), mean = 0, sd = 0.005)
+
+# Calibration: concentration (ppb), values (ratio)
+std_concentration <- c(1, 5, 10, 50, 100)
+std_values <- std_concentration/10 + rnorm(n = length(std_concentration), mean = 0, sd = 0.05)
+
+# Calculation from (https://www.stat.purdue.edu/~boli/stat512/lectures/topic3.pdf)
+
+# Blank linear model
+
+X_blk <- cbind(rep(1, times = length(times_blk)), times_blk)
+Y_blk <- as.matrix(values_blk)
+
+betas_blk <- solve(t(X_blk)%*%X_blk)%*%t(X_blk)%*%Y_blk
+hat_blk <- X_blk%*%solve(t(X_blk)%*%X_blk)%*%t(X_blk)
+residuals_blk <- (diag(length(times_blk)) - hat_blk)%*%Y_blk
+SSE_blk <- t(residuals_blk)%*%residuals_blk
+df_regression_blk <- (length(times_blk) - 2)
+MSE_blk <- SSE_blk / df_regression_blk
+cov_blk <- as.numeric(MSE_blk) * solve(t(X_blk)%*%X_blk)
+
+# Calculation from Marina
+
+Cd <- diag(length(times_blk))
+
+m <- solve(t(X_blk)%*%solve(Cd)%*%X_blk)%*%t(X_blk)%*%solve(Cd)%*%Y_blk
+chi2 <- as.vector((t(Y_blk-X_blk%*%m)%*%solve(Cd)%*%(Y_blk-X_blk%*%m)))/df_regression_blk
+Cm <- solve(t(X_blk)%*%solve(Cd)%*%X_blk)*chi2
+
+# Both results are the same
+
+print(betas_blk)
+print(m)
+
+print(cov_blk)
+print(Cm)
+
+# Create other models (drift, calibration)
+
+# Drift model
+
+X_drift <- cbind(rep(1, times = length(times_drift)), times_drift)
+Y_drift <- as.matrix(values_drift)
+
+betas_drift <- solve(t(X_drift)%*%X_drift)%*%t(X_drift)%*%Y_drift
+hat_drift <- X_drift%*%solve(t(X_drift)%*%X_drift)%*%t(X_drift)
+residuals_drift <- (diag(length(times_drift)) - hat_drift)%*%Y_drift
+SSE_drift <- t(residuals_drift)%*%residuals_drift
+df_regression_drift <- (length(times_drift) - 2)
+MSE_drift <- SSE_drift / df_regression_drift
+cov_drift <- as.numeric(MSE_drift) * solve(t(X_drift)%*%X_drift)
+
+# Calibration model
+
+X_cal <- cbind(rep(1, times = length(std_concentration)), std_concentration)
+Y_cal <- as.matrix(std_values)
+
+betas_cal <- solve(t(X_cal)%*%X_cal)%*%t(X_cal)%*%Y_cal
+hat_cal <- X_cal%*%solve(t(X_cal)%*%X_cal)%*%t(X_cal)
+residuals_cal <- (diag(length(std_concentration)) - hat_cal)%*%Y_cal
+SSE_cal <- t(residuals_cal)%*%residuals_cal
+df_regression_cal <- (length(std_concentration) - 2)
+MSE_cal <- SSE_cal / df_regression_cal
+cov_cal <- as.numeric(MSE_cal) * solve(t(X_cal)%*%X_cal)
+
+beta_0_blk <- betas_blk[1, ]
+beta_1_blk <- betas_blk[2, ]
+beta_0_drift <- betas_drift[1, ]
+beta_1_drift <- betas_drift[2, ]
+beta_0_cal <- betas_cal[1, ]
+beta_1_cal <- betas_cal[2, ]
+```
+
+```{r eval full expression, echo = FALSE, eval = TRUE}
+concentration_full_expression <- expression((((sig_smp/ISTD_smp) - (beta_0_blk + beta_1_blk*measurement_time))/(1+measurement_time*beta_1_drift/beta_0_drift)-beta_0_cal)/beta_1_cal)
+
+sample_concentration <- eval(concentration_full_expression) # concentration value associated to the sig_smp/ISTD_smp ratio
+
+expression_parameters <- c("sig_smp", "ISTD_smp", "beta_0_blk", "beta_1_blk",
+                           "beta_0_drift", "beta_1_drift", "beta_0_cal", "beta_1_cal")
+
+jacobian_matrix_expression <- deriv(expr = concentration_full_expression, expression_parameters)
+jacobian_matrix_value <- attr(eval(jacobian_matrix_expression), "gradient")
+
+covariance_matrix <- matrix(0, nrow = 8, ncol = 8)
+covariance_matrix[1,1] <- sig_sd^2
+covariance_matrix[2,2] <- ISTD_sd^2
+covariance_matrix[3:4,3:4] <- cov_blk
+covariance_matrix[5:6,5:6] <- cov_drift
+covariance_matrix[7:8,7:8] <- cov_cal
+
+sample_variance <- as.numeric(jacobian_matrix_value%*%covariance_matrix%*%t(jacobian_matrix_value))
+sample_sd <- sqrt(sample_variance)
+
+paste("With the full expression we find that the sample concentration is ", format(sample_concentration, digits = 3), " +- ", format(sample_sd, digits = 2), " ppb (1 SD).", sep = "")
+```
+
+```{r eval partial expression, echo = FALSE, eval = TRUE}
+concentration_partial_expression <- expression(((smp_blk_cor_ratio_value)/(drift_factor_value)-beta_0_cal)/beta_1_cal)
+
+# blank corrected ratio computation
+
+smp_blk_cor_ratio_expression <- expression((sig_smp/ISTD_smp) - (beta_0_blk + beta_1_blk*measurement_time))
+smp_blk_cor_ratio_parameters <- c("sig_smp", "ISTD_smp", "beta_0_blk", "beta_1_blk")
+
+ratio_jac_matrix_expr <- deriv(expr = smp_blk_cor_ratio_expression, smp_blk_cor_ratio_parameters)
+ratio_jac_matrix_val <- attr(eval(ratio_jac_matrix_expr), "gradient")
+
+ratio_cov_matrix <- matrix(0, nrow = 4, ncol = 4)
+ratio_cov_matrix[1,1] <- sig_sd^2
+ratio_cov_matrix[2,2] <- ISTD_sd^2
+ratio_cov_matrix[3:4,3:4] <- cov_blk
+
+smp_blk_cor_ratio_value <- eval(smp_blk_cor_ratio_expression)
+smp_blk_cor_ratio_variance <- as.numeric(ratio_jac_matrix_val%*%ratio_cov_matrix%*%t(ratio_jac_matrix_val))
+
+# drift computation
+
+drift_factor_expression <- expression(1+measurement_time*beta_1_drift/beta_0_drift)
+drift_factor_parameters <- c("beta_0_drift", "beta_1_drift")
+
+drift_jac_matrix_expr <- deriv(expr = drift_factor_expression, drift_factor_parameters)
+drift_jac_matrix_val <- attr(eval(drift_jac_matrix_expr), "gradient")
+
+drift_cov_matrix <- cov_drift
+
+drift_factor_value <- eval(drift_factor_expression)
+drift_factor_variance <- as.numeric(drift_jac_matrix_val%*%drift_cov_matrix%*%t(drift_jac_matrix_val))
+
+# concentration computation
+
+concentration_partial_parameters <- c("smp_blk_cor_ratio_value", "drift_factor_value",
+                                      "beta_0_cal", "beta_1_cal")
+
+partConc_jac_matrix_expr <- deriv(expr = concentration_partial_expression, concentration_partial_parameters)
+partConc_jac_matrix_val <- attr(eval(partConc_jac_matrix_expr), "gradient")
+
+partConc_cov_matrix <- matrix(0, nrow = 4, ncol = 4)
+partConc_cov_matrix[1,1] <- smp_blk_cor_ratio_variance
+partConc_cov_matrix[2,2] <- drift_factor_variance
+partConc_cov_matrix[3:4,3:4] <- cov_cal
+
+partConc_smp_conc <- eval(concentration_partial_expression)
+partConc_smp_var <- as.numeric(partConc_jac_matrix_val%*%partConc_cov_matrix%*%t(partConc_jac_matrix_val))
+partConc_smp_sd <- sqrt(partConc_smp_var)
+
+paste("With the partial expression we find that the sample concentration is ", format(partConc_smp_conc, digits = 3), " +- ", format(partConc_smp_sd, digits = 2), " ppb (1 SD).", sep = "")
+```
+
+## Designing an ICP-MS sequence
+
+We measure silicon, one sample per minute during 120 minutes, starting at minute 1.
+
+The blank starts at 130k counts at minute 0, and decreases at a rate of 1k count/min until it reaches 10k counts at minute 120.
+
+There is no internal standard.
+
+The signal starts at 100% at minute 0, and increases up to 160% at minute 120 (0.5% per minute).
+
+Sensitivity is of 1k CPS/ppb at minute 0 and increases according to the signal drift.
+
+There are 120 samples ordered as follows:
+
+- 10 blanks
+
+- 10 standards and 1, 5, 10, 50, 100, 200, 500, 1000, 5000, 20000 ppb
+
+- 10 blanks
+
+- 8 sequences of 10 samples as follows:
+
+  - 1 blank
+  
+  - 1 drift
+  
+  - 1 blank
+  
+  - 7 samples
+
+- 10 blanks
+
+Samples have concentration values between 1 and 20000 ppb. Blanks have 0 concentration. Drifts have a 100 ppb concentration.
+
+```{r experimental setup}
+
+# We move backwards, from concentration to signal to generate a sequence
+
+unknown_sample_concentrations <- runif(n = 8*7, min = 1, max = 20000) # True concentrations in ppb
+standard_concentrations <- c(1, 5, 10, 50, 100, 200, 500, 1000, 5000, 20000)
+
+sample_types <- c(rep("blank", 10), rep("standard", 10), rep("blank", 10),
+                  rep(c("blank", "drift", "blank", rep("sample", 7)), 8),
+                  rep("blank", 10))
+
+sample_names <- make.unique(sample_types, sep = ".")
+
+sample_concentrations <- numeric()
+unknown_sample_concentrations_temp <- unknown_sample_concentrations
+standard_concentrations_temp <- standard_concentrations
+
+for (smp_type in sample_types) {
+  if (smp_type == "blank") {
+    sample_concentrations <- c(sample_concentrations, 0)
+  }
+  else if (smp_type == "standard") {
+    sample_concentrations <- c(sample_concentrations, standard_concentrations_temp[1])
+    standard_concentrations_temp <- standard_concentrations_temp[-1]
+  }
+  else if (smp_type == "sample") {
+    sample_concentrations <- c(sample_concentrations, unknown_sample_concentrations_temp[1])
+    unknown_sample_concentrations_temp <- unknown_sample_concentrations_temp[-1]
+  }
+  else if (smp_type == "drift") {
+    sample_concentrations <- c(sample_concentrations, 100)
+  } else {}
+}
+
+sample_bd_cor_theorical <- sample_concentrations * 1000
+sample_b_cor_theorical <- sample_bd_cor_theorical * seq(1.005, 1.6, by = 0.005)
+sample_theorical <- sample_b_cor_theorical + seq(129, 10, by = -1) * 1000
+
+integration_time <- 0.1 # seconds
+
+sample_measured_signal <- numeric()
+sample_measured_sd <- numeric()
+
+for (smp_sig in sample_theorical) {
+  measured_counts_theorical <- smp_sig * integration_time
+  replicate_measured_values <- rpois(n = 3, lambda = measured_counts_theorical)
+  sample_measured_signal <- c(sample_measured_signal, mean(replicate_measured_values)* 1 / integration_time)
+  sample_measured_sd <- c(sample_measured_sd, sd(replicate_measured_values)* 1 / integration_time)
+}
+
+sample_measured_rsd <- sample_measured_sd / sample_measured_signal *100
+
+time_col <- seq(as.POSIXct("12/02/2020  20:01:00", format="%d/%m/%Y %H:%M"),
+                    as.POSIXct("12/02/2020  22:00:00", format="%d/%m/%Y %H:%M"),
+                    by = 60)
+time_col_char <- as.character(time_col)
+
+level_column <- rep("", times = 120)
+level_column[10:20] <- as.character(seq(11))
+
+measurement_table <- cbind(time_col_char, sample_types, sample_names, level_column, sample_measured_signal, sample_measured_rsd)
+measurement_table <- rbind(c("Acq. Date-Time", "Type", "Sample Name", "Level", "CPS", "CPS RSD"), measurement_table)
+measurement_table <- rbind(c("Sample", "", "", "", "28  Si  [ He ] ", ""), measurement_table)
+
+
+write.table(as.data.frame(measurement_table),"C:\\Users\\pierr\\Desktop\\IPGP\\R\\ICP-MS_process\\File examples\\test_sequence.csv",  col.names=FALSE, row.names = FALSE, sep = ";")
+
+std_table <- rbind(c("", as.character(seq(11))), c("Si", "0", as.character(standard_concentrations)))
+
+
+write.table(as.data.frame(std_table),"C:\\Users\\pierr\\Desktop\\IPGP\\R\\ICP-MS_process\\File examples\\test_sequence_std.csv",  col.names=FALSE, row.names = FALSE, sep = ";")
+```
+
+```{r peformance tests}
+library(microbenchmark)
+
+            column_a <- runif(n = 1000, min = 0, max = 100)
+            column_b <- runif(n = 1000, min = 0, max = 100)
+            column_c <- runif(n = 1000, min = 0, max = 100)
+
+benchmark_expression <- expression(column_a+column_b*column_c)
+
+mbm <- microbenchmark("expression" = {
+            result <- eval(benchmark_expression)
+          },
+          "matrix" = {
+            result <- column_a + column_b * column_c
+          })
+mbm # better use matrix
+
+```
+
+
+```{r manual processing}
+
+delta_time_col <- as.numeric(time_col - time_col[1])
+
+# Blank model
+
+index_blk <- sample_types == "blank"
+times_blk <- delta_time_col[index_blk]
+
+X_blk <- cbind(rep(1, times = length(times_blk)), times_blk)
+Y_blk <- as.matrix(sample_measured_signal[index_blk])
+
+betas_blk <- solve(t(X_blk)%*%X_blk)%*%t(X_blk)%*%Y_blk
+hat_blk <- X_blk%*%solve(t(X_blk)%*%X_blk)%*%t(X_blk)
+residuals_blk <- (diag(length(times_blk)) - hat_blk)%*%Y_blk
+SSE_blk <- t(residuals_blk)%*%residuals_blk
+df_regression_blk <- (length(times_blk) - 2)
+MSE_blk <- SSE_blk / df_regression_blk
+cov_blk <- as.numeric(MSE_blk) * solve(t(X_blk)%*%X_blk)
+
+beta_0_blk <- betas_blk[1, ]
+beta_1_blk <- betas_blk[2, ]
+
+# Blank correction (matrix)
+
+blank_correction_expression <- expression(sample_measured_signal - (beta_0_blk + beta_1_blk * delta_time_col))
+blank_correction_parameters <- c("sample_measured_signal", "beta_0_blk", "beta_1_blk")
+
+blank_jac_matrix_expression <- deriv(expr = blank_correction_expression, blank_correction_parameters)
+blank_jac_matrix_value <- attr(eval(blank_jac_matrix_expression), "gradient")
+
+blank_cov_matrix <- matrix(0, ncol = 3, nrow = 3)
+blank_cov_matrix[2:3, 2:3] <- cov_blk
+
+sample_blk_cor_signal <- sample_measured_signal - (beta_0_blk + beta_1_blk * delta_time_col)
+
+sample_blk_cor_var <- numeric()
+for (i in seq(sample_measured_sd)) {
+  jac_mat <- matrix(blank_jac_matrix_value[i,], nrow = 1, ncol = 3)
+  blank_cov_matrix[1,1] <- sample_measured_sd[i]^2
+  sample_blk_cor_var <- c(sample_blk_cor_var,
+                          as.numeric(jac_mat%*%blank_cov_matrix%*%t(jac_mat)))
+}
+
+as.data.frame(cbind(sample_names ,sample_blk_cor_signal, sqrt(sample_blk_cor_var)))
+
+# Test blank correction (in this case the test is more efficient)
+
+# Value and Var of blank prediction
+
+sample_blk_value <- beta_0_blk + beta_1_blk * delta_time_col
+sample_blk_var <- cov_blk[1, 1] + cov_blk[2, 2] * delta_time_col^2 - 2 * delta_time_col * cov_blk[1, 2]
+
+# Value and Var of blank corrected value
+
+sample_blk_cor_signal_2 <- sample_measured_signal - sample_blk_value
+sample_blk_cor_var_2 <- sample_measured_sd^2 + sample_blk_var
+
+test_values <- sample_blk_cor_signal == sample_blk_cor_signal_2
+test_var <- sample_blk_cor_var == sample_blk_cor_var_2
+all(test_values)
+all(test_var)
+```
+
+```{r peformance test 2}
+library(microbenchmark)
+
+            column_a <- runif(n = 1000, min = 0, max = 100)
+            column_b <- runif(n = 1000, min = 0, max = 100)
+            column_c <- runif(n = 1000, min = 0, max = 100)
+
+benchmark_expression <- expression(column_a+column_b*column_c)
+
+mbm <- microbenchmark("loop and Jacobian" = {
+            blank_correction_expression <- expression(sample_measured_signal - (beta_0_blk + beta_1_blk
+                                                                                * delta_time_col))
+            blank_correction_parameters <- c("sample_measured_signal", "beta_0_blk", "beta_1_blk")
+            
+            blank_jac_matrix_expression <- deriv(expr = blank_correction_expression,
+                                                 blank_correction_parameters)
+            blank_jac_matrix_value <- attr(eval(blank_jac_matrix_expression), "gradient")
+            
+            blank_cov_matrix <- matrix(0, ncol = 3, nrow = 3)
+            blank_cov_matrix[2:3, 2:3] <- cov_blk
+            
+            sample_blk_cor_signal <- sample_measured_signal - (beta_0_blk + beta_1_blk * delta_time_col)
+            
+            sample_blk_cor_var <- numeric()
+            for (i in seq(sample_measured_sd)) {
+              jac_mat <- matrix(blank_jac_matrix_value[i,], nrow = 1, ncol = 3)
+              blank_cov_matrix[1,1] <- sample_measured_sd[i]^2
+              sample_blk_cor_var <- c(sample_blk_cor_var,
+                                      as.numeric(jac_mat%*%blank_cov_matrix%*%t(jac_mat)))
+            }
+          },
+          "direct expression" = {
+            sample_blk_value <- beta_0_blk + beta_1_blk * delta_time_col
+            sample_blk_var <- cov_blk[1, 1] + cov_blk[2, 2] * delta_time_col^2 - 2 * delta_time_col * 
+            cov_blk[1, 2]
+            sample_blk_cor_signal_2 <- sample_measured_signal - sample_blk_value
+            sample_blk_cor_var_2 <- sample_measured_sd^2 + sample_blk_var
+          })
+mbm
+
+```
+
+```{r effect of covariance}
+sample_blk_var_wo_cov <- cov_blk[1, 1] + cov_blk[2, 2] * delta_time_col^2
+sqrt(sample_blk_var_wo_cov) / sqrt(sample_blk_var) * 100
+```
+
+```{r manual processing 2}
+
+# Drift model
+
+index_drift <- sample_types == "drift"
+times_drift <- delta_time_col[index_drift]
+
+X_drift <- cbind(rep(1, times = length(times_drift)), times_drift)
+Y_drift <- as.matrix(sample_blk_cor_signal[index_drift])
+
+betas_drift <- solve(t(X_drift)%*%X_drift)%*%t(X_drift)%*%Y_drift
+hat_drift <- X_drift%*%solve(t(X_drift)%*%X_drift)%*%t(X_drift)
+residuals_drift <- (diag(length(times_drift)) - hat_drift)%*%Y_drift
+SSE_drift <- t(residuals_drift)%*%residuals_drift
+df_regression_drift <- (length(times_drift) - 2)
+MSE_drift <- SSE_drift / df_regression_drift
+cov_drift <- as.numeric(MSE_drift) * solve(t(X_drift)%*%X_drift)
+
+beta_0_drift <- betas_drift[1, ]
+beta_1_drift <- betas_drift[2, ]
+
+# Drift factor (matrix)
+
+drift_correction_expression <- expression(1+delta_time_col*beta_1_drift/beta_0_drift)
+drift_correction_parameters <- c("beta_0_drift", "beta_1_drift")
+
+drift_jac_matrix_expression <- deriv(expr = drift_correction_expression, drift_correction_parameters)
+drift_jac_matrix_value <- attr(eval(drift_jac_matrix_expression), "gradient")
+
+drift_cov_matrix <- cov_drift
+
+sample_drift_value <- 1+delta_time_col*beta_1_drift/beta_0_drift
+
+sample_drift_var <- numeric()
+for (i in seq(delta_time_col)) {
+  jac_mat <- matrix(drift_jac_matrix_value[i,], nrow = 1, ncol = 2)
+  sample_drift_var <- c(sample_drift_var,
+                          as.numeric(jac_mat%*%drift_cov_matrix%*%t(jac_mat)))
+}
+
+as.data.frame(cbind(sample_names ,sample_drift_value, sqrt(sample_drift_var)))
+
+# Test drift value (in this case the test is more efficient)
+
+# Value and Var of drift prediction
+
+sample_drift_value2 <- 1+delta_time_col*beta_1_drift/beta_0_drift
+
+var_beta_0_drift <- cov_drift[1,1]
+var_beta_1_drift <- cov_drift[2,2]
+cov_beta_drift <- cov_drift[1,2]
+
+# The following expression can be found from:
+# 1) the equation sd(ratio)/ratio = sqrt((sd(A)/A)^2 + sd(B)/B)^2), where ratio = A/B
+# 2) the value sample_drift_var calculated above J*CovMat*t(J)
+# 3) the expression f(A,B)0 + J*t([A-A0, B-B0]) (taylor expansion) followed by the error propagation on a sum of two variables. 3) is the base, it generalizes to 2) and it is simplified in the case of a ratio A/B by 1).
+
+var_beta_drift_ratio <- (beta_1_drift^2)/(beta_0_drift^2)*(var_beta_1_drift/(beta_1_drift^2) + var_beta_0_drift / (beta_0_drift^2) - 2 * cov_beta_drift / (beta_1_drift * beta_0_drift))
+
+sample_drift_var2 <- var_beta_drift_ratio * (delta_time_col)^2
+
+test_values <- sample_drift_value == sample_drift_value2
+test_var <- sample_drift_var == sample_drift_var2
+all(test_values)
+all(test_var) # non egal à cause d'approximations différentes entre les 2 approches
+
+max(sqrt(sample_drift_var) - sqrt(sample_drift_var2)) # différence entre 2 SD très faible (valeur de drift autour de 1)
+
+sample_blk_drift_cor_signal <- sample_blk_cor_signal / sample_drift_value
+sample_blk_drift_cor_var <- (sample_blk_cor_signal^2) / (sample_drift_value^2) * (sample_blk_cor_var / (sample_blk_cor_signal^2) + sample_drift_var / (sample_drift_value^2))
+
+cbind(sample_blk_drift_cor_signal, sqrt(sample_blk_drift_cor_var))
+```
+
+```{r manual processing 3}
+
+# Calibration model
+
+index_calib <- sample_types == "standard"
+
+X_calib <- cbind(rep(1, times = length(standard_concentrations)), standard_concentrations)
+Y_calib <- as.matrix(sample_blk_drift_cor_signal[index_calib])
+
+betas_calib <- solve(t(X_calib)%*%X_calib)%*%t(X_calib)%*%Y_calib
+hat_calib <- X_calib%*%solve(t(X_calib)%*%X_calib)%*%t(X_calib)
+residuals_calib <- (diag(length(standard_concentrations)) - hat_calib)%*%Y_calib
+SSE_calib <- t(residuals_calib)%*%residuals_calib
+df_regression_calib <- (length(standard_concentrations) - 2)
+MSE_calib <- SSE_calib / df_regression_calib
+cov_calib <- as.numeric(MSE_calib) * solve(t(X_calib)%*%X_calib)
+
+beta_0_calib <- betas_calib[1, ]
+beta_1_calib <- betas_calib[2, ]
+
+var_beta_0_calib <- cov_calib[1,1]
+var_beta_1_calib <- cov_calib[2,2]
+cov_beta_calib <- cov_calib[1,2] 
+
+# concentrations calculation
+
+sample_concentration_values <- (sample_blk_drift_cor_signal - beta_0_calib) / beta_1_calib
+sample_concentration_var <- (sample_blk_drift_cor_signal^2) / (beta_1_calib^2) * (sample_blk_drift_cor_var / (sample_blk_drift_cor_signal^2) + var_beta_1_calib / (beta_1_calib^2)) + (beta_0_calib^2) / (beta_1_calib^2) * (var_beta_0_calib / (beta_0_calib^2) + var_beta_1_calib / (beta_1_calib^2) - 2 * cov_beta_calib / (beta_0_calib * beta_1_calib))
+
+# Visual check
+
+cbind(sample_names, sample_concentrations, sample_concentration_values, sqrt(sample_concentration_var))
+```
+
+
+```{r fixing sample concentration}
+
+```
+
+```{r experimental loop for uncertainty assessment}
+
+# Fixed parameters ------------------------------------------------------------
+
+iter_number <- 100
+
+sensitivity <- 1000
+signal_sd <- 1
+
+  # Blank setup -----------------------------------------------------------------
+
+blk_start <- 1 # in concentration unit
+blk_end <- 1
+blk_nb <- 200
+
+  # Drift setup -----------------------------------------------------------------
+
+drift_start <- 1 # always start at 1
+drift_end <- 2
+drift_nb <- 200
+drift_concentration <- 1
+
+ # Standard setup ----------------------------------------------------------------
+
+standard_number <- 200
+min_standard <- 0
+max_standard <- 20000
+
+ # Other parameters ----------------------------------------------------------------
+
+fixed_state <- T
+
+unknown_smp_nb <- 500
+integration_time <- 0.1 # seconds, a faire
+replicate_nb <- 200
+use_SE <- T
+
+skip_blk <- F
+skip_drift <- F
+skip_calib <- F
+calib_non_affect_by_drift <- T
+drift_non_affect_by_blk <- T
+calib_non_affect_by_blk <- T
+
+  # Fixed computations ------------------------------------------------------------
+
+if(fixed_state == T) {
+  set.seed(1)
+} else {}
+
+samples_in_interval <- numeric()
+test_sd <- numeric()
+
+standard_concentrations <- c(seq(min_standard, max_standard, by = (max_standard - min_standard)/(standard_number - 1)))
+
+sample_types <- c(rep("standard", times = standard_number), rep("sample", times = unknown_smp_nb))
+
+sample_types <- R.utils::insert(sample_types,
+                round(seq(0, length(sample_types), by = length(sample_types) / (blk_nb - 1))) + 1,
+                "blank")
+sample_types <- R.utils::insert(sample_types,
+                round(seq(0, length(sample_types), by = length(sample_types) / (drift_nb - 1))) + 1,
+                "drift")
+
+smp_nb <- length(sample_types)
+sample_names <- make.unique(sample_types, sep = ".")
+
+start_time <- as.POSIXct("12/02/2020  20:01:00", format="%d/%m/%Y %H:%M")
+end_time <- start_time +
+  (smp_nb - 1) * 60 # 60 seconds per sample
+time_col <- seq(start_time, end_time, by = 60)
+delta_time_col <- as.numeric(time_col - time_col[1])
+
+index_blk <- sample_types == "blank"
+index_sample <- sample_types == "sample"
+index_drift <- sample_types == "drift"
+index_calib <- sample_types == "standard"
+
+all_sample_concentrations <- rep(0, times = smp_nb)
+all_sample_concentrations[index_drift] <- drift_concentration
+all_sample_concentrations[index_calib] <- standard_concentrations
+
+if(blk_start == blk_end) {
+  true_blk_values <- rep(blk_start, smp_nb) * sensitivity
+} else {
+  true_blk_values <- seq(blk_start, blk_end, by = (blk_end - blk_start) / (smp_nb- 1)) * sensitivity
+}
+if(drift_start == drift_end) {
+  true_drift_ratios <- rep(drift_start, smp_nb)
+} else {
+  true_drift_ratios <- seq(drift_start, drift_end, by = (drift_end - drift_start) / (smp_nb- 1))
+}
+
+# Linear regression function --------------------------------------------------
+
+matrix_linear_regression <- function(x, y) {
+  X <- cbind(rep(1, times = length(x)), x)
+  Y <- as.matrix(y)
+  
+  betas <- solve(t(X)%*%X)%*%t(X)%*%Y
+  hat_matrix <- X%*%solve(t(X)%*%X)%*%t(X)
+  mlr_residuals <- (diag(length(x)) - hat_matrix)%*%Y
+  SSE <- t(mlr_residuals)%*%mlr_residuals
+  df_regression <- (length(x) - 2)
+  MSE <- SSE / df_regression
+  cov_matrix <- as.numeric(MSE) * solve(t(X)%*%X)
+  
+  beta_0 <- betas[1, ]
+  beta_1 <- betas[2, ]
+  
+  var_beta_0 <- cov_matrix[1, 1]
+  var_beta_1 <- cov_matrix[2, 2]
+  cov_beta <- cov_matrix[1, 2]
+  
+  parameters_vector <- c(beta_0, beta_1, var_beta_0, var_beta_1, cov_beta, MSE)
+  names(parameters_vector) <- c("beta_0", "beta_1", "var_beta_0", "var_beta_1", "cov_beta", "MSE")
+  
+  return(parameters_vector)
+}
+
+# Loop ------------------------------------------------------------------------
+
+for (iter in seq(iter_number)){
+  
+  # random number generation --------------------------------------------------
+  
+  unknown_sample_concentrations <- runif(n = unknown_smp_nb,
+                                       min = min_standard,
+                                       max = max_standard) # True concentrations in ppb
+
+  all_sample_concentrations[index_sample] <- unknown_sample_concentrations
+
+  sample_bd_cor_theorical <- all_sample_concentrations * sensitivity
+  
+  if (skip_drift == T) {
+    sample_b_cor_theorical <- sample_bd_cor_theorical
+  } else {
+    sample_b_cor_theorical <- sample_bd_cor_theorical * true_drift_ratios
+  }
+  
+  if (skip_blk == T) {
+    sample_theorical <- sample_b_cor_theorical
+  } else {
+    sample_theorical <- sample_b_cor_theorical + true_blk_values
+  }
+
+  sample_measured_signal <- numeric()
+  sample_measured_var <- numeric()
+  
+    for (smp_sig in sample_theorical) {
+    replicate_measured_values <- smp_sig + 
+      rnorm(n = replicate_nb, mean = 0, sd = signal_sd * sensitivity) #counts
+    sample_measured_signal <- c(sample_measured_signal,
+                                mean(replicate_measured_values)) # CPS
+    sample_measured_var <- c(sample_measured_var, var(replicate_measured_values)) # CPS
+    }
+  if (use_SE) {sample_measured_var <- sample_measured_var / replicate_nb}
+
+  # blank -----------------------------------------------------------------------
+  
+  if (skip_blk == T) {
+    sample_blk_cor_value <- sample_measured_signal
+    sample_blk_cor_var <- sample_measured_var
+  } else {
+    
+  blank_mlr_param <- matrix_linear_regression(x = delta_time_col[index_blk],
+                                              y = sample_measured_signal[index_blk])
+  
+  beta_0_blk <- blank_mlr_param["beta_0"]
+  beta_1_blk <- blank_mlr_param["beta_1"]
+  var_beta_0_blk <- blank_mlr_param["var_beta_0"]
+  var_beta_1_blk <- blank_mlr_param["var_beta_1"]
+  cov_beta_blk <- blank_mlr_param["cov_beta"]
+  
+  sample_blk_value <- beta_0_blk + beta_1_blk * delta_time_col
+  sample_blk_var <- var_beta_0_blk + var_beta_1_blk * delta_time_col^2 + 2 * delta_time_col * cov_beta_blk
+  
+  if(drift_non_affect_by_blk == T) {
+    sample_blk_value[index_drift] <- true_blk_values[index_drift]
+    sample_blk_var[index_drift] <- 0
+  } else {}
+  
+  if(calib_non_affect_by_blk == T) {
+    sample_blk_value[index_calib] <- true_blk_values[index_calib]
+    sample_blk_var[index_calib] <- 0
+  } else {}
+  
+  sample_blk_cor_value <- sample_measured_signal - sample_blk_value
+  sample_blk_cor_var <- sample_measured_var + sample_blk_var
+  }
+  
+  
+  # drift -----------------------------------------------------------------------
+  
+  if (skip_drift == T) {
+    sample_blk_drift_cor_value <- sample_blk_cor_value
+    sample_blk_drift_cor_var <- sample_blk_cor_var
+  } else {
+  
+  drift_mlr_param <- matrix_linear_regression(x = delta_time_col[index_drift],
+                                              y = sample_blk_cor_value[index_drift])
+  
+  beta_0_drift <- drift_mlr_param["beta_0"]
+  beta_1_drift <- drift_mlr_param["beta_1"]
+  var_beta_0_drift <- drift_mlr_param["var_beta_0"]
+  var_beta_1_drift <- drift_mlr_param["var_beta_1"]
+  cov_beta_drift <- drift_mlr_param["cov_beta"]
+  
+  sample_drift_value <- 1 + delta_time_col * beta_1_drift / beta_0_drift
+  
+  var_beta_drift_ratio <- (beta_1_drift^2)/(beta_0_drift^2)*
+    (var_beta_1_drift/(beta_1_drift^2) + var_beta_0_drift / (beta_0_drift^2) -
+       2 * cov_beta_drift / (beta_1_drift * beta_0_drift))
+  
+  sample_drift_var <- var_beta_drift_ratio * (delta_time_col)^2
+  
+  if(calib_non_affect_by_drift == T) {
+    sample_drift_value[index_calib] <- true_drift_ratios[index_calib]
+    var_beta_drift_ratio[index_calib] <- 0
+  } else {}
+  
+  sample_blk_drift_cor_value <- sample_blk_cor_value / sample_drift_value
+  sample_blk_drift_cor_var <- (sample_blk_cor_value^2) / (sample_drift_value^2) *
+    (sample_blk_cor_var / (sample_blk_cor_value^2) + sample_drift_var / (sample_drift_value^2))
+  
+  }
+  
+  # calibration -----------------------------------------------------------------
+  
+  if(skip_calib == T) {
+    sample_concentration_values <- sample_blk_drift_cor_value / sensitivity
+    sample_concentration_var <- sample_blk_drift_cor_var / sensitivity^2
+  } else {
+    calib_mlr_param <- matrix_linear_regression(x = standard_concentrations,
+                                              y = sample_blk_drift_cor_value[index_calib])
+  
+  beta_0_calib <- calib_mlr_param["beta_0"]
+  beta_1_calib <- calib_mlr_param["beta_1"]
+  var_beta_0_calib <- calib_mlr_param["var_beta_0"]
+  var_beta_1_calib <- calib_mlr_param["var_beta_1"]
+  cov_beta_calib <- calib_mlr_param["cov_beta"]
+  
+  sample_concentration_values <- (sample_blk_drift_cor_value - beta_0_calib) / beta_1_calib
+  sample_concentration_var <- ((sample_blk_drift_cor_value - beta_0_calib)^2) / (beta_1_calib^2) *
+    (sample_blk_drift_cor_var / ((sample_blk_drift_cor_value - beta_0_calib)^2) +
+       var_beta_0_calib / ((sample_blk_drift_cor_value - beta_0_calib)^2) +
+       var_beta_1_calib / (beta_1_calib^2) +
+       2 * cov_beta_calib / (beta_1_calib * (sample_blk_drift_cor_value - beta_0_calib)))
+  }
+  
+  # quality assessment ----------------------------------------------------------
+  
+  unknown_sd_interval <- cbind(lower = sample_concentration_values[index_sample] - sqrt(sample_concentration_var[index_sample]),
+                       higher = sample_concentration_values[index_sample] + sqrt(sample_concentration_var[index_sample]))
+  test_concentration_in_interval <- (unknown_sample_concentrations < unknown_sd_interval[ , "higher"]) &
+    (unknown_sample_concentrations > unknown_sd_interval[ , "lower"])
+  samples_in_interval <- c(samples_in_interval, sum(test_concentration_in_interval))
+  
+  svMisc::progress(iter/iter_number*100)
+  
+  test_sd <- c(test_sd, sqrt(sample_blk_var[index_sample][10]))
+}
+
+paste(sum(index_blk), " blanks, ", sum(index_drift), " drift, ", sum(index_calib), " standards, ",
+      replicate_nb, " replicates.")
+
+print(mean(samples_in_interval)/sum(index_sample)*100)
+```
+Reflexions sur la différence de % de réussite entre drift non impacted by blank et drift impacted by blank.
+Je pense que comme le blanc est linéaire, corriger le drift par la prédiction du blanc entraine un changement de pente et d'ordonnée de ma droite de drift. Mais comme la prédiction du blanc est parfaitement linéaire, il n'y a pas d'augmentation de l'incertitude de la pente du drift car ajouter soustraire un nombre qui évolue de manière parfaitement linéaire à un autre nombre conserve la linéarité du 2ème nombre.
+Augmenter le nombre de blanc augmente le % car on connait de plus en plus précisémment la valeur du blanc. Du coup arrive un moment ou la connaissance du blanc n'est plus significative par rapport à la connaissance du drift, le drift prend toute l'incertitude, on revient donc vers des % auxquels on s'attend. Ce n'est pas augmenter le nombre de blanc qui est important je pense, c'est d'avoir plus de blancs que de drift pour que l'incertitude liée au blanc et le biais que le blanc crée dans la regression du drift devienne négligeable.
+De même, si on augmente l'intensité du drift, l'incertitude liée au drift lui même prend le pas sur le blanc qui devient négligeable. Peut être qu'introduire la régression pondérée, qui prend en compte les incertitudes sur les valeurs, permettra d'annuler l'effet du blanc.

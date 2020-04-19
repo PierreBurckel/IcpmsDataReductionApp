@@ -1,0 +1,97 @@
+---
+title: "DataProcessMonteCarlo"
+output: slidy_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## R Markdown
+
+Let's take two poisson distributed random variables X and Y such as $\lambda_x = 100$ and $\lambda_y = 50$. We do not know the true mean of these distributions and we would like to estimate the value Z = X - Y by take 3 replicates of X, and 3 replicates of Y.
+
+```{r recreating student t distribution, echo = TRUE, eval = TRUE}
+normalized_vector <- numeric()
+sample_nb <- 3
+mean_X <- 100
+SD_X <- 1
+iterations <- 10000
+
+for (i in seq(iterations)) {
+  X_replicates <- rnorm(n = sample_nb, mean = mean_X, sd = SD_X)
+  
+  X_estimated_mean <- mean(X_replicates)
+  
+  X_estimated_var <- var(X_replicates)
+  
+  if (sqrt(X_estimated_var) != 0) {
+    normalized_vector <- c(normalized_vector, (X_estimated_mean - mean_X) / sqrt(X_estimated_var))
+  }
+}
+
+random_student <- rt(n = 10000, df = sample_nb - 1)
+
+h1 <- hist(normalized_vector, col=rgb(0,0,1,0.1), xlim = c(-10,10), ylim = c(0,4000),
+           xlab = "Counts", main = "Distribution of mean for various sample number", cex.main = 1.5,
+           breaks = seq(min(normalized_vector)-1, max(normalized_vector)+1, by = 0.5), border=F)
+h2 <- hist(random_student, col=rgb(0,0,1,0.25),
+           breaks = seq(min(random_student)-1, max(random_student)+1, by = 0.5), border=F, add=T)
+```
+
+```{r problem setup, echo = TRUE, eval = TRUE}
+success_vector <- numeric()
+sample_nb <- 3
+mean_X <- 100
+mean_Y <- 50
+mean_Z <- mean_X - mean_Y
+iterations <- 1000
+
+for (i in seq(iterations)) {
+  X_replicates <- rpois(n = sample_nb, lambda = mean_X)
+  Y_replicates <- rpois(n = sample_nb, lambda = mean_Y)
+  
+  X_estimated_mean <- mean(X_replicates)
+  Y_estimated_mean <- mean(Y_replicates)
+  
+  X_estimated_var <- var(X_replicates)
+  Y_estimated_var <- var(Y_replicates)
+  
+  X_random_values <- X_estimated_mean + rt(n = 10000, df = sample_nb - 1) * sqrt(X_estimated_var)
+  
+  Y_random_values <- Y_estimated_mean + rt(n = 10000, df = sample_nb - 1) * sqrt(Y_estimated_var)
+  
+  Z_random_values <- X_random_values - Y_random_values
+  
+  Z_quant <- quantile(Z_random_values, probs = c(0.159,0.841))
+  
+  new_rand_Z <- rpois(n = 1, lambda = mean_X) - rpois(n = 1, lambda = mean_Y)
+  
+  if(Z_quant[1] < new_rand_Z & Z_quant[2] > new_rand_Z) {
+    success_vector <- c(success_vector, 1)
+  } else {
+    success_vector <- c(success_vector, 0)
+  }
+}
+
+sum(success_vector)
+```
+
+## Slide with Bullets
+
+- Bullet 1
+- Bullet 2
+- Bullet 3
+
+## Slide with R Output
+
+```{r cars, echo = TRUE}
+summary(cars)
+```
+
+## Slide with Plot
+
+```{r pressure}
+plot(pressure)
+```
+

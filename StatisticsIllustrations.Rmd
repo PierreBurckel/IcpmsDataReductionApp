@@ -1,0 +1,913 @@
+---
+title: "ICP-MS statistics"
+output:
+  slidy_presentation: default
+  ioslides_presentation: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+set.seed(100)
+```
+
+## ICP-MS analysis expectations
+
+The main goal of ICP-MS is to know the elemental concentration of some material.  
+To achieve this result, we acquire **signals**:
+
+- The signal of standards
+- The signal of unknown samples
+
+Standards have known concentrations.
+
+We want to know the concentration of samples.
+
+## Workflow
+
+- Acquire the signal of standards and samples
+- Model the relationship between signal and concentration 
+(thanks to the standards, usually linear regression)
+- Apply the model (or its inverse) to the samples to infer their concentration
+
+## Signal acquisition
+
+Signal is acquired as **counts**.
+
+These counts directly relate to the number of ions that reached the detector of the ICP-MS.
+If 100 ions reached the detector during our acquition, we obtain a signal of 100 counts.
+Measuring the signal again might lead to the same, or to a different outcome.
+For instance, we might measure 120 counts the second time.
+
+We can therefore consider the signal as a **random variable** (RV).
+
+## Origin of variability
+
+It is important to **understand** and **quantify** the variability of the signal, because this variability induces some **uncertainty** in the counts associated to our material.
+
+In ICP-MS, an atom going through the introduction system has, at a given time, a specific probability of successfuly being converted to an ion and being counted by the detector. This probabiliy is low but, fortunately, the large amount of atoms result in a significant count number. Assuming the probability is constant throughout signal acquisition, we can show that the count random variable has a **poisson distribution**.
+
+With increasing measured count number, the poisson distribution tends towards a **normal distribution**.
+
+## Understanding variability: Mathematicaly
+
+We can derive the poisson distribution from the **binomial distribution**. The binomial distribution is simply the distribution of `successes`in the repetition of several **bernoulli trials** (coin tosses, with `successes` being for instance determined by the occurences of `heads`, and failure by `tails`).
+
+Mathematical demonstration: [see demonstration here](https://medium.com/@andrew.chamberlain/deriving-the-poisson-distribution-from-the-binomial-distribution-840cc1668239).
+
+## Understanding variability: Code input
+
+Code intuition:
+
+We define, p, the probability of detecting one ion during one millisecond. Note that this factor is dependent on the concentration (the higher the concentration, the higher p is), **it is not the probability that an atom will be ionized and detected which would be more or less constant**. We then integrate the counts for various acquisition times (the longer the acquisition, the more ions will be detected).
+
+```{r poisson calculation, echo = TRUE, eval = TRUE}
+p <- 0.01 # probability of detection per millisecond
+acquisition_time <- c(100, 500, 1500)
+measurements <- list("100" = numeric(),
+                     "500" = numeric(),
+                     "1500" = numeric())
+for (t in acquisition_time) {
+  key <- as.character(t)
+  for (i in seq(10000)) {
+    measurements[[key]] <- c(measurements[[key]], 
+                             sum(runif(t, min = 0, max = 1) < p))
+  }
+}
+```
+
+## Understanding variability: Code plot
+
+Here is the plot of the integrated counts for various acquisition times. These are typical poisson distributions, which tends towards the normal distribution with increasing acquisition/integration time.
+
+```{r poisson plot, echo = FALSE, eval = TRUE, fig.height = 6, fig.width = 10}
+
+m100 <- measurements[["100"]]
+m500 <- measurements[["500"]]
+m1500 <- measurements[["1500"]]
+
+h1 <- hist(m100, col=rgb(1,0,0,0.25), xlim=c(0,25), xlab = "Counts",
+           breaks = seq(min(m100)-0.5, max(m100)+0.5, by = 1),
+           main="Count distribution response to varying acquisition time", cex.main=1.5, border=F)
+h2 <- hist(m500, col=rgb(0,1,0,0.25),
+           breaks = seq(min(m500)-0.5, max(m500)+0.5, by = 1), border=F, add=T)
+h3 <- hist(m1500, col=rgb(0,0,1,0.25),
+           breaks = seq(min(m1500)-0.5, max(m1500)+0.5, by = 1), border=F, add=T)
+
+abline(v = c(1,5,15), col = c("red", "green", "blue"), lty=c(2, 2, 2), lwd=c(2, 2, 2))
+
+text(x=c(1, 5, 15)+0.1, y=c(3750,3750,3750), adj = c(0, 0.5), labels=c("mean = 1 count","mean = 5 counts","mean = 15 counts"), col = c("red", "green", "blue"))
+
+legend("topright", 
+  legend = c("100 ms", "500 ms", "1500 ms"), 
+  col = c(rgb(1,0,0,0.25), rgb(0,1,0,0.25), rgb(0,0,1,0.25)), 
+  pch = c(19, 19, 19), bty = "n", 
+  pt.cex = 2, cex = 1.2, text.col = "black", 
+  horiz = F , inset = c(0.1, 0.1))
+```
+
+## Understanding variability: high count number
+
+At **high count number**, the count distribution is still normal but **it deviates from the poisson distribution** as other stochastic processes start influencing our signal. **The probability that an ion will be detected varies throughout a single set of replicates**, while a constant probability is required for poisson distributions.
+
+## Quantifying variability (1)
+
+```{r measurements[["1500"]] summary, echo = TRUE}
+summary(measurements[["1500"]])
+```
+Integrating the signal only once is insufficient to estimate a the true mean counts, because this single integration is very likely offset from the mean signal of the distribution. For instance, from the summary above, there is 50% chance that, when acquiring a signal averaging at 15 counts (see blue distribution in previous plot), that a single acquisition will result in a signal either lower than 12 or higher than 18 counts. In this case, it is therefore easy to miss the true mean by a few tens of percent.
+
+## Quantifying variability (2)
+
+Acquiring the signal multiple times (measuring several **replicates**) allows assessing both the mean and its uncertainty. For instance, we can acquire three times the signal of the 15 counts average distribution.
+
+```{r sample distribution, echo = TRUE}
+s15 <- sample(measurements[["1500"]], 3)
+paste("Count replicates: ", s15[1], ", ", s15[2], ", ",s15[3], sep = "")
+```
+
+```{r sample mean and sd, echo = TRUE}
+paste("Average: ", format(mean(s15), digits=3), ", Standard Deviation: ", format(sd(s15), digits=3))
+```
+
+## Standard deviation: generalities
+
+Although we used several replicates, our **sample mean** (the estimated mean) is still different than our **population mean** (the true mean of 15 in our example). However, now that we measured several replicates, we have a new information concerning the spread of our population (our distribution). This information is given by the **standard deviation**, which is one method of estimating the **spread of values**, just as our mean is one method of estimating **central tendency** (we could use instead the median or mode).
+
+The standard deviation $\sigma$ is the **square root of the variance ** $\sigma^{2}$ that can be computed with the following equation:
+
+$\sigma^{2}$ = $\frac{\sum_{i=1}^{n}((x_i - \bar{x})^{2})}{n-1}$
+
+with $\bar{x}$ the sample mean and n the sample number.
+
+Note that this is the formula for **sample standard deviation**, the standard deviation on a subset of the population. If we are sure that we have all the values of the population, we use the **population standard deviation** and replace `n-1` by `n` in the denominator. However, the population of counts in ICP-MS is infinite so we always use **sample standard deviation** in practice.
+
+## Standard deviation: the case of normal distribution (1)
+
+### In general
+
+How can we interpret standard deviation?
+
+As we said before, the standard deviation (SD) is an **estimator of spread**. A SD = 0 means that all measurement replicates have the same value. A SD $\neq$ 0 means that there is some spread in the values.
+
+### In case of a normal distribution
+
+SD is even more usefull when applied to normal distributions. The SD of a **normally distributed population** is such that the interval bounded by the values `mean - SD`, `mean + SD` contains around 68% of the population values. In ICP-MS, this means that replicates will fall within this interval 68% of the times. Note that for now we are still talking about **population SD** and not **sample SD**.
+
+## Standard deviation: the case of normal distribution (1)
+
+Let's take a view at a normal distribution. A normal distribution is defined by a bell curve, and can be fully characterized by a mean and standard deviation. Below is a normal distribution of mean 0 and SD 1. Note that ,unlike before, the y-scale is a density and not a frequency.
+
+```{r normal distribution plot, echo = FALSE, eval = TRUE}
+random_normal <- rnorm(n = 10000, mean = 0, sd = 1)
+random_dist <- dnorm(x = seq(-4, 4, by=0.1), mean = 0, sd = 1)
+
+hist(random_normal, col=rgb(1,0,0,1), xlim=c(-3.5,3.5), ylim=c(0,0.45),xlab = "Value",
+     main="Normal distribution", cex.main=1.5, border=F, prob = TRUE)
+lines(x = seq(-4, 4, by=0.1) , y = random_dist, lwd = 2, col = "black")
+
+abline(v = c(0), col = c("black"), lty=c(2), lwd=c(2))
+
+arrows(-1, 0.2 , 1, 0.2, length=0.05, angle=90, code=3, lwd = 2, col = "blue")
+arrows(-2, 0.1 , 2, 0.1, length=0.05, angle=90, code=3, lwd = 2, col = "green")
+arrows(-3, 0.025 , 3, 0.025, length=0.05, angle=90, code=3, lwd = 2, col = "orange")
+
+text(x=c(0)+0.1, y=c(0.44), adj = c(0, 0.5), labels=c("mean = 0"), col = c("black"))
+text(x=c(1)+0.2, y=c(0.22), adj = c(0, 0.5), labels=c("1 SD, ~68%\n of the population"), col = c("blue"))
+text(x=c(2)-0.4, y=c(0.14), adj = c(0, 0.5), labels=c("2 SD, ~95%\n of the population"), col = c("green"))
+text(x=c(3)-0.85, y=c(0.065), adj = c(0, 0.5), labels=c("3 SD, ~99%\n of the population"), col = c("orange"))
+```
+
+## Standard deviation: the case of normal distribution (1)
+
+As shown on the previous graph, in a normal distribution:
+
+- ~68% of the population lies in the interval defined by $\mu \pm 1\sigma$
+- ~95% of the population lies in the interval defined by $\mu \pm 2\sigma$
+- ~99% of the population lies in the interval defined by $\mu \pm 3\sigma$
+
+This can be seen with the following commands:
+```{r sd intervals, echo = TRUE, eval = TRUE}
+sample_mean <- 0
+sample_sd <- 1
+random_normal <- rnorm(n = 10000, mean = sample_mean, sd = sample_sd)
+
+print(sum(random_normal < sample_mean + 1*sample_sd & random_normal > sample_mean - 1*sample_sd)/10000 * 100)
+print(sum(random_normal < sample_mean + 2*sample_sd & random_normal > sample_mean - 2*sample_sd)/10000 * 100)
+print(sum(random_normal < sample_mean + 3*sample_sd & random_normal > sample_mean - 3*sample_sd)/10000 * 100)
+```
+
+## Standard deviation: the case of normal distribution (1)
+
+Note that the proportions ~68, ~95 and ~99% are known only because they correspond to whole multipliers of SD.  
+
+##~ Population standard deviation (2)
+
+Applying our knowledge to the population of mean counts = 15.
+
+```{r population mean and sd, echo = TRUE}
+paste("Average: ", format(mean(measurements[["1500"]]), digits=3), ", Standard Deviation: ", format(sd(measurements[["1500"]]), digits=3))
+```
+
+Approximately 68% of the values will fall between 11.1 and 18.9 counts for the distribution with an average count of 15. Note that this is because at $\mu$ = 15 (i.e. mean = 15), the poisson distribution can be approximated by a normal distribution (note that decimal counts are not possible so our interval is approximated).
+
+```{r 68% in population sd, echo = TRUE}
+sum(11 < measurements[["1500"]] & measurements[["1500"]] <= 19)/length(measurements[["1500"]])*100
+```
+
+## Population standard deviation (3)
+
+Let's talk a bit more about this relation between the poisson and the normal distribution. In ICP-MS, at mean count number >= 10, we can approximate the poisson distribution by a normal distribution. However, this is still a poisson distribution which has interesting properties.
+
+In poisson distribution, the **population mean** equals the **population variance**:
+
+$\mu$ = $\sigma^{2}$
+
+This property is extremely useful and we can retrieve the SD simply from the square root of the mean:
+
+```{r comparison SD sqrt(mean) in poisson, echo = TRUE}
+paste("SD from square root of mean: ", format(sqrt(mean(measurements[["1500"]])), digits=3),
+      ", SD on population: ", format(sd(measurements[["1500"]]), digits=3))
+```
+
+Note that both values could be slightly different. This is because although `measurements[["1500"]]` contains a large amount of values (10000 values), it is still technically a sample of the population and not the population itself (infinite values).
+
+## Population standard deviation (4)
+
+What about the distributions that had means below 10 counts?
+
+In ICP-MS, we want as often as possible to work with normal distributions. This is because **they are easy to understand** (symmetrical and with well defined probabilities associated to their standard deviation) and **easy to combine** (addition, substraction and multiplication of normally distributed random variables result in new normally distributed random variables).
+
+If we want to work with low concentrations (low count number), we can **increase the acquisition/integration time** to ensure the measurements of at least ten counts in the range of concentrations we want to work with. For instance, if we had 5 counts after integrating the signal for 1 second, at least doubling the integration time to measure at least 10 counts allows being in normal conditions. Note that on the ICP-MS, whether we integrate for 1 or 2 seconds, **the counts per seconds (CPS) will stay the same** (5 CPS in our example). However, **the distribution of our replicates changes**, from non-normal to normal. 
+
+## Sample standard deviation (1)
+
+In ICP-MS, **we always work with a subset of the population**, because the population is infinite.
+
+Therefore, our **sample standard deviation** is an **estimator** of the **population standard deviation**. If we go back to our subset of three replicates.
+
+```{r sample distribution (2), echo = TRUE}
+s15 <- sample(measurements[["1500"]], 3)
+paste("Count replicates: ", s15[1], ", ", s15[2], ", ",s15[3], sep = "")
+```
+
+```{r sample and population sd, echo = TRUE}
+paste("Sample SD: ", format(sd(s15), digits=3), ", Population SD: ", format(sqrt(15), digits=3))
+```
+
+The sample SD and the population SD can be different just like the sample mean and the true population mean can be different.
+
+## Sample standard deviation (2)
+
+Note that the more replicates we have, the better is our estimator.
+
+```{r sample sd increasing draws, echo = TRUE}
+s <- c()
+for (i in seq(2,100)) {s <- c(s, sd(sample(measurements[["1500"]], i)))}
+```
+
+```{r sample SD plot, echo = FALSE, eval = TRUE, fig.height = 5, fig.width = 10}
+
+plot(NULL, xlim=c(0,120), ylim=c(0,6), xlab = "n", ylab = "sample SD",
+           main="Sample SD in response to sample size", cex.main=1.5, bty="n")
+
+abline(h = c(sqrt(15)), col = c("red"), lty=c(2), lwd=c(2))
+
+points(s, col=rgb(0,0,0,1), pch = 16)
+
+text(x=c(105), y=c(sqrt(15)) + 0.1, adj = c(0, 0), labels=c("Population SD"), col = c("red"))
+```
+
+## Sample standard deviation (3)
+
+What can we deduce from the difference between sample SD and population SD?
+
+At low sample number, **we cannot consider sample SD as an exact approximation of population SD**. Therefore, considering that $\mu \pm 1 \sigma$, where $\sigma$ is the sample SD, is the interval in which there is 68% chance that a replicate will fall in is **wrong**. If this notation is used, it must **always state replicate number** so that people using your measurements know how to interpret it.
+
+Note that it is **even more wrong** to consider that there is 68% chance that our true mean lies within the $\mu \pm 1 \sigma$ interval.
+
+## Sample standard deviation (4)
+
+Below are the probabilities of catching a new measurement within the interval $\mu \pm 1 \sigma$ for different replicate numbers.
+
+```{r sample sd to predict next replicate, echo = TRUE}
+replicate_numbers <- c(3, 6, 30)
+for (rep_nb in replicate_numbers) {
+  ssd_pred_likelihood <- c()
+  for (i in seq(10000)) {
+  replicate_values <- sample(measurements[["1500"]], rep_nb)
+  sample_sd <- sd(replicate_values)
+  sample_mean <- mean(replicate_values)
+  new_measurement <- sample(measurements[["1500"]], 1)
+  ssd_pred_likelihood <- c(ssd_pred_likelihood,
+                           (sample_mean - sample_sd < new_measurement &
+                              sample_mean + sample_sd > new_measurement))
+  }
+  print(paste("With ", rep_nb, " replicates: ",
+        format(sum(ssd_pred_likelihood) / length(ssd_pred_likelihood) * 100, digits = 3),
+        "% chance to capture a new measurement.", sep = ""))
+}
+```
+
+## Sample standard deviation (5)
+
+Below are the probabilities of catching the true mean within the interval $\mu \pm 1 \sigma$ for different replicate numbers.
+
+```{r sample sd to confine true mean, echo = TRUE}
+replicate_numbers <- c(3, 6, 30)
+true_mean <- mean(measurements[["1500"]])
+for (rep_nb in replicate_numbers) {
+  ssd_pred_likelihood <- c()
+  for (i in seq(10000)) {
+  replicate_values <- sample(measurements[["1500"]], rep_nb)
+  sample_sd <- sd(replicate_values)
+  sample_mean <- mean(replicate_values)
+  ssd_pred_likelihood <- c(ssd_pred_likelihood,
+                           (sample_mean - sample_sd < true_mean &
+                              sample_mean + sample_sd > true_mean))
+  }
+  print(paste("With ", rep_nb, " replicates: ",
+        format(sum(ssd_pred_likelihood) / length(ssd_pred_likelihood) * 100, digits = 3),
+        "% chance to capture the true mean.", sep = ""))
+}
+```
+
+## Prediction intervals to predict new measurement (1)
+
+Rather than using the sample SD to try to predict new measurements, we use **prediction intervals**. These intervals will tend towards the interval defined by $\mu \pm 1 \sigma$ as the replicate number increases.
+
+Calculating prediction intervals is rather simple. We saw previously that with 3 replicates, we obtained a `51.2%` chance of capturing a new measurement using the sample SD. To have 68% chance, we therefore need to multiply our sample SD by a factor > 1. This factor is called a t-value, and can be found using the following command in r.
+
+```{r student value, echo = TRUE}
+format(-qt((1 - 0.68)/2,df = 2), digits = 3)
+```
+
+The interval defined by $\mu \pm t_{value} * \sigma * \sqrt{1+1/n}$, with $t_{value}$ chosen according to the % chance that we want, is the **prediction interval** (it will predict a new measurement with the expected frequency).
+
+## Prediction intervals to predict new measurement (2)
+
+Back to our previous code experiment, but using prediction intervals.
+
+```{r prediction interval to predict next replicate, echo = TRUE}
+replicate_numbers <- c(3, 6, 30)
+for (rep_nb in replicate_numbers) {
+  ssd_pred_likelihood <- c()
+  t_value <- -qt((1 - 0.68)/2,df = rep_nb - 1)
+  for (i in seq(10000)) {
+  replicate_values <- sample(measurements[["1500"]], rep_nb)
+  sample_sd <- sd(replicate_values)
+  sample_mean <- mean(replicate_values)
+  new_measurement <- sample(measurements[["1500"]], 1)
+  ssd_pred_likelihood <- c(ssd_pred_likelihood,
+                           (sample_mean - t_value * sample_sd * sqrt(1+1/rep_nb) < new_measurement &
+                              sample_mean + t_value * sample_sd * sqrt(1+1/rep_nb)> new_measurement))
+  }
+  print(paste("With ", rep_nb, " replicates: ",
+        format(sum(ssd_pred_likelihood) / length(ssd_pred_likelihood) * 100, digits = 3),
+        "% chance to capture a new measurement.", sep = ""))
+}
+```
+
+## Prediction intervals to predict new measurement (3)
+
+Prediction intervals make use of the **degrees of freedom**, or **df** for short. The number of degrees of freedom is the number of values in the final calculation of a statistic that are free to vary (wikipedia). If the statistic we calculated is the mean based on 3 replicates, only 2 of the replicates are allowed to take any values, the 3rd replicate is fixed by the knowledge of the mean.
+
+Usually the df is the sample number minus the number of parameters.
+
+With increasing df (sample number), the $t_{value}$ decreases to 1 for a ~68% prediction interval, and the term $\sqrt{1+1/n}$ also decreases to 1. For large sample numbers, the 68% prediction interval is therefore equal to $\mu \pm \sigma$.
+
+
+## Standard error and confidence interval to catch the true mean
+
+Sample standard deviation and prediction intervals are not meant to catch the true mean of the distribution. To do that, we use the **standard error on the mean** (SE or SEM) and **confidence intervals**.
+
+Just like for the SD, the SE is not efficient at low sample number. And just like with prediction intervals, the confidence interval is the SE multiplied by some factor to account for the low sample number. At high sample number, the confidence interval equals $\mu \pm \sigma_{\bar{X}}$.
+
+Note that the SE can be noted $\sigma_{\bar{X}}$ because it is an estimator of the **standard deviation of the mean**.
+
+## Standard error (1)
+
+Since replicates $X_1, X_2, ..., X_n$ are random variables, their mean $\bar{X}$ is also a random variable. The best estimate of the standard deviation of this new random variable is the SE. It is simply calculated as:
+
+$\sigma/\sqrt{n}$
+
+We see that with increasing sample number, the SD of the mean decreases. This is because a mean of 3 replicates and of 6 replicates are not the same random variables, the 6 replicate mean being more "stable" (varies less, lower SD) and the 3 replicates one.
+
+## Standard error (2)
+
+In this plot, you can see this effect of increasing the replicate number on the $\bar{X}$ random variable.
+
+```{r average distribution set up, echo = TRUE, eval = TRUE}
+
+mean_rep_3 <- numeric()
+mean_rep_6 <- numeric()
+mean_rep_15 <- numeric()
+
+for (i in seq(10000)) {
+  mean_rep_3 <- c(mean_rep_3, mean(sample(measurements[["1500"]], 3)))
+  mean_rep_6 <- c(mean_rep_6, mean(sample(measurements[["1500"]], 6)))
+  mean_rep_15 <- c(mean_rep_15, mean(sample(measurements[["1500"]], 15)))
+}
+```
+
+
+```{r average distribution plot, echo = FALSE, eval = TRUE, fig.height = 6, fig.width = 10}
+h1 <- hist(m1500, col=rgb(0,0,1,0.1), xlim = c(5,25), ylim = c(0,4000),
+           xlab = "Counts", main = "Distribution of mean for various sample number", cex.main = 1.5,
+           breaks = seq(min(m1500)-0.5, max(m1500)+0.5, by = 1), border=F)
+h2 <- hist(mean_rep_3, col=rgb(0,0,1,0.25),
+           breaks = seq(min(m1500)-0.5, max(m1500)+0.5, by = 1), border=F, add=T)
+h3 <- hist(mean_rep_15, col=rgb(0,0,1,0.5),
+           breaks = seq(min(m1500)-0.5, max(m1500)+0.5, by = 1), border=F, add=T)
+
+abline(v = c(15), col = c("black"), lty=c(2), lwd=c(2))
+
+text(x=c(15)+0.1, y=c(4000), adj = c(0, 0.5), labels=c("mean = 15 counts"), col = c("black"))
+
+legend("topright", 
+  legend = c("mean on 1 replicate", "mean on 3 replicates", "mean on 6 replicates"), 
+  col = c(rgb(0,0,1,0.1), rgb(0,0,1,0.35), rgb(0,0,1,0.85)), 
+  pch = c(19, 19, 19), bty = "n", 
+  pt.cex = 2, cex = 1.2, text.col = "black", 
+  horiz = F , inset = c(0.1, 0.1))
+```
+
+## Standard error (3)
+
+The more replicates we have, the narrower the distribution of the mean is.
+
+However, in ICP-MS, when we average the replicates we have **a single value and an estimated SD** for the distribution from which this value was "drawn". The only histogram we might have is that of the replicates.
+
+In the 3 replicate sample we previously used:
+
+```{r mean, SD, SE on sample, echo = TRUE, eval = TRUE}
+paste("Count replicates (X1, X2, X3): ", s15[1], ", ", s15[2], ", ",s15[3],
+      ". Sample SD of the X RV: ", format(sd(s15), digits = 3),
+      ". Mean of the X RV (which is also a RV): ", format(mean(s15), digits = 3),
+      ". Estimated SD of the mean of X (i.e. the SE): ", format(sd(s15)/sqrt(3), digits = 3), ".", sep = "")
+paste("What we don't know during the ICP-MS measurements. ", 
+      "True population mean for the X and mean X RVs: 15. ",
+      "Population SD: ", format(sqrt(15), digits = 3), " Population SD of the mean: ",
+      format(sqrt(15)/sqrt(3), digits =3), ".", sep = "")
+```
+
+## Standard error (4)
+
+Let's take a larger sample size now to see the interpretation of the SE when it is well determined.
+
+```{r large sample number SE, echo = TRUE, eval = TRUE}
+rep_nb <- 30
+success_vector <- numeric()
+true_mean <- mean(measurements[["1500"]]) # mean of 15
+for (i in seq(10000)){
+  replicate_values <- sample(measurements[["1500"]], rep_nb)
+  sample_mean_value <- mean(replicate_values)
+  standard_error <- sd(replicate_values)/sqrt(rep_nb)
+  if (true_mean > sample_mean_value - standard_error & true_mean < sample_mean_value + standard_error)
+  {success_vector <- c(success_vector, 1)} else {success_vector <- c(success_vector, 0)}
+}
+print(sum(success_vector)/length(success_vector)*100)
+```
+
+With a large enough sample number, there is a ~68% chance that the true mean is within the interval defined by $\mu \pm \sigma_{\bar{X}}$. 
+
+
+Remember that standard errors are estimates of the standard deviation of the population from which the mean was drawn. For any single value drawn from a normal distribution of which we have a good estimate of the standard deviation, we can use the formula $\mu \pm Z_{value}*\sigma$ to obtain an interval of values that has a specific chance of catching the true mean of the distribution. 
+
+## Confidence intervals (1)
+
+For small sample sizes, we need to increase the size of the interval defined by $\mu \pm \sigma_{\bar{X}}$ to take into consideration the fact that our $\sigma_{\bar{X}}$ estimate is not good enough.
+
+Let's re-use the same experiment as for prediction intervals, but trying to catch the true mean using the interval $\mu \pm \sigma_{\bar{X}}$.
+
+```{r SE on small sample size to catch true mean, echo = TRUE}
+replicate_numbers <- c(3, 6, 30)
+true_mean <- mean(measurements[["1500"]])
+for (rep_nb in replicate_numbers) {
+  ssd_pred_likelihood <- c()
+  t_value <- -qt((1 - 0.68)/2,df = rep_nb - 1)
+  for (i in seq(10000)) {
+  replicate_values <- sample(measurements[["1500"]], rep_nb)
+  standard_error <- sd(replicate_values)/sqrt(rep_nb)
+  sample_mean <- mean(replicate_values)
+  ssd_pred_likelihood <- c(ssd_pred_likelihood,
+                           (sample_mean - standard_error < true_mean &
+                              sample_mean + standard_error > true_mean))
+  }
+  print(paste("With ", rep_nb, " replicates: ",
+        format(sum(ssd_pred_likelihood) / length(ssd_pred_likelihood) * 100, digits = 3),
+        "% chance to capture the true mean.", sep = ""))
+}
+```
+
+## Confidence intervals (2)
+
+The interval defined by $\mu \pm t_{value} * \sigma_{\bar{X}}$, with $t_{value}$ chosen according to the % chance that we want, is the **confidence interval** (it will predict a new measurement with the expected frequency).
+
+Back to our previous code experiment, but using prediction intervals.
+
+```{r confidence interval catch true mean, echo = TRUE}
+replicate_numbers <- c(3, 6, 30)
+true_mean <- mean(measurements[["1500"]])
+for (rep_nb in replicate_numbers) {
+  ssd_pred_likelihood <- c()
+  t_value <- -qt((1 - 0.68)/2,df = rep_nb - 1)
+  for (i in seq(10000)) {
+  replicate_values <- sample(measurements[["1500"]], rep_nb)
+  standard_error <- sd(replicate_values)/sqrt(rep_nb)
+  sample_mean <- mean(replicate_values)
+  ssd_pred_likelihood <- c(ssd_pred_likelihood,
+                           (sample_mean - t_value * standard_error < true_mean &
+                              sample_mean + t_value * standard_error > true_mean))
+  }
+  print(paste("With ", rep_nb, " replicates: ",
+        format(sum(ssd_pred_likelihood) / length(ssd_pred_likelihood) * 100, digits = 3),
+        "% chance to capture the true mean.", sep = ""))
+}
+```
+
+## Comment faire propagation incertitudes avec peu de replicats
+
+Ce n'est pas une distribution normale mais une distribution de student donc ca ne marche pas. Peut etre montrer la dif student-normal et montrer en quoi les estimations different, avec du Monte Carlo.
+
+```{r propagation incertitude low sample number, echo = TRUE}
+
+test <- numeric()
+t_value <- -qt((1 - 0.68)/2,df = 4)
+
+for (i in seq(10000))
+{
+  rv_1 <- rnorm(n = 3, mean = 1, sd = 1)
+  rv_2 <- rnorm(n = 3, mean = 2, sd = 0.5)
+
+  mean_rv_1_x_rv_2 <- mean(rv_1) + mean(rv_2)
+  test <- c(test, mean_rv_1_x_rv_2)
+}
+print(sd(test))
+```
+
+## Model the relationship between signal and concentration
+
+In a model, we use 2 types of variables:
+
+- The **explanatory variable** (x)
+- The **response variable** (y)
+
+The names of both variables help understandard their meaning. The **explanatory variable** explains a response, viewed in the **response variable**. The **explanatory variable** is also called **predictor**.
+
+In ICP-MS, the explanatory variable is the **concentration** (negligible uncertainty) and the response variable is the **signal** (there is uncertainty on the signal). In our case, the simplest way to model the relation between both of these variables is when the following constraints are met:
+
+- The relationship between the two variables is **linear**
+- The explanatory variable has **negligible uncertainties**
+- The response variables are **iid, normally distributed**
+- There are **no outliers**
+
+In these conditions, we can apply the **least squares method** (LSM) to find the best parameters for the model.
+
+## Modelling: graphic visualization
+
+Every modelling procedure starts with a **visual assessment** of the relationship between the explanatory and response variables. Let's view an ideal relationship between concetration and signal.
+
+```{r ideal relationship between signal and concentration, echo = TRUE, eval = TRUE}
+point_number <- 30 # number of calibration points
+x <- seq(point_number) # concentration
+y <- x * 5 + rnorm(n = point_number, mean = 0, sd = 2) # signal
+
+linear_model <- lm(y~x) # we create the model in R
+
+plot(NULL, xlim=c(0,32), ylim=c(0,160), xlab = "concentration", ylab = "signal",
+           main="Ideal 30 points calibration curve", cex.main=1.5, bty="n")
+
+abline(linear_model, col = "red", lty = 2, lwd = 2)
+
+points(x = x, y = y, col=rgb(0,0,0,1), pch = 16)
+
+```
+
+## Modelling: graphic visualization
+
+Let's go back to our previous checklist and assess the validity of each of the key points that enable us to use the LSM:
+
+### 1) The relationship between the two variables is linear
+
+It seems visually that fitting the points with a line is the best choice.
+
+### 2) The explanatory variable has negligible uncertainties
+
+We did dilutions using a calibrated laboratory balance.
+
+### 3) The response variables are iid, normally distributed and of equal variance
+
+The point appear to be regularly scattered arround the regression line.
+
+### 4) There are no outliers
+
+No obvious outliers.
+
+## Modelling: statistical validation
+
+Let's verify points 1) and 3) using some numerical measures and additionnal graphs. There is no need to verify point 2) and outlier detection is a broad topic.
+
+### Assessing the goodness of fit
+
+The goodness of fit can be assessed using the $R^{2}$ or the $\bar{R}^{2}$. The $R^{2}$ is the proportion of the variability in the response variable that is explained by the explanatory variable. A $R^{2}$ of 1 means that 100% of the variability (the variance) of the response can be explained by our model. Conversely, a $R^{2}$ of 0 means that both variables are independent.
+
+The $\bar{R}^{2}$ or $R^{2}_{adj}$ is the adjusted $R^{2}$. It is a correction of the $R^{2}$ which has the tendency of increasing towards 1 (apparent increase of the goodness of fit) with increasing measurements. The $\bar{R}^{2}$ takes into consideration the sample number to provide a more reliable metric.
+
+### Analysis of residuals
+
+Residuals are the the difference between the observed response and the predicted value based on the model. The residuals need to be randomly, normally distributed and with a similar variance across the data.
+
+Scatter plots and histograms are typical graphs that help assessing the validity of the residual distribution.
+
+## Modelling: statistical validation
+
+### Assessing the goodness of fit
+
+In R, the $\bar{R}^{2}$ can be easily extracted from the model.
+
+```{r adjusted r squared}
+summary(linear_model)$adj.r.squared 
+```
+
+Let's view the different with the simple $R^{2}$.
+
+```{r r squared}
+summary(linear_model)$r.squared 
+```
+
+Because the relation between x and y is somewhat perfect, the two measures are rather similar. There is no minimum value for the $R^{2}$ or the $\bar{R}^{2}$. The higher, the better. Low values will result in higher model uncertainties that will be reflected in the results.
+
+## Modelling: statistical validation
+
+### Analysis of residuals
+
+A quick way to get the residuals in R is through the following command.
+
+```{r residuals}
+resid(linear_model) 
+```
+
+We can then easily plot them on a scatter plot.
+
+```{r residual scatter plot, echo = TRUE, eval = TRUE}
+plot(NULL, xlim=c(0,32), ylim=c(-6,6), xlab = "concentration", ylab = "residuals",
+           main="Residual scatter plot", cex.main=1.5, bty="n")
+
+abline(h = 0, col = "black", lty = 2, lwd = 2)
+
+points(x = x, y = resid(linear_model), col=rgb(0,0,0,1), pch = 16)
+
+```
+
+There is no apparent pattern, variance appear similar accross the data.
+
+## Modelling: statistical validation
+
+### Analysis of residuals
+
+Let's take a look at the histogram to assess normality.
+
+```{r hist residual, echo = TRUE, eval = TRUE}
+hist(resid(linear_model), xlim=c(-8,8), xlab = "residual values",
+           main="Histogram of the residuals", cex.main=1.5, bty="n")
+
+abline(v = 0, col = "black", lty = 2, lwd = 2)
+```
+
+Although it is based on only a few points, the histogram appears to show that the residuals distribution is normal.
+
+Some other commands can help assess normality.
+
+## Modelling: statistical validation
+
+### Analysis of residuals
+
+**Verify that the mean equals the median**, which should be the case in a symmetric normal distribution.
+
+```{r median and mean to test normality, echo = TRUE, eval = TRUE}
+print(summary(resid(linear_model)))
+```
+
+**Perform a Shapiro-Wilk test** to see if normality is rejected.
+
+```{r shapiro - wilk, echo = TRUE, eval = TRUE}
+shapiro.test(resid(linear_model)) # a p-value above 0.05 means normality is not rejected
+```
+
+Note however that with such small sample sizes, it might be better to use theory to assess normality. And ICP-MS theory tells us that if the counts are high enough for Poisson to be normal, then we have a normal distribution.
+
+## Modelling: finding model parameters
+
+The RStudio software allows us to easily compute the model parameters using the LSM. We can view a summary of the model parameters using the summary command in R.
+
+```{r r summary on model, echo = TRUE, eval = TRUE}
+summary(linear_model)
+```
+
+## Modelling: finding model parameters
+
+Although they are easily computed, it is interesting to know how they are computed to better understand in which way violating the conditions of LSM is impacting the model parameters.
+
+We will see:
+
+- How to find the best parameters using the maximum likelihood function
+- How to compute uncertainties on these parameters
+- How to estimate the error term in the linear regression
+- How the error term and the uncertainties in the model parameters can be combined to estimate the confidence and prediction intervals of the linear model
+
+## 1. _The estimation of $\beta_0$ and  $\beta_1$_
+
+By looking at the plot of our data, we make a guess on the relationship between our two variables X and Y.  
+  
+**Y is linearly related to X**.  
+  
+This relation can be formulated as follows:  
+$$ y_i=\beta_0 + \beta_1x_i + \epsilon_i,\, \epsilon_i\sim \mathcal{N}(0,\,\sigma_\epsilon),\, the\ residual\ is\ normal,\  independant\ and\ identically\ distributed\ \left(iid\right)  $$  
+Now, **given this assumption**, what are the values of $\beta_0$, $\beta_1$ and $\sigma_\epsilon$?  
+  
+Let's put aside $\sigma_\epsilon$ for now and focus on the other parameters. Knowing $\beta_0$ and $\beta_1$ will allow us to modify the linear equation in order to estimate the concentration of a solution (X) from its signal intensity measurement (Y). To estimate the parameters of our linear model, we will use the **Maximum Likelihood Estimation** method (MLE). In simple terms, we will find the $\beta_0$ and $\beta_1$ that **maximize the probability of getting this particular set of data**.  
+  
+Because each $\epsilon_i$ value is independent, we want to maximize the following equation:
+$$ \prod_{i=0}^{n}P\left(y_i\right) $$
+Where $P\left(y_i\right)$ is the probability of getting a particular $y_i$ given a concentration of the solution $x_i$.  
+  
+Let's note that our linear function can be split in two parts:  
+* The **deterministic** part: $ \beta_0 + \beta_1x_i $  
+* The **random** part: $\epsilon_i$  
+
+What is the probability $P\left(y_i\right)$ of getting a specific $y_i$?  
+It is in the nature of the **deterministic** part to play no role on the likelihood of getting a specific $y_i$ given $x_i$, it is constant.  
+$\epsilon_i$ on the other hand is **independent** from $x_i$. The probability of obtaining any specific $y_i$ is therefore the probability of getting any specific $\epsilon_i$:  
+$$ P\left(y_i\right) = P\left(\epsilon_i\right)$$  
+And therefore:
+$$ \prod_{i=0}^{n}P\left(y_i\right) = \prod_{i=0}^{n}P\left(\epsilon_i\right)$$
+
+The probability distribution function of a normal variable is:  
+$$ P\left(X\right) = \frac{1}{\sqrt{2\pi}\sigma}exp\left[-\frac{\left(X-\mu\right)^2}{2\sigma^2}\right]$$
+
+Because the residuals are iid normal, we can write:  
+$$ \prod_{i=0}^{n}P\left(y_i\right) = \left(\frac{1}{\sqrt{2\pi}\sigma_\epsilon}\right)^{n}exp\left[-\frac{1}{2}\sum_{i=1}^{n}\frac{\epsilon_i^2}{\sigma_\epsilon^2}\right]$$
+
+If we want to maximize the outcome of this function, we need to minimize the following term:  
+$$\sum_{i=1}^{n}\frac{\epsilon_i^2}{\sigma_\epsilon^2}$$
+
+This term is called the Chi-Square ($\chi^2$). Minimizing it is equivalent to **minimizing the sum of the squared residuals**. Therefore, **in our specific case where $\sigma_\epsilon$ is iid normal**, the MLE method is the same as the Ordinary Least Squares method to estimate the parameters $\beta_0$ and $\beta_1$.  
+To minimize this term, we go back to the definition of $\epsilon_i$:  
+$$ y_i=\beta_0 + \beta_1x_i + \epsilon_i\\
+\epsilon_i = y_i - \left(\beta_0 + \beta_1x_i\right) $$
+
+Let's substitute this term in the Chi-Square function that we want to minimize:
+$$\sum_{i=1}^{n}\frac{\left(y_i - \left(\beta_0 + \beta_1x_i\right)\right)^2}{\sigma_\epsilon^2}$$
+
+Let's derive this function with respect to all its parameters, and solve the derived functions for zero. First for $\beta_0$:  
+$$\frac{\partial \chi^2}{\partial \beta_0} = 0$$
+$$\frac{1}{\sigma_\epsilon^2}\sum_{i=1}^{n}2\left(y_i - \left(\beta_0 + \beta_1 x_i \right)\right)\left(-1\right) = 0 $$
+$$\sum_{i=1}^{n}\left(y_i - \left(\beta_0 + \beta_1 x_i \right)\right) = 0 $$
+$$n\left(\bar y - \beta_0 - \beta_1 \bar x\right) = 0 $$
+
+$$\large \boxed{\beta_0 = \bar y - \beta_1 \bar x} $$
+
+We can substitute this solution in the Chi-Square definition and solve the derived function with respect to $\beta_1$:
+$$\chi^2 =  \sum_{i=1}^{n} \frac{\left(\left(y_i - \bar y \right) - \beta_1 \left(x_i - \bar x \right)\right)^2}{\sigma_\epsilon^2}$$
+$$\frac{\partial \chi^2}{\partial \beta_1} = 0$$
+$$\frac{1}{\sigma_\epsilon^2} \sum_{i=1}^{n} 2\left(\left(y_i - \bar y \right) - \beta_1 \left(x_i - \bar x \right)\right) \left(-\left(x_i - \bar x \right)\right) = 0$$
+
+$$\large \boxed{\beta_1 = \frac{\sum_{i=1}^{n} \left(y_i - \bar y \right)\left(x_i - \bar x \right)}{\sum_{i=1}^{n} \left(x_i - \bar x \right)^2}}$$
+
+Let's focus now on the variance and covariance of $\beta_1$ and $\beta_0$.
+
+$$Var(\beta_1) = Var \left(\frac{\sum_{i=1}^{n} \left(y_i - \bar y \right)\left(x_i - \bar x \right)}{\sum_{i=1}^{n} \left(x_i - \bar x \right)^2} \right)$$
+
+We will use the following property of sums:
+
+$$\large \boxed { \sum_{i=1}^{n} \left(y_i - \bar y \right)\left(x_i - \bar x \right) = \sum_{i=1}^{n} y_i\left(x_i - \bar x \right)}$$
+
+This equation is easily proven by expanding the left term:
+
+$$\sum_{i=1}^{n} \left(y_i - \bar y \right)\left(x_i - \bar x \right) = \sum_{i=1}^{n} (y_ix_i + \bar y \bar x - y_i \bar x - \bar y x_i)$$
+
+$$= \sum_{i=1}^{n} (y_ix_i) + \sum_{i=1}^{n} (\bar y \bar x) - \sum_{i=1}^{n} (y_i \bar x) - \sum_{i=1}^{n} (\bar y x_i)$$
+
+$$= \sum_{i=1}^{n} (y_ix_i) - \sum_{i=1}^{n} (y_i \bar x) + n (\bar y \bar x)  - n (\bar y \bar x)$$
+
+$$= \sum_{i=1}^{n} y_i\left(x_i - \bar x \right)$$
+Back to $\beta_1$:
+
+$$Var \left(\frac{\sum_{i=1}^{n} \left(y_i - \bar y \right)\left(x_i - \bar x \right)}{\sum_{i=1}^{n} \left(x_i - \bar x \right)^2} \right) = Var \left(\frac{\sum_{i=1}^{n} y_i \left(x_i - \bar x \right)}{\sum_{i=1}^{n} \left(x_i - \bar x \right)^2} \right) = $$
+
+The $y_i$ **are** random variables, the $x_i$ **are not** as they are fixed in the experiment. Moreover, each $y_i$ is independent (e.g. knowing $y_1$ does not give any information on $y_2$) and normally distributed. We can therefore use the following property of variance:
+
+If a and b are constants and X and Y are independent random variables, then $Var(aX + bY) = a^2Var(X) + b^2Var(Y)$.
+
+$$Var(\beta_1) = \frac{\sum_{i=1}^{n} Var\left(y_i \right)\left(x_i - \bar x \right)^2}{ \left( \sum_{i=1}^{n} \left(x_i - \bar x \right)^2 \right)^2} $$
+
+$$Var(\beta_1) = Var(y_i) \frac{\sum_{i=1}^{n} \left(x_i - \bar x \right)^2}{ \left( \sum_{i=1}^{n} \left(x_i - \bar x \right)^2 \right)^2} $$
+
+$$\large \boxed {Var(\beta_1) = \frac{\sigma^2}{\sum_{i=1}^{n} \left(x_i - \bar x \right)^2}} $$
+
+Where $\sigma^2$ is the Sum of Squared Error (SSE). The SSE is calculated as:
+
+$$\sigma^2 = SSE = \frac {\sum_{i=1}^{n} (y_i - (\beta_1 x_i + \beta_0))^2}{n-2}$$
+
+Unlike most calculations of variance that measure deviation from the mean, the SSE measures deviation from the prediction $\hat{y}$ expressed as $\beta_1 x + \beta_0$. Since it uses two parameters that are calculated from the sample, the degrees of freedom value in the denominator equals the sample number minus two ($n-2$).
+
+This value is calculated in r using the following command:
+
+```{r SSE SLR, eval = TRUE, echo = TRUE}
+SSE <- sum(resid(linear_model)^2) / linear_model$df.residual
+print(SSE)
+```
+
+The variance on the slope can then be calculated as:
+
+```{r variance slope, eval = TRUE, echo = TRUE}
+slope_variance <- SSE / sum((x - mean(x))^2)
+print(slope_variance)
+```
+
+Finally, the standard deviation on the slope can be calculated as:
+
+```{r stdev slope, eval = TRUE, echo = TRUE}
+slope_stdev <- sqrt(slope_variance)
+print(slope_stdev)
+
+# or directly in the lm summary
+
+print(summary(linear_model)$coefficients["x", "Std. Error"])
+```
+
+Let's calculate the variance of the intercept:
+
+$$Var(\beta_0) = Var(\bar y - \beta_1  \bar x)$$
+$$Var(\beta_0) = Var(\bar y) + Var(\beta_1) \bar{x}^2 - 2 \bar x Cov(\bar y, \beta_1)$$
+
+It can be shown that the covariance term equals 0, [see for instance here](https://stats.stackexchange.com/questions/64195/how-do-i-calculate-the-variance-of-the-ols-estimator-beta-0-conditional-on).
+
+Following the demonstration in the link above, we find that:
+
+$$Var(\beta_0) = \frac{\sigma^2 \sum_{i=1}^n x_i^2}{n \sum_{i=1} ^n (x_i - \bar x)^2}$$
+
+
+
+## Modelling: ICP-MS simulation
+
+In our ideal model, we used normal random variables of fixed variance to compute the error term in the linear regression. The model conditions were therefore perfect. Let's see what happens we we use a Poisson distribution which reflects the ICP-MS distribution at low count numbers.
+
+```{r ICP-MS cal curve simulation, echo = TRUE, eval = TRUE}
+std_concentrations <- seq(30) # ppb for instance
+std_signal <- numeric()
+std_sd <- numeric()
+sensitivity <- 10 # counts per ppb
+for (conc in std_concentrations) {
+  icp_theoritical_signal <- conc * sensitivity
+  icp_replicates_signal <- rpois(n = 3, lambda = icp_theoritical_signal)
+  std_signal <- c(std_signal, mean(icp_replicates_signal))
+  std_sd <- c(std_sd, sd(icp_replicates_signal))
+}
+
+linear_model <- lm(std_signal~std_concentrations) # we create the model in R
+
+plot(NULL, xlim=c(0,32), ylim=c(0,320), xlab = "concentration", ylab = "signal",
+           main="ICP-MS cal curve example", cex.main=1.5, bty="n")
+
+abline(linear_model, col = "red", lty = 2, lwd = 2)
+
+points(x = std_concentrations, y = std_signal, col=rgb(0,0,0,1), pch = 16)
+
+```
+
+## Modelling: Assessing ICP-MS model validity
+
+Visually, the goodness of fit seems good. Let's verify this using the $R^{2}$ indicators.
+
+```{r ICP-MS goodness of fit, echo = TRUE, eval = TRUE}
+print(summary(linear_model)$r.squared)
+print(summary(linear_model)$adj.r.squared)
+```
+
+Both the $R^{2}$ and the $\bar{R}^{2}$ confirm that most of the variance in the signal is explained by the concentration.
+
+## Modelling: Assessing ICP-MS model validity
+
+Let's have a look at the residuals now. Below is the residual scatter plot.
+
+```{r ICP-MS residuals, echo = TRUE, eval = TRUE}
+plot(NULL, xlim=c(0,32),
+     ylim=c(min(min(resid(linear_model)), -max(resid(linear_model))),
+            max(- min(resid(linear_model)), max(resid(linear_model)))),
+     xlab = "concentration", ylab = "residuals", 
+     main="Residual scatter plot", cex.main=1.5, bty="n")
+
+abline(h = 0, col = "black", lty = 2, lwd = 2)
+
+points(x = std_concentrations, y = resid(linear_model), col=rgb(0,0,0,1), pch = 16)
+```
+
+There appears to be a lower variance on the left side of the plot, and a higher variance on the right side of the plot. This means that **we are not in the right set of conditions to use the LSM to estimate our model parameters**.
+
+## Test slide
+
+```{r test}
+mean(rpois(n = 300, lambda = 15))
+```
+
