@@ -530,54 +530,58 @@ cbind(sample_names, sample_concentrations, sample_concentration_values, sqrt(sam
 
 # Fixed parameters ------------------------------------------------------------
 
-iter_number <- 100
+iter_number <- 1000
 
+integration_time <- 0.5 # seconds
 sensitivity <- 1000
-signal_sd <- 1
 
   # Blank setup -----------------------------------------------------------------
 
-blk_start <- 1 # in concentration unit
-blk_end <- 1
-blk_nb <- 200
+blk_start <- 1000 # in concentration unit
+blk_end <- 10
+blk_nb <- 100
 
   # Drift setup -----------------------------------------------------------------
 
 drift_start <- 1 # always start at 1
-drift_end <- 2
-drift_nb <- 200
-drift_concentration <- 1
+drift_end <- 0.1
+drift_nb <- 50
+drift_concentration <- 100
 
  # Standard setup ----------------------------------------------------------------
 
-standard_number <- 200
+standard_number <- 10
 min_standard <- 0
 max_standard <- 20000
 
  # Other parameters ----------------------------------------------------------------
 
-fixed_state <- T
+fixed_state <- F
 
-unknown_smp_nb <- 500
-integration_time <- 0.1 # seconds, a faire
-replicate_nb <- 200
+unknown_smp_nb <- 100
+replicate_nb <- 30
+use_agilent_uncertainties <- F
 use_SE <- T
+
+use_blk_weights <- T
+use_drift_weights <- T
+use_calib_weights <- T
 
 skip_blk <- F
 skip_drift <- F
 skip_calib <- F
-calib_non_affect_by_drift <- T
-drift_non_affect_by_blk <- T
-calib_non_affect_by_blk <- T
+calib_non_affect_by_drift <- F
+drift_non_affect_by_blk <- F
+calib_non_affect_by_blk <- F
 
   # Fixed computations ------------------------------------------------------------
 
 if(fixed_state == T) {
   set.seed(1)
-} else {}
+}
 
 samples_in_interval <- numeric()
-test_sd <- numeric()
+lower_samples_in_interval <- numeric()
 
 standard_concentrations <- c(seq(min_standard, max_standard, by = (max_standard - min_standard)/(standard_number - 1)))
 
@@ -621,17 +625,24 @@ if(drift_start == drift_end) {
 
 # Linear regression function --------------------------------------------------
 
-matrix_linear_regression <- function(x, y) {
+matrix_linear_regression <- function(x, y, w = NULL) {
+  
+  if (is.null(w)) {
+    W <- diag(length(x))
+  } else {
+    W <- diag(w)
+  }
+  
   X <- cbind(rep(1, times = length(x)), x)
   Y <- as.matrix(y)
   
-  betas <- solve(t(X)%*%X)%*%t(X)%*%Y
-  hat_matrix <- X%*%solve(t(X)%*%X)%*%t(X)
+  betas <- solve(t(X)%*%W%*%X)%*%t(X)%*%W%*%Y
+  hat_matrix <- X%*%solve(t(X)%*%W%*%X)%*%t(X)%*%W
   mlr_residuals <- (diag(length(x)) - hat_matrix)%*%Y
-  SSE <- t(mlr_residuals)%*%mlr_residuals
+  SSE <- t(mlr_residuals)%*%W%*%mlr_residuals
   df_regression <- (length(x) - 2)
   MSE <- SSE / df_regression
-  cov_matrix <- as.numeric(MSE) * solve(t(X)%*%X)
+  cov_matrix <- as.numeric(MSE) * solve(t(X)%*%W%*%X)
   
   beta_0 <- betas[1, ]
   beta_1 <- betas[2, ]
@@ -676,11 +687,11 @@ for (iter in seq(iter_number)){
   sample_measured_var <- numeric()
   
     for (smp_sig in sample_theorical) {
-    replicate_measured_values <- smp_sig + 
-      rnorm(n = replicate_nb, mean = 0, sd = signal_sd * sensitivity) #counts
-    sample_measured_signal <- c(sample_measured_signal,
-                                mean(replicate_measured_values)) # CPS
-    sample_measured_var <- c(sample_measured_var, var(replicate_measured_values)) # CPS
+      replicate_measured_values <- rpois(n = replicate_nb,
+                                         lambda = smp_sig  * integration_time) * 1 / integration_time # CPS
+      sample_measured_signal <- c(sample_measured_signal,
+                                  mean(replicate_measured_values)) # CPS
+      sample_measured_var <- c(sample_measured_var, var(replicate_measured_values)) # CPS
     }
   if (use_SE) {sample_measured_var <- sample_measured_var / replicate_nb}
 
@@ -690,9 +701,18 @@ for (iter in seq(iter_number)){
     sample_blk_cor_value <- sample_measured_signal
     sample_blk_cor_var <- sample_measured_var
   } else {
+  
+  if (use_blk_weights == T) {
+    index_blk <- (sample_types == "blank") & (sample_measured_var != 0)
+    blk_weight <- 1/sample_measured_var[index_blk]
+  } else {
+    index_blk <- sample_types == "blank"
+    blk_weight <- NULL
+  }
     
   blank_mlr_param <- matrix_linear_regression(x = delta_time_col[index_blk],
-                                              y = sample_measured_signal[index_blk])
+                                              y = sample_measured_signal[index_blk],
+                                              w = blk_weight)
   
   beta_0_blk <- blank_mlr_param["beta_0"]
   beta_1_blk <- blank_mlr_param["beta_1"]
@@ -724,9 +744,18 @@ for (iter in seq(iter_number)){
     sample_blk_drift_cor_value <- sample_blk_cor_value
     sample_blk_drift_cor_var <- sample_blk_cor_var
   } else {
+    
+  if (use_drift_weights == T) {
+    index_drift <- (sample_types == "drift") &  (sample_blk_cor_var != 0)
+    drift_weight <- 1/sample_blk_cor_var[index_drift]
+  } else {
+    index_drift <- sample_types == "drift"
+    drift_weight <- NULL
+  }
   
   drift_mlr_param <- matrix_linear_regression(x = delta_time_col[index_drift],
-                                              y = sample_blk_cor_value[index_drift])
+                                              y = sample_blk_cor_value[index_drift],
+                                              w = drift_weight)
   
   beta_0_drift <- drift_mlr_param["beta_0"]
   beta_1_drift <- drift_mlr_param["beta_1"]
@@ -744,7 +773,7 @@ for (iter in seq(iter_number)){
   
   if(calib_non_affect_by_drift == T) {
     sample_drift_value[index_calib] <- true_drift_ratios[index_calib]
-    var_beta_drift_ratio[index_calib] <- 0
+    sample_drift_var[index_calib] <- 0
   } else {}
   
   sample_blk_drift_cor_value <- sample_blk_cor_value / sample_drift_value
@@ -759,40 +788,61 @@ for (iter in seq(iter_number)){
     sample_concentration_values <- sample_blk_drift_cor_value / sensitivity
     sample_concentration_var <- sample_blk_drift_cor_var / sensitivity^2
   } else {
-    calib_mlr_param <- matrix_linear_regression(x = standard_concentrations,
-                                              y = sample_blk_drift_cor_value[index_calib])
+    
+    if (use_calib_weights == T) {
+      index_calib <- (sample_types == "standard") & (sample_blk_drift_cor_var != 0)
+      calib_weight <- 1/sample_blk_drift_cor_var[index_calib]
+    } else {
+      index_calib <- sample_types == "standard"
+      calib_weight <- NULL
+    }
+    
+    calib_mlr_param <- matrix_linear_regression(x = all_sample_concentrations[index_calib],
+                                              y = sample_blk_drift_cor_value[index_calib],
+                                              w = calib_weight)
   
-  beta_0_calib <- calib_mlr_param["beta_0"]
-  beta_1_calib <- calib_mlr_param["beta_1"]
-  var_beta_0_calib <- calib_mlr_param["var_beta_0"]
-  var_beta_1_calib <- calib_mlr_param["var_beta_1"]
-  cov_beta_calib <- calib_mlr_param["cov_beta"]
-  
-  sample_concentration_values <- (sample_blk_drift_cor_value - beta_0_calib) / beta_1_calib
-  sample_concentration_var <- ((sample_blk_drift_cor_value - beta_0_calib)^2) / (beta_1_calib^2) *
-    (sample_blk_drift_cor_var / ((sample_blk_drift_cor_value - beta_0_calib)^2) +
-       var_beta_0_calib / ((sample_blk_drift_cor_value - beta_0_calib)^2) +
-       var_beta_1_calib / (beta_1_calib^2) +
-       2 * cov_beta_calib / (beta_1_calib * (sample_blk_drift_cor_value - beta_0_calib)))
+    
+    beta_0_calib <- calib_mlr_param["beta_0"]
+    beta_1_calib <- calib_mlr_param["beta_1"]
+    var_beta_0_calib <- calib_mlr_param["var_beta_0"]
+    var_beta_1_calib <- calib_mlr_param["var_beta_1"]
+    cov_beta_calib <- calib_mlr_param["cov_beta"]
+    
+    sample_concentration_values <- (sample_blk_drift_cor_value - beta_0_calib) / beta_1_calib
+    if (use_agilent_uncertainties == T) {
+      sample_concentration_var <- sample_blk_cor_var / sample_blk_cor_value^2 * sample_concentration_values^2
+    } else {
+      sample_concentration_var <- ((sample_blk_drift_cor_value - beta_0_calib)^2) / (beta_1_calib^2) *
+      (sample_blk_drift_cor_var / ((sample_blk_drift_cor_value - beta_0_calib)^2) +
+         var_beta_0_calib / ((sample_blk_drift_cor_value - beta_0_calib)^2) +
+         var_beta_1_calib / (beta_1_calib^2) +
+         2 * cov_beta_calib / (beta_1_calib * (sample_blk_drift_cor_value - beta_0_calib)))
+    }
   }
   
   # quality assessment ----------------------------------------------------------
   
   unknown_sd_interval <- cbind(lower = sample_concentration_values[index_sample] - sqrt(sample_concentration_var[index_sample]),
                        higher = sample_concentration_values[index_sample] + sqrt(sample_concentration_var[index_sample]))
+  
   test_concentration_in_interval <- (unknown_sample_concentrations < unknown_sd_interval[ , "higher"]) &
     (unknown_sample_concentrations > unknown_sd_interval[ , "lower"])
-  samples_in_interval <- c(samples_in_interval, sum(test_concentration_in_interval))
   
+  samples_in_interval <- c(samples_in_interval, mean(test_concentration_in_interval))
+  lower_samples_in_interval <- c(lower_samples_in_interval, 
+                                 mean(test_concentration_in_interval[sample_concentration_values[index_sample]
+                                                                     < (max_standard - min_standard) * 0.01 +
+                                                                       min_standard]))
+  
+  mean_ratio <- unknown_sample_concentrations[index_sample] / sample_concentration_values[index_sample]
   svMisc::progress(iter/iter_number*100)
-  
-  test_sd <- c(test_sd, sqrt(sample_blk_var[index_sample][10]))
 }
 
 paste(sum(index_blk), " blanks, ", sum(index_drift), " drift, ", sum(index_calib), " standards, ",
       replicate_nb, " replicates.")
 
-print(mean(samples_in_interval)/sum(index_sample)*100)
+print(mean(samples_in_interval)*100)
+print(mean(lower_samples_in_interval, na.rm = T)*100)
 ```
 Reflexions sur la différence de % de réussite entre drift non impacted by blank et drift impacted by blank.
 Je pense que comme le blanc est linéaire, corriger le drift par la prédiction du blanc entraine un changement de pente et d'ordonnée de ma droite de drift. Mais comme la prédiction du blanc est parfaitement linéaire, il n'y a pas d'augmentation de l'incertitude de la pente du drift car ajouter soustraire un nombre qui évolue de manière parfaitement linéaire à un autre nombre conserve la linéarité du 2ème nombre.
