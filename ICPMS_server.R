@@ -10,13 +10,20 @@ ICPMS_server <- function(input, output, session) {
   
   # Variable initialization ---------------------------------------------------
   
+  intervalPlot_init <- reactiveVal(0)
+  
   select_input_names <- c("indexISTDchoiceWhat", "indexBlkchoiceWhat", "indexISTDchoiceIn", "indexBlkchoiceIn",
-                          "selectDriftIndex", "viewConcentrationIndex", "blkPlotIndex")
+                          "selectDriftIndex", "viewConcentrationIndex", "blkPlotIndex", "intervalIndex")
   
   data_modified <- reactiveValues()
   data_modifiers <- reactiveValues(ISTD = list(), blank = list())
   data_tables <- reactiveValues(ISTD = matrix(), blank = matrix())
   index <- reactiveValues(custom = list())
+  
+  interval_plot_ui <- reactiveValues(div_id = numeric(), model_select_id = character())
+  interval_models <- reactiveValues(temp = list(time_slices = NULL, id = NULL, model = NULL),
+                                    custom = list())
+  
   parsed_data <- reactiveValues()
   parsed_info <- reactiveValues()
   process_parameters <- reactiveValues(driftCorrectedElement = character(), calibration = list())
@@ -34,14 +41,14 @@ ICPMS_server <- function(input, output, session) {
   
   
   extraction_ready <- reactive({
-    !is.null(uploaded_file$main) & !is.null(uploaded_file$std)
+    !is.null(uploaded_file$main) && !is.null(uploaded_file$std)
     })
   
   is_valid_ISTD <- reactive({
     
     extracted()
     
-    return(!is.null(index$ISTD) & !is.null(parsed_data$ISTD))
+    return(!is.null(index$ISTD) && !is.null(parsed_data$ISTD))
   })
   
   analyte <- reactive({
@@ -530,6 +537,9 @@ ICPMS_server <- function(input, output, session) {
     
     process_parameters$regressionWeight <- rep("1/var", analyteNumber())
     names(process_parameters$regressionWeight) <- analyteNames()
+    
+    interval_models$temp[["time_slices"]] <- parsed_info$time_col[1]
+    interval_models$temp[["id"]] <- 1
   })
   
   # Index creation ------------------------------------------------------------
@@ -564,10 +574,10 @@ ICPMS_server <- function(input, output, session) {
       index$temp <- grep(searchWhat, header_col)
     }
     
-    if (displayWhat == "ISTD" & !is.null(ISTD()[["value"]])) {
+    if (displayWhat == "ISTD" && !is.null(ISTD()[["value"]])) {
       index_table <- ISTD()[["value"]][index$temp, , drop = FALSE]
     }
-    else if (displayWhat == "analytes" & !is.null(analyte()[["value"]])) {
+    else if (displayWhat == "analytes" && !is.null(analyte()[["value"]])) {
       index_table <- analyte()[["value"]][index$temp, , drop = FALSE]
     }
     
@@ -616,6 +626,194 @@ ICPMS_server <- function(input, output, session) {
     }
   })
   
+  # Interval creation ---------------------------------------------------------
+  
+  observeEvent({
+    input$interval_inter_mode
+    input$intervalIndex
+    }, {
+      
+      browser()
+    
+    interaction_mode <- input$interval_inter_mode
+    interval_index <- index$custom[[input$intervalIndex]]
+    
+    if(interaction_mode == "Create") {
+      
+      interval_models$temp[["time_slices"]] <- parsed_info$time_col[interval_index][1]
+      interval_models$temp[["id"]] <- 1
+      interval_models$temp[["model"]] <- "None"
+      
+      names(interval_models$temp[["time_slices"]]) <- interval_models$temp[["id"]]
+      names(interval_models$temp[["model"]]) <- interval_models$temp[["id"]]
+    }
+  }, ignoreInit = TRUE)
+  
+  intervalPlot_observer <-observeEvent(event_data("plotly_click", source = "intervalPlot"), {
+    
+    browser()
+    
+    if (!is.null(interval_models$temp[["time_slices"]])) {
+      
+      interval_index <- index$custom[[input$intervalIndex]]
+      
+      time_slice <- event_data("plotly_click", source = "intervalPlot")
+      
+      time_slices <- interval_models$temp[["time_slices"]]
+      point_nbs <- interval_models$temp[["id"]]
+      models <- interval_models$temp[["model"]]
+      
+      origin_slice <- parsed_info$time_col[interval_index][1]
+      
+      if(!is.null(time_slice) && as.POSIXct(time_slice[1, "x"]) != origin_slice) {
+        
+        new_time_slice <- as.POSIXct(time_slice[1, "x"])
+        new_point_nb <- time_slice[1, "pointNumber"] + 1
+        new_model <- "None"
+        
+        duplicated_pts <- new_point_nb == point_nbs
+        
+        if(any(duplicated_pts)) {
+          
+          interval_models$temp[["time_slices"]] <- time_slices[-which(duplicated_pts)]
+          interval_models$temp[["id"]] <- point_nbs[-which(duplicated_pts)]
+          interval_models$temp[["model"]] <- models[-which(duplicated_pts)]
+          
+        } else {
+          new_order <- order(c(new_point_nb, point_nbs))
+          
+          interval_models$temp[["time_slices"]] <- c(new_time_slice, time_slices)[new_order]
+          interval_models$temp[["id"]] <- c(new_point_nb, point_nbs)[new_order]
+          interval_models$temp[["model"]] <- c(new_model, models)[new_order]
+          
+        }
+        
+        names(interval_models$temp[["time_slices"]]) <- interval_models$temp[["id"]]
+        names(interval_models$temp[["model"]]) <- interval_models$temp[["id"]]
+        
+        shinyjs::runjs("Shiny.setInputValue('plotly_click-intervalPlot', 'null');") # otherwise an event isnt raised when clicking twice on the same point
+        
+      } else {
+        return()
+      }
+    } else {
+      return()
+    }
+  }, suspended = TRUE)
+  
+  observeEvent(interval_models$temp, {
+    
+    browser()
+    
+    current_id <- interval_plot_ui$div_id
+    requested_id <- interval_models$temp[["id"]]
+    
+    if(!is.null(current_id) && length(current_id) > length(requested_id)) {
+      
+      rm_id <- setdiff(current_id, requested_id)
+      
+      for (id in rm_id) {
+        removeUI(selector = paste0('#', id))
+      }
+      
+    } else if (!is.null(current_id) && length(current_id) == length(requested_id)){
+      # Do nothing
+    } else {
+      
+      if(!is.null(current_id)) {
+        for(id in current_id) {
+          removeUI(selector = paste0('#', id))
+        }
+      }
+      
+      for(id in requested_id) {
+        interval_model <- interval_models$temp[["model"]][id]
+        insertUI(
+          selector = '#placeholder',
+          ui = tags$div(selectInput(paste0("sel", id), paste("Model", id),
+                                    choices = c("None",
+                                                "Blockwise previous", "Blockwise average",
+                                                "Average",
+                                                "Linear Regression"),
+                                    selected = interval_model),
+                        id = id)
+        )
+      }
+    }
+    
+    interval_plot_ui$div_id <- requested_id
+    interval_plot_ui$model_select_id <- paste0("sel", requested_id)
+    
+  }, ignoreInit = TRUE)
+  
+  testObserve <- observe({
+    
+    browser()
+    
+    for (i in seq(interval_plot_ui$div_id)) {
+      
+      ui_div_id <- interval_plot_ui$div_id[i]
+      
+      select_id <- interval_plot_ui$model_select_id[i]
+      
+      interval_models$temp[["model"]][i] <- input[[select_id]]
+      
+    }
+  }, suspended = TRUE)
+  
+  output$intervalPlot <- renderPlotly({
+    
+    browser()
+    
+    element <- input$intervalElement
+    index <- index$custom[[input$intervalIndex]]
+    
+    if (input$timeDisplay == "Absolute") {
+      measurement_time <- parsed_info$time_col
+    } else if (input$timeDisplay == "Relative") {
+      measurement_time <- parsed_info$delta_t
+      if (input$timeUnit == "Seconds") {
+        units(measurement_time) <- "secs"
+      } else if (input$timeUnit == "Minutes") {
+        units(measurement_time) <- "mins"
+      } else if (input$timeUnit == "Hours") {
+        units(measurement_time) <- "hours"
+      }
+    }
+    
+    if ((element != "") && (!is.null(index))) {
+      
+      x <- measurement_time[index]
+      y <- analyte()[["value"]][index , element]
+      
+      intervalPlot <- plot_ly(x= ~x, y= ~y, type = 'scatter', mode = 'markers', source = "intervalPlot")
+      
+      if(!is.null(interval_models$temp[["time_slices"]])) {
+        
+        for (time_slice in interval_models$temp[["time_slices"]]) {
+          intervalPlot <- intervalPlot %>% add_trace(x = rep(as.POSIXct(time_slice, origin = "1970-01-01"),
+                                                             times = 2),
+                    y = c(min(y), max(y)), type = 'scatter', mode = 'lines')
+        }
+      }
+      
+    } else {
+      intervalPlot <- plot_ly()
+    }
+    
+    intervalPlot_observer$resume()
+    testObserve$resume()
+    
+    intervalPlot
+    
+  })
+  
+  output$info <- renderPrint({
+    
+    event_data("plotly_click", source = "intervalPlot")
+    
+  })
+  
   # ISTD settings -------------------------------------------------------------
   
   # Display ISTD table
@@ -643,7 +841,7 @@ ICPMS_server <- function(input, output, session) {
     input$ISTDinteractionMode
     input$ISTDcorrectionMethod
     }, {
-    if (!is.null(input$indexISTDchoiceWhat) & is_valid_ISTD()){
+    if (!is.null(input$indexISTDchoiceWhat) && is_valid_ISTD()){
       DT::selectRows(ISTDtableProxy, index$custom[[input$indexISTDchoiceWhat]])
     }
   })
@@ -989,6 +1187,7 @@ ICPMS_server <- function(input, output, session) {
     updateSelectInput(session,"blkPlotElement",choices=analyteNames(),selected=analyteNames()[1])
     updateSelectInput(session,"calibrationElement",choices=analyteNames(),selected=analyteNames()[1])
     updateSelectInput(session,"e_drift",choices=analyteNames(),selected=analyteNames()[1])
+    updateSelectInput(session,"intervalElement",choices=analyteNames(),selected=analyteNames()[1])
   })
   
   observeEvent(input$useBlankCorrection,{

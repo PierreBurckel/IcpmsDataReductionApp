@@ -31,15 +31,38 @@ ICPMS_ui <- shinyUI({
                tabPanel("Index creation",
                         sidebarLayout(
                           sidebarPanel(
-                            selectInput("searchIndexwhere", "In:", c("Sample Names" = "smp", "Levels" = "lvl", "Type" = "type")),
-                            textInput("searchIndexwhat", "Search:", ""),
-                            selectInput("searchIndexhow", "Using:", c("Regular expression" = "regexp", "Exact match" = "ematch")),
-                            textInput("searchIndexName", "Index Name:", ""),
-                            actionButton("indexSelectAll", "Select All"),
-                            actionButton("searchIndexCreate", "Create new index")),
+                            selectInput("createWhat", "Create:", c("Index" = "index", "Interval" = "interval", "Model" = "model")),
+                            conditionalPanel(
+                              condition = "input.createWhat == 'index'",
+                              selectInput("searchIndexwhere", "In:", c("Sample Names" = "smp", "Levels" = "lvl", "Type" = "type")),
+                              textInput("searchIndexwhat", "Search:", ""),
+                              selectInput("searchIndexhow", "Using:", c("Regular expression" = "regexp", "Exact match" = "ematch")),
+                              textInput("searchIndexName", "Index Name:", ""),
+                              actionButton("indexSelectAll", "Select All"),
+                              actionButton("searchIndexCreate", "Create new index")),
+                            conditionalPanel(
+                              condition = "input.createWhat == 'interval'",
+                              selectInput("interval_inter_mode", "What",
+                                          choices = c("Create", "Modify", "View"),
+                                          selected = "Create"),
+                              selectInput("intervalElement", "Element", choices = "", selected = ""),
+                              selectInput("intervalIndex", "Index", choices = "", selected = ""),
+                              verbatimTextOutput("info"))
+                            ),
                           mainPanel(
+                            conditionalPanel(
+                              condition = "input.createWhat == 'index'",
                             selectInput("searchIndexDisplay", "Show:", c("Internal standards" = "ISTD", "Analytes" = "analytes")),
-                            DT::DTOutput("index_table")
+                            DT::DTOutput("index_table")),
+                            conditionalPanel(
+                              condition = "input.createWhat == 'interval'",
+                              plotlyOutput("intervalPlot"),
+                              selectInput("timeDisplay", "Time", choices = c("Absolute", "Relative"),
+                                          selected = "Absolute"),
+                              selectInput("timeUnit", "Unit", choices = c("Seconds", "Minutes", "Hours"),
+                                          selected = "Minutes"),
+                              tags$div(id = 'placeholder')
+                              )
                           )
                         )
                ),

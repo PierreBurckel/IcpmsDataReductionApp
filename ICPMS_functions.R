@@ -49,6 +49,7 @@ parse_function_agilent <- function(main_file, std_file, ISTD_file) {
     type_col <- main_dataframe[ , which(header_2 == "Type")]
     lvl_col <- main_dataframe[ , which(header_2 == "Level")]
     delta_t <- time_col - time_col[1]
+    units(delta_t) <- "secs"
     
     row.names(element_value) <- name_col
     row.names(element_rsd) <- name_col
