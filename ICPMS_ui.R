@@ -43,12 +43,21 @@ ICPMS_ui <- shinyUI({
                             conditionalPanel(
                               condition = "input.createWhat == 'interval'",
                               selectInput("interval_inter_mode", "What",
-                                          choices = c("Create", "Modify", "View"),
+                                          choices = c("Create", "View"),
                                           selected = "Create"),
-                              selectInput("intervalElement", "Element", choices = "", selected = ""),
-                              selectInput("intervalIndex", "Index", choices = "", selected = ""),
-                              verbatimTextOutput("info"))
-                            ),
+                              conditionalPanel(
+                                condition = "input.interval_inter_mode == 'Create'",
+                                selectInput("intervalElement", "Element", choices = "", selected = ""),
+                                selectInput("interval_index", "Index", choices = "", selected = ""),
+                                textInput("interval_name", "Name:", ""),
+                                actionButton("create_interval", "Create")),
+                              conditionalPanel(
+                                condition = "input.interval_inter_mode == 'View'",
+                                selectInput("interval_names", "Interval", choices = "", selected = ""),
+                                actionButton("modify_interval", "Modify"))
+                              
+                            )
+                          ),
                           mainPanel(
                             conditionalPanel(
                               condition = "input.createWhat == 'index'",

@@ -2,6 +2,248 @@ library(shiny)
 library(stringr)
 library(matlib)
 
+update_interval_select_inputs <- function() {
+
+  browser()
+
+  for (i in seq(length(interval_tmp_mdl$id))) {
+
+    id <- interval_tmp_mdl$id[i]
+
+    method_select_choices <- "None"
+
+    if (length(interval_tmp_mdl$sub_index()[[i]]) == 1) {
+      method_select_choices <- c(method_select_choices, "Value")
+    } else if (length(interval_tmp_mdl$sub_index()[[i]]) > 1) {
+      method_select_choices <- c(method_select_choices, "Average",
+                                 "Linear Regression", "Blockwise")
+    }
+
+    selected_method <- input[[paste0("sel_", id)]]
+
+    if (is.null(selected_method) || !any(selected_method == method_select_choices)) {selected_method <- "None"}
+
+    updateSelectInput(session, paste0("sel_", interval_tmp_mdl$id[i]),
+                      choices = method_select_choices, selected = selected_method)
+    expected_interval_select_input[["method"]][i] <<- selected_method
+
+    if (selected_method == "None" || selected_method == "Value" || selected_method == "Average") {
+      updateSelectInput(session, paste0("opt_1_", id),
+                        choices = "None", selected = "None")
+      updateSelectInput(session, paste0("opt_2_", id),
+                        choices = "None", selected = "None")
+
+      expected_interval_select_input[["opt1"]][i] <<- "None"
+      expected_interval_select_input[["opt2"]][i] <<- "None"
+
+    } else if (selected_method == "Blockwise") {
+
+      choices <- c("Average", "Previous")
+
+      if (input[[paste0("opt_1_", id)]] %in% choices) {
+        selected <- input[[paste0("opt_1_", id)]]
+      } else {
+        selected <- choices[1]
+      }
+
+      updateSelectInput(session, paste0("opt_1_", id),
+                        choices = choices, selected = selected)
+      updateSelectInput(session, paste0("opt_2_", id),
+                        choices = "None", selected = "None")
+
+      expected_interval_select_input[["opt1"]][i] <<- selected
+      expected_interval_select_input[["opt2"]][i] <<- "None"
+
+    } else if (selected_method == "Linear Regression") {
+
+      point_nb <- length(which(interval_tmp_mdl$sub_index()[[i]]))
+
+      choices_1 <- seq(point_nb - 1)
+      choices_2 <- c("Force t0", "Force 0")
+
+      if (input[[paste0("opt_1_", id)]] %in% choices_1) {
+        selected_1 <- input[[paste0("opt_1_", id)]]
+      } else {
+        selected_1 <- choices_1[1]
+      }
+
+      if (input[[paste0("opt_2_", id)]] %in% choices_2) {
+        selected_2 <- input[[paste0("opt_2_", id)]]
+      } else {
+        selected_2 <- choices_2[1]
+      }
+
+      updateSelectInput(session, paste0("opt_1_", id),
+                        choices = choices_1, selected = selected_1)
+      updateSelectInput(session, paste0("opt_2_", id),
+                        choices = choices_2, selected = selected_2)
+
+      expected_interval_select_input[["opt1"]][i] <<- selected_1
+      expected_interval_select_input[["opt2"]][i] <<- selected_2
+
+    }
+  }
+}
+
+convert_time <- function(numeric_time, to_time_unit = c("Date", "Seconds", "Minutes", "Hours"),
+                         numeric_origin = NULL) {
+  
+  # numeric_time and numeric_origin must be numeric values equal to the time in seconds elapsed since 1970-01-01 GMT
+  
+  if (!is.numeric(numeric_time)) {
+    stop("numeric_time must be numeric")
+  }
+  
+  if (to_time_unit != "Date" && (is.null(numeric_origin) || !is.numeric(numeric_origin))) {
+    stop("numeric_origin must be numeric when to_time_unit != 'Date'")
+  }
+  
+  if (to_time_unit == "Date") {
+    date_time <- as.POSIXct(numeric_time, origin = "1970-01-01")
+    return(date_time)
+  }
+  else if (to_time_unit == "Seconds") {
+    diff_time <- numeric_time - numeric_origin
+  } 
+  else if (to_time_unit == "Minutes") {
+    diff_time <- (numeric_time - numeric_origin) / 60
+  } 
+  else if (to_time_unit == "Hours") {
+    diff_time <- (numeric_time - numeric_origin) / 3600
+  }
+  
+  return(diff_time)
+}
+
+get_modeled_data <- function(x, y, method, opt1, opt2, x_pred) {
+  
+  # browser()
+  
+  y_value <- y[["value"]]
+  y_sd <- y[["SD"]]
+  
+  sample_nb <- length(x_pred)
+  
+  y_pred_value <- rep(NA, times = sample_nb)
+  y_pred_sd <- rep(NA, times = sample_nb)
+  
+  if (method == "None" || is.null(method) || is.null(opt1) || is.null(opt2) ) {
+    # do nothing
+  }
+  else if (method == "Value") {
+    
+    y_pred_value[1:sample_nb] <- y_value
+    y_pred_sd[1:sample_nb] <- y_sd
+  }
+  else if (method == "Blockwise") {
+    
+    req(opt1 %in% c("Previous", "Average"), opt2 == "None")
+    
+    if (opt1 == "Previous") {
+      for (i in seq(length(x_pred))) {
+        y_pred_value[i] <- y_value[max(which(x_pred[i] >= x))]
+        y_pred_sd[i] <- y_sd[max(which(x_pred[i] >= x))]
+      }
+    }
+    else if (opt1 == "Average") {
+      for (i in seq(length(x_pred))) {
+        if (all(x_pred[i] >= x)) {
+          y_pred_value[i] <- mean(tail(y_value, n = 2))
+          y_pred_sd[i] <- sd(tail(y_value, n = 2))
+        } 
+        else if (!any(x_pred[i] >= x)) {
+          y_pred_value[i] <- mean(y_value[1:2])
+          y_pred_sd[i] <- sd(y_value[1:2])
+        }
+        else {
+          prev_y <- y_value[max(which(x_pred[i] >= x))]
+          next_y <- y_value[max(which(x_pred[i] >= x)) + 1]
+          y_pred_value[i] <- mean(c(prev_y, next_y))
+          y_pred_sd[i] <- sd(c(prev_y, next_y))
+        }
+      }
+    }
+  }
+  else if (method == "Average") {
+    y_pred_value[1:sample_nb] <- mean(y_value)
+    y_pred_sd[1:sample_nb] <- sd(y_value)
+  }
+  else if (method == "Linear Regression") {
+    
+    req(!is.na(as.numeric(opt1)), opt2 %in% c("Force t0", "Force 0"))
+    
+    lin_params <- linreg_estimate(x, y_value, as.numeric(opt1))
+    lin_prediction <- linreg_predict(x_pred, lin_params[["betas"]],
+                                     lin_params[["cov_matrix"]], ratio = FALSE)
+    y_pred_value <- lin_prediction[["value"]]
+    y_pred_sd <- lin_prediction[["SD"]]
+  }
+  
+  return(list(value = y_pred_value, SD = y_pred_sd))
+}
+
+linreg_estimate <- function(x, y, order, w = NULL) {
+  
+  # browser()
+  
+  req(order < length(x))
+  
+  parameters_list <- list(betas = NULL, cov_matrix = NULL)
+  model <- lm(y ~ poly(x, order, raw=TRUE))
+    
+  parameters_list[["betas"]] <- coefficients(model)
+  parameters_list[["cov_matrix"]] <- vcov(model)
+  
+  return(parameters_list)
+}
+
+linreg_predict <- function(x, betas, cov_matrix, ratio = FALSE) {
+  
+  # browser()
+  
+  prediction_value <- rep(NA, length(x))
+  prediction_sd <- rep(NA, length(x))
+  
+  if(ratio == TRUE && betas[1] == 0) stop("Ratio impossible, beta_0 = 0")
+  
+  data_nb <- length(x)
+  beta_nb <- length(betas)
+  order <- beta_nb - 1
+  
+  X <- matrix(nrow = data_nb, ncol = beta_nb)
+
+  linear_regression_str_expr <- "("
+  params <- character()
+  
+  for (i in 0:order) {
+    
+    current_param <- paste0("beta_", i)
+    params <- c(params, current_param)
+    assign(current_param, betas[i + 1])
+    
+    linear_regression_str_expr <- paste0(linear_regression_str_expr, " + ", current_param, " * x^", i)
+    
+    X[ , i + 1] <- x^i
+  }
+  
+  linear_regression_str_expr <- paste0(linear_regression_str_expr, ")" )
+  
+  if(ratio == TRUE) linear_regression_str_expr <- paste0(linear_regression_str_expr, " / beta_0" )
+  
+  linear_regression_expr <- parse(text = linear_regression_str_expr)
+  jacobian_expr <- deriv(expr = linear_regression_expr, params)
+  jacobian_values <- attr(eval(jacobian_expr), "gradient")
+
+  prediction_value <- eval(linear_regression_expr)
+  
+  for (i in seq(data_nb)) {
+    jacobian_value <- matrix(jacobian_values[i, ], nrow = 1)
+    prediction_sd[i] <- sqrt(as.numeric(jacobian_value%*%cov_matrix%*%t(jacobian_value)))
+  }
+  
+  return(list(value = prediction_value, SD = prediction_sd))
+}
+
 updateMultipleSelectInput <- function(session, input_names, choices, selected) {
   for(input_name in input_names) {
     updateSelectInput(session, inputId = input_name, choices = choices, selected = selected)
@@ -44,12 +286,11 @@ parse_function_agilent <- function(main_file, std_file, ISTD_file) {
     ISTD_index <- !analyte_index
     
     smp_nb <- nrow(main_dataframe)
-    time_col <- as.POSIXct(main_dataframe[ , which(header_2 == "Acq. Date-Time")], format="%d/%m/%Y %H:%M")
+    time_col <- as.numeric(as.POSIXct(main_dataframe[ , which(header_2 == "Acq. Date-Time")], format="%d/%m/%Y %H:%M"))
     name_col <- main_dataframe[ , which(header_2 == "Sample Name")]
     type_col <- main_dataframe[ , which(header_2 == "Type")]
     lvl_col <- main_dataframe[ , which(header_2 == "Level")]
     delta_t <- time_col - time_col[1]
-    units(delta_t) <- "secs"
     
     row.names(element_value) <- name_col
     row.names(element_rsd) <- name_col
@@ -409,6 +650,8 @@ rm_duplicate_lines <- function(df){
 # Replaces specific values of a matrix based on reference values
 replaceValues <- function(value, SD, elements, replace_how, replace_what, replace_in){
 
+  browser()
+  
   if (is.null(value) | is.null(SD)) return(NULL)
   
   if (replace_how == "none" | is.null(replace_what) | is.null(replace_in) | is.null(elements)) return(list(value=value,SD=SD))
@@ -450,7 +693,7 @@ replaceValues <- function(value, SD, elements, replace_how, replace_what, replac
       }
     }
   }
-  return(list(value = value,SD = SD))
+  return(list(value = value, SD = SD))
 }
 
 ##Function to create the ISTD template based on main datafile

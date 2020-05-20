@@ -556,7 +556,9 @@ max_standard <- 20000
 
  # Other parameters ----------------------------------------------------------------
 
-fixed_state <- F
+use_quick_fn <- FALSE
+
+fixed_state <- TRUE
 
 unknown_smp_nb <- 100
 replicate_nb <- 30
@@ -657,7 +659,82 @@ matrix_linear_regression <- function(x, y, w = NULL) {
   return(parameters_vector)
 }
 
+linreg_estimate <- function(x, y, order, w = NULL) {
+  
+  if(order >= length(x)) stop("Not enough data points for this order")
+  
+  if (is.null(w)) {
+    W <- diag(length(x))
+  } else {
+    W <- diag(w)
+  }
+  
+  X = matrix(nrow = length(x), ncol = order + 1)
+  
+  for (i in 0:order) {
+    X[ , i + 1] <- x^i
+  }
+  Y <- as.matrix(y)
+  
+  betas <- solve(t(X)%*%W%*%X)%*%t(X)%*%W%*%Y
+  hat_matrix <- X%*%solve(t(X)%*%W%*%X)%*%t(X)%*%W
+  mlr_residuals <- (diag(length(x)) - hat_matrix)%*%Y
+  SSE <- t(mlr_residuals)%*%W%*%mlr_residuals
+  df_regression <- (length(x) - 2)
+  MSE <- SSE / df_regression
+  cov_matrix <- as.numeric(MSE) * solve(t(X)%*%W%*%X)
+  
+  parameters_list <- list(betas = betas, cov_matrix = cov_matrix)
+  
+  return(parameters_list)
+}
+
+linreg_predict <- function(x, betas, cov_matrix, ratio = FALSE) {
+  
+  if(ratio == TRUE && betas[1, ] == 0) stop("Ratio impossible, beta_0 = 0")
+  
+  data_nb <- length(x)
+  beta_nb <- nrow(betas)
+  order <- beta_nb - 1
+  
+  X <- matrix(nrow = data_nb, ncol = beta_nb)
+  
+  linear_regression_str_expr <- "("
+  params <- character()
+  
+  for (i in 0:order) {
+    
+    current_param <- paste0("beta_", i)
+    params <- c(params, current_param)
+    assign(current_param, betas[i + 1,])
+    
+    linear_regression_str_expr <- paste0(linear_regression_str_expr, " + ", current_param, " * x^", i)
+    
+    X[ , i + 1] <- x^i
+  }
+  
+  linear_regression_str_expr <- paste0(linear_regression_str_expr, ")" )
+  
+  if(ratio == TRUE) linear_regression_str_expr <- paste0(linear_regression_str_expr, " / beta_0" )
+  
+  linear_regression_expr <- parse(text = linear_regression_str_expr)
+  jacobian_expr <- deriv(expr = linear_regression_expr, params)
+  jacobian_values <- attr(eval(jacobian_expr), "gradient")
+  
+  prediction_value <- eval(linear_regression_expr)
+  prediction_sd <- rep(NA, times = data_nb)
+  
+  for (i in seq(data_nb)) {
+    jacobian_value <- matrix(jacobian_values[i, ], nrow = 1)
+    prediction_sd[i] <- sqrt(as.numeric(jacobian_value%*%cov_matrix%*%t(jacobian_value)))
+  }
+  
+  return(list(value = prediction_value, SD = prediction_sd))
+}
+
 # Loop ------------------------------------------------------------------------
+
+start_loop_time <- Sys.time()
 
 for (iter in seq(iter_number)){
   
@@ -710,18 +787,33 @@ for (iter in seq(iter_number)){
     blk_weight <- NULL
   }
     
-  blank_mlr_param <- matrix_linear_regression(x = delta_time_col[index_blk],
+  if (use_quick_fn) {
+    blank_mlr_param <- matrix_linear_regression(x = delta_time_col[index_blk],
                                               y = sample_measured_signal[index_blk],
                                               w = blk_weight)
   
-  beta_0_blk <- blank_mlr_param["beta_0"]
-  beta_1_blk <- blank_mlr_param["beta_1"]
-  var_beta_0_blk <- blank_mlr_param["var_beta_0"]
-  var_beta_1_blk <- blank_mlr_param["var_beta_1"]
-  cov_beta_blk <- blank_mlr_param["cov_beta"]
+    beta_0_blk <- blank_mlr_param["beta_0"]
+    beta_1_blk <- blank_mlr_param["beta_1"]
+    var_beta_0_blk <- blank_mlr_param["var_beta_0"]
+    var_beta_1_blk <- blank_mlr_param["var_beta_1"]
+    cov_beta_blk <- blank_mlr_param["cov_beta"]
+    
+    sample_blk_value <- beta_0_blk + beta_1_blk * delta_time_col
+    sample_blk_var <- var_beta_0_blk + var_beta_1_blk * delta_time_col^2 + 2 * delta_time_col * cov_beta_blk
   
-  sample_blk_value <- beta_0_blk + beta_1_blk * delta_time_col
-  sample_blk_var <- var_beta_0_blk + var_beta_1_blk * delta_time_col^2 + 2 * delta_time_col * cov_beta_blk
+  } else {
+    
+    blank_mlr_param <- linreg_estimate(x = delta_time_col[index_blk],
+                                       y = sample_measured_signal[index_blk],
+                                       order = 1,
+                                       w = blk_weight)
+    
+    pred <- linreg_predict(x = delta_time_col, betas = blank_mlr_param[["betas"]],
+                   cov_matrix = blank_mlr_param[["cov_matrix"]])
+    
+    sample_blk_value <- pred[["value"]]
+    sample_blk_var <- pred[["SD"]]^2
+  }
   
   if(drift_non_affect_by_blk == T) {
     sample_blk_value[index_drift] <- true_blk_values[index_drift]
@@ -753,23 +845,40 @@ for (iter in seq(iter_number)){
     drift_weight <- NULL
   }
   
-  drift_mlr_param <- matrix_linear_regression(x = delta_time_col[index_drift],
+  if (use_quick_fn) {
+    
+    drift_mlr_param <- matrix_linear_regression(x = delta_time_col[index_drift],
                                               y = sample_blk_cor_value[index_drift],
                                               w = drift_weight)
   
-  beta_0_drift <- drift_mlr_param["beta_0"]
-  beta_1_drift <- drift_mlr_param["beta_1"]
-  var_beta_0_drift <- drift_mlr_param["var_beta_0"]
-  var_beta_1_drift <- drift_mlr_param["var_beta_1"]
-  cov_beta_drift <- drift_mlr_param["cov_beta"]
-  
-  sample_drift_value <- 1 + delta_time_col * beta_1_drift / beta_0_drift
-  
-  var_beta_drift_ratio <- (beta_1_drift^2)/(beta_0_drift^2)*
-    (var_beta_1_drift/(beta_1_drift^2) + var_beta_0_drift / (beta_0_drift^2) -
-       2 * cov_beta_drift / (beta_1_drift * beta_0_drift))
-  
-  sample_drift_var <- var_beta_drift_ratio * (delta_time_col)^2
+    beta_0_drift <- drift_mlr_param["beta_0"]
+    beta_1_drift <- drift_mlr_param["beta_1"]
+    var_beta_0_drift <- drift_mlr_param["var_beta_0"]
+    var_beta_1_drift <- drift_mlr_param["var_beta_1"]
+    cov_beta_drift <- drift_mlr_param["cov_beta"]
+    
+    sample_drift_value <- 1 + delta_time_col * beta_1_drift / beta_0_drift
+    
+    var_beta_drift_ratio <- (beta_1_drift^2)/(beta_0_drift^2)*
+      (var_beta_1_drift/(beta_1_drift^2) + var_beta_0_drift / (beta_0_drift^2) -
+         2 * cov_beta_drift / (beta_1_drift * beta_0_drift))
+    
+    sample_drift_var <- var_beta_drift_ratio * (delta_time_col)^2
+    
+  } else {
+    
+    drift_mlr_param <- linreg_estimate(x = delta_time_col[index_drift],
+                                       y = sample_blk_cor_value[index_drift],
+                                       order = 1,
+                                       w = drift_weight)
+    
+    pred <- linreg_predict(x = delta_time_col, betas = drift_mlr_param[["betas"]],
+                   cov_matrix = drift_mlr_param[["cov_matrix"]],
+                   ratio = TRUE) 
+    
+    sample_drift_value <- pred[["value"]]
+    sample_drift_var <- pred[["SD"]]^2
+  }
   
   if(calib_non_affect_by_drift == T) {
     sample_drift_value[index_calib] <- true_drift_ratios[index_calib]
@@ -837,6 +946,11 @@ for (iter in seq(iter_number)){
   mean_ratio <- unknown_sample_concentrations[index_sample] / sample_concentration_values[index_sample]
   svMisc::progress(iter/iter_number*100)
 }
+
+end_loop_time <- Sys.time()
+
+delta_time <- end_loop_time - start_loop_time
+delta_time
 
 paste(sum(index_blk), " blanks, ", sum(index_drift), " drift, ", sum(index_calib), " standards, ",
       replicate_nb, " replicates.")

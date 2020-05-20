@@ -1,4 +1,5 @@
 library(DT)
+library(shinyjs)
 library(stringr)
 library(plotly)
 library(chemCal)
@@ -6,23 +7,29 @@ library(propagate)
 library(MASS)
 source('C:/Users/pierr/Desktop/IPGP/R/ICP-MS_process/ICPMS_functions.R')
 
+
+
 ICPMS_server <- function(input, output, session) {
-  
+
   # Variable initialization ---------------------------------------------------
   
   intervalPlot_init <- reactiveVal(0)
   
+  update_interval_methods <- reactiveVal(TRUE)
+  
   select_input_names <- c("indexISTDchoiceWhat", "indexBlkchoiceWhat", "indexISTDchoiceIn", "indexBlkchoiceIn",
-                          "selectDriftIndex", "viewConcentrationIndex", "blkPlotIndex", "intervalIndex")
+                          "selectDriftIndex", "viewConcentrationIndex", "blkPlotIndex", "interval_index")
+  expected_interval_select_input <- list(method = character(), opt1 = character(), opt2 = character())
   
   data_modified <- reactiveValues()
   data_modifiers <- reactiveValues(ISTD = list(), blank = list())
   data_tables <- reactiveValues(ISTD = matrix(), blank = matrix())
   index <- reactiveValues(custom = list())
   
-  interval_plot_ui <- reactiveValues(div_id = numeric(), model_select_id = character())
-  interval_models <- reactiveValues(temp = list(time_slices = NULL, id = NULL, model = NULL),
-                                    custom = list())
+  interval_tmp_mdl <- reactiveValues(id = numeric(), prev_ids = numeric(), interval_sel_inputs = list(), valid_sel_inputs = boolean(),
+                                         sub_index = list(), t0 = NULL, tf = NULL, times = list(),
+                                        modeled_data = list())
+  interval_models <- reactiveValues()
   
   parsed_data <- reactiveValues()
   parsed_info <- reactiveValues()
@@ -50,6 +57,224 @@ ICPMS_server <- function(input, output, session) {
     
     return(!is.null(index$ISTD) && !is.null(parsed_data$ISTD))
   })
+  
+  # interval_select_inputs <- reactive({
+  # 
+  #   req(extracted())
+  #   req(!is.null(input$interval_index))
+  # 
+  #   browser()
+  # 
+  #   interval_select_inputs <- list()
+  #   
+  #   for (id in interval_tmp_mdl$id) {
+  #     
+  #     interval_select_inputs[["method"]] <- c(interval_select_inputs[["method"]], input[[paste0("sel_", id)]])
+  #     interval_select_inputs[["opt1"]] <- c(interval_select_inputs[["opt1"]], input[[paste0("opt_1_", id)]])
+  #     interval_select_inputs[["opt2"]] <- c(interval_select_inputs[["opt2"]], input[[paste0("opt_2_", id)]])
+  #     
+  #   }
+  #   
+  #   environment(update_interval_select_inputs) <- environment()
+  #   update_interval_select_inputs()
+  #   
+  #   return(interval_select_inputs)
+  # 
+  # })
+  
+  
+    
+  # valid_interval_select_inputs <- reactive({
+  #   
+  #   req(extracted())
+  #   req(!is.null(input$interval_index))
+  #   
+  #   browser()
+  #   
+  #   if (length(interval_tmp_mdl$id) == 0) {
+  #     
+  #     return(FALSE)
+  #     
+  #   } else {
+  #     
+  #     for (i in seq(length(interval_tmp_mdl$id))) {
+  #       
+  #       id <- interval_tmp_mdl$id[i]
+  #       
+  #       if (is.null(input[[paste0("sel_", id)]]) ||
+  #           is.null(input[[paste0("opt_1_", id)]]) ||
+  #           is.null(input[[paste0("opt_2_", id)]]) ||
+  #           expected_interval_select_input[["method"]][i] != input[[paste0("sel_", id)]] ||
+  #           expected_interval_select_input[["opt1"]][i] != input[[paste0("opt_1_", id)]] ||
+  #           expected_interval_select_input[["opt2"]][i] != input[[paste0("opt_2_", id)]]) {
+  #         return(FALSE)
+  #       }
+  #       
+  #     }
+  #     
+  #   }
+  #   
+  #   return(TRUE)
+  # })
+  
+  interval_tmp_mdl$sub_index <- reactive({
+
+    req(extracted())
+
+    sub_index <- list()
+
+    time_col <- parsed_info$time_col
+
+    interval_index <- index$custom[[input$interval_index]]
+
+    interval_nb <- length(interval_tmp_mdl$id)
+
+    for (i in seq(interval_nb)) {
+
+      t0 <- interval_tmp_mdl$slices_t0()[i]
+      tf <- interval_tmp_mdl$slices_tf()[i]
+
+      sub_index[[i]] <- time_col[interval_index] >= t0 & time_col[interval_index] <= tf
+
+    }
+
+    return(sub_index)
+
+  })
+  
+  interval_tmp_mdl$slices_t0 <- reactive({
+    
+    req(extracted())
+    
+    slices_t0 <- NULL
+    
+    time_col <- parsed_info$time_col
+    
+    interval_index <- index$custom[[input$interval_index]]
+    
+    for (id in interval_tmp_mdl$id) {
+      slices_t0 <- c(slices_t0, time_col[interval_index][id])
+    }
+    
+    return(slices_t0)
+    
+  })
+  
+  interval_tmp_mdl$slices_tf <- reactive({
+    
+    req(extracted())
+    
+    slices_tf <- NULL
+    
+    time_col <- parsed_info$time_col
+    
+    sequence_tf <- tail(time_col, n = 1)
+    
+    interval_nb <- length(interval_tmp_mdl$id)
+    
+    for (i in seq(interval_nb)) {
+      
+      if (i < interval_nb) {
+        
+        slices_tf <- c(slices_tf, interval_tmp_mdl$slices_t0()[i + 1])
+        
+      } else if (i == interval_nb) {
+        
+        slices_tf <- c(slices_tf, sequence_tf)
+        
+      }
+    }
+    
+    return(slices_tf)
+    
+  })
+  
+  # interval_tmp_mdl$slices_sample_times <- reactive({
+  #   
+  #   req(extracted())
+  #   
+  #   times <- list(absolute = list(), relative = list())
+  #   
+  #   interval_nb <- length(interval_tmp_mdl$id)
+  # 
+  #   for (i in seq(interval_nb)) {
+  #     
+  #     t0 <- interval_tmp_mdl$slices_t0()[i]
+  #     tf <- interval_tmp_mdl$slices_tf()[i]
+  #     
+  #     index <- t0 <= parsed_info$time_col & tf >= parsed_info$time_col
+  #     times[[i]] <- parsed_info$time_col[index]
+  #   }
+  #   
+  #   return(times)
+  #   
+  # })
+  
+  # interval_tmp_mdl$modeled_data <- reactive({
+  #   
+  #   browser()
+  #   
+  #   modeled_data <- list()
+  #   
+  #   interval_index <- index$custom[[input$interval_index]]
+  #   element <- input$intervalElement
+  #   interval_nb <- length(interval_tmp_mdl$id)
+  #   delta_t <- parsed_info$delta_t
+  #   
+  #   x <- as.numeric(delta_t[interval_index])
+  #   y <- list(value = analyte()[["value"]][interval_index , element],
+  #             SD = analyte()[["SD"]][interval_index , element])
+  #   
+  #   for (i in seq(interval_nb)) {
+  #     
+  #     id <- interval_tmp_mdl$id[[i]]
+  #     
+  #     sub_index <- interval_tmp_mdl$sub_index()[[i]]
+  #   
+  #     sample_time <- x[sub_index]
+  #     y_sub <- list(value = y[["value"]][sub_index],
+  #                   SD = y[["SD"]][sub_index])
+  #     
+  #     method <- input[[paste0("sel_", id)]]
+  #     opt1 <- input[[paste0("opt_1_", id)]]
+  #     opt2 <- input[[paste0("opt_2_", id)]]
+  #     
+  #     x_pred <- interval_tmp_mdl$slices_sample_times()[[i]] - parsed_info$time_col[1]
+  #     measured_data_index <- as.numeric(parsed_info$delta_t) %in% x_pred
+  #     y_pred <- list(value = analyte()[["value"]][measured_data_index , element],
+  #                    SD = analyte()[["SD"]][measured_data_index , element])
+  #     
+  #     modeled_data[[i]] <- get_modeled_data(sample_time, y_sub,
+  #                                           method, opt1, opt2,
+  #                                           x_pred)
+  #   }
+  #   
+  #   return(modeled_data)
+  # })
+  # 
+  # interval_tmp_mdl$sequence_pred_val <- reactive({
+  #   
+  #   interval_nb <- length(interval_tmp_mdl$id)
+  #   sequence_pred_val <- NULL
+  #   
+  #   for (i in seq(interval_nb)) {
+  #     slice_pred_val <- interval_tmp_mdl$modeled_data()[[i]]
+  #     if (i != interval_nb) {
+  #       sequence_pred_val <- c(sequence_pred_val, slice_pred_val[-length(slice_pred_val)])
+  #     } else {
+  #       sequence_pred_val <- c(sequence_pred_val, slice_pred_val)
+  #     }
+  #   }
+  #   
+  #   first_slice_t0 <- interval_tmp_mdl$slices_t0()[1]
+  #   non_modeled_smp_nb <- sum(parsed_info$time_col < first_slice_t0)
+  #   
+  #   if (non_modeled_smp_nb > 0) {
+  #     sequence_pred_val <- c(sequence_pred_val, rep(sequence_pred_val[1], non_modeled_smp_nb))
+  #   }
+  #   
+  #   return(sequence_pred_val)
+  # })
   
   analyte <- reactive({
     
@@ -285,8 +510,6 @@ ICPMS_server <- function(input, output, session) {
     
     req(index$drift)
     
-    browser()
-    
     driftFactor <- list(value = vector(), SD = vector()) # drift factor for all elements
     analyteDriftFactor <- list(value = vector(), SD = vector()) # drift factor for analyte being evaluated
     
@@ -383,8 +606,6 @@ ICPMS_server <- function(input, output, session) {
   data_modified$concentration <- reactive({
     
     req(data_modified$blankCorrectedRatio())
-    
-    browser()
     
     concentration_table <- vector()
     
@@ -538,8 +759,6 @@ ICPMS_server <- function(input, output, session) {
     process_parameters$regressionWeight <- rep("1/var", analyteNumber())
     names(process_parameters$regressionWeight) <- analyteNames()
     
-    interval_models$temp[["time_slices"]] <- parsed_info$time_col[1]
-    interval_models$temp[["id"]] <- 1
   })
   
   # Index creation ------------------------------------------------------------
@@ -606,8 +825,8 @@ ICPMS_server <- function(input, output, session) {
     
     index$custom[[index_name]] <- custom_index
     
-    updateMultipleSelectInput(session = session, input_names = select_input_names,
-                              choices = names(index$custom), selected = names(index$custom)[1])
+    # updateMultipleSelectInput(session = session, input_names = select_input_names,
+    #                           choices = names(index$custom), selected = names(index$custom)[1])
     
   }, ignoreInit = TRUE)
   
@@ -628,71 +847,96 @@ ICPMS_server <- function(input, output, session) {
   
   # Interval creation ---------------------------------------------------------
   
-  observeEvent({
-    input$interval_inter_mode
-    input$intervalIndex
-    }, {
-      
-      browser()
+  observeEvent(input$create_interval, {
     
-    interaction_mode <- input$interval_inter_mode
-    interval_index <- index$custom[[input$intervalIndex]]
+    # browser()
     
-    if(interaction_mode == "Create") {
-      
-      interval_models$temp[["time_slices"]] <- parsed_info$time_col[interval_index][1]
-      interval_models$temp[["id"]] <- 1
-      interval_models$temp[["model"]] <- "None"
-      
-      names(interval_models$temp[["time_slices"]]) <- interval_models$temp[["id"]]
-      names(interval_models$temp[["model"]]) <- interval_models$temp[["id"]]
+    interval_name <- input$interval_name
+    
+    if (interval_name == "") {
+      showModal(modalDialog(
+        title = "Missing name",
+        "A name is required for the interval"
+      ))
+      return()
     }
+    
+    time_continuous <- NULL
+    data_continuous <- NULL
+    
+    for (i in seq(length(interval_tmp_mdl$id))) {
+      time_continuous <- c(time_continuous, interval_tmp_mdl$slices_sample_times()[[i]])
+      data_continuous <- list(value = c(data_continuous[["value"]], interval_tmp_mdl$modeled_data()[["value"]][[i]]),
+                              SD = c(data_continuous[["SD"]], interval_tmp_mdl$modeled_data()[["SD"]][[i]]))
+    }
+    
+    duplicate_index <- duplicated(time_continuous)
+    
+    if (any(duplicate_index)) {
+      time_continuous <- time_continuous[-which(duplicate_index)]
+      data_continuous[["value"]] <- data_continuous[["value"]][-which(duplicate_index)]
+      data_continuous[["SD"]] <- data_continuous[["SD"]][-which(duplicate_index)]
+    }
+    
+    interval_models[[interval_name]] <- list(id = interval_tmp_mdl$id,
+                                             interval_select_inputs = interval_select_inputs(),
+                                             interval_index = input$interval_index,
+                                             t0 = interval_tmp_mdl$slices_t0(),
+                                             tf = interval_tmp_mdl$slices_tf(),
+                                             times = parsed_info$time_col,
+                                             modeled_data = interval_tmp_mdl$sequence_pred_val()
+                                             )
+    
+    updateSelectInput(session, "interval_names",
+                      choices = names(interval_models), selected = names(interval_models)[1])
+    
   }, ignoreInit = TRUE)
   
-  intervalPlot_observer <-observeEvent(event_data("plotly_click", source = "intervalPlot"), {
+  
+  observeEvent({
+    input$interval_inter_mode
+    input$interval_index
+    }, {
+
+    # browser()
     
-    browser()
+    interaction_mode <- input$interval_inter_mode
+    interval_index <- index$custom[[input$interval_index]]
+
+    if(interaction_mode == "Create") {
+      
+      interval_tmp_mdl$id <- 1
+      # update_interval_methods(update_interval_methods() + 1)
+      
+    } else {}
+  }, ignoreInit = TRUE)
+  
+  
+  
+  intervalPlot_observer <- observeEvent(event_data("plotly_click", source = "intervalPlot"), {
     
-    if (!is.null(interval_models$temp[["time_slices"]])) {
-      
-      interval_index <- index$custom[[input$intervalIndex]]
-      
-      time_slice <- event_data("plotly_click", source = "intervalPlot")
-      
-      time_slices <- interval_models$temp[["time_slices"]]
-      point_nbs <- interval_models$temp[["id"]]
-      models <- interval_models$temp[["model"]]
-      
-      origin_slice <- parsed_info$time_col[interval_index][1]
-      
-      if(!is.null(time_slice) && as.POSIXct(time_slice[1, "x"]) != origin_slice) {
-        
-        new_time_slice <- as.POSIXct(time_slice[1, "x"])
-        new_point_nb <- time_slice[1, "pointNumber"] + 1
-        new_model <- "None"
-        
-        duplicated_pts <- new_point_nb == point_nbs
-        
-        if(any(duplicated_pts)) {
-          
-          interval_models$temp[["time_slices"]] <- time_slices[-which(duplicated_pts)]
-          interval_models$temp[["id"]] <- point_nbs[-which(duplicated_pts)]
-          interval_models$temp[["model"]] <- models[-which(duplicated_pts)]
-          
+    if (length(interval_tmp_mdl$id) != 0 && input$interval_inter_mode == "Create") {
+
+      # browser()
+
+      click_info <- event_data("plotly_click", source = "intervalPlot")
+
+      if(!is.null(click_info) && click_info[1, "curveNumber"] == 0 && click_info[1, "pointNumber"] != 0) {
+
+        new_id <- click_info[1, "pointNumber"] + 1
+        current_id <- interval_tmp_mdl$id
+
+        dup_index <- new_id == current_id
+
+        if(any(dup_index)) {
+          interval_tmp_mdl$id <- current_id[-which(dup_index)]
+
         } else {
-          new_order <- order(c(new_point_nb, point_nbs))
-          
-          interval_models$temp[["time_slices"]] <- c(new_time_slice, time_slices)[new_order]
-          interval_models$temp[["id"]] <- c(new_point_nb, point_nbs)[new_order]
-          interval_models$temp[["model"]] <- c(new_model, models)[new_order]
-          
+          interval_tmp_mdl$id <- sort(c(current_id, new_id))
         }
-        
-        names(interval_models$temp[["time_slices"]]) <- interval_models$temp[["id"]]
-        names(interval_models$temp[["model"]]) <- interval_models$temp[["id"]]
-        
+
         shinyjs::runjs("Shiny.setInputValue('plotly_click-intervalPlot', 'null');") # otherwise an event isnt raised when clicking twice on the same point
-        
+
       } else {
         return()
       }
@@ -701,118 +945,326 @@ ICPMS_server <- function(input, output, session) {
     }
   }, suspended = TRUE)
   
-  observeEvent(interval_models$temp, {
+  
+  
+  observeEvent(interval_tmp_mdl$id, {
     
-    browser()
+    # browser()
     
-    current_id <- interval_plot_ui$div_id
-    requested_id <- interval_models$temp[["id"]]
-    
-    if(!is.null(current_id) && length(current_id) > length(requested_id)) {
-      
-      rm_id <- setdiff(current_id, requested_id)
-      
-      for (id in rm_id) {
-        removeUI(selector = paste0('#', id))
-      }
-      
-    } else if (!is.null(current_id) && length(current_id) == length(requested_id)){
-      # Do nothing
-    } else {
-      
-      if(!is.null(current_id)) {
-        for(id in current_id) {
-          removeUI(selector = paste0('#', id))
-        }
-      }
-      
-      for(id in requested_id) {
-        interval_model <- interval_models$temp[["model"]][id]
-        insertUI(
-          selector = '#placeholder',
-          ui = tags$div(selectInput(paste0("sel", id), paste("Model", id),
-                                    choices = c("None",
-                                                "Blockwise previous", "Blockwise average",
-                                                "Average",
-                                                "Linear Regression"),
-                                    selected = interval_model),
-                        id = id)
-        )
-      }
+    new_ids <- interval_tmp_mdl$id
+    prev_ids <- interval_tmp_mdl$prev_ids
+
+    req(new_ids)
+
+    del_id <- setdiff(prev_ids, new_ids)
+
+    for (id in del_id){
+      removeUI(selector = paste0('#', id), immediate = TRUE)
+      runjs(paste0("Shiny.onInputChange('",paste0("sel_",id),"',null)"))
+      runjs(paste0("Shiny.onInputChange('",paste0("opt_1_",id),"',null)"))
+      runjs(paste0("Shiny.onInputChange('",paste0("opt_2_",id),"',null)"))
     }
+
+    add_id <- sort(setdiff(new_ids, prev_ids))
     
-    interval_plot_ui$div_id <- requested_id
-    interval_plot_ui$model_select_id <- paste0("sel", requested_id)
-    
+    for (id in add_id) {
+      
+      if (id == 1) {
+        pos <- "placeholder"
+      } else {
+        pos <- new_ids[which(id == new_ids) - 1]
+      }
+      
+      insertUI(
+        selector = paste0("#", pos),
+        where = "afterEnd",
+        ui = tags$div(
+          div(
+            div(style="display:inline-block;vertical-align:top; width: 150px;",
+                selectInput(paste0("sel_", id), paste0("Model", id),
+                            choices = c("None"),
+                            selected = "None")),
+            div(style="display:inline-block;vertical-align:top; width: 150px;",
+                selectInput(paste0("opt_1_", id), "Option 1",
+                            choices = c("None"), selected = "None")),
+            div(style="display:inline-block;vertical-align:top; width: 150px;",
+                selectInput(paste0("opt_2_", id), "Option 2",
+                            choices = c("None"), selected = "None"))
+          ), id = id), immediate = TRUE
+      )
+    }
+
+    interval_tmp_mdl$prev_ids <- new_ids
+
   }, ignoreInit = TRUE)
   
-  testObserve <- observe({
+  observe({
     
-    browser()
+    req(length(interval_tmp_mdl$id) > 0, !is.null(input$interval_index))
     
-    for (i in seq(interval_plot_ui$div_id)) {
+    # browser()
+    
+    method_changed <- FALSE
+    
+    method_select_choices <- character()
+    opt1_select_choices <- list()
+    opt2_select_choices <- list()
+    
+    for (i in seq(length(interval_tmp_mdl$id))) {
       
-      ui_div_id <- interval_plot_ui$div_id[i]
+      id <- interval_tmp_mdl$id[i]
       
-      select_id <- interval_plot_ui$model_select_id[i]
+      selected_method <- input[[paste0("sel_", id)]]
+      selected_opt1 <- input[[paste0("opt_1_", id)]]
+      selected_opt2 <- input[[paste0("opt_2_", id)]]
       
-      interval_models$temp[["model"]][i] <- input[[select_id]]
+      isolate({
+        
+        sub_index <- interval_tmp_mdl$sub_index()[[i]]
+          
+        method_select_choices <- "None"
+        
+        opt1_select_choices[["None"]] <- "None"
+        opt2_select_choices[["None"]] <- "None"
       
+        if (length(sub_index) == 1) {
+          
+          method_select_choices <- c(method_select_choices, "Value")
+          
+          opt1_select_choices[["Value"]] <- "None"
+          opt2_select_choices[["Value"]] <- "None"
+          
+        } else if (length(sub_index) > 1) {
+          
+          method_select_choices <- c(method_select_choices, "Average",
+                                     "Linear Regression", "Blockwise")
+          
+          point_nb <- length(which(sub_index))
+          
+          opt1_select_choices[["Average"]] <- "None"
+          opt2_select_choices[["Average"]] <- "None"
+          
+          opt1_select_choices[["Linear Regression"]] <- seq(point_nb - 1)
+          opt2_select_choices[["Linear Regression"]] <- c("Force t0", "Force 0")
+          
+          opt1_select_choices[["Blockwise"]] <- c("Average", "Previous")
+          opt2_select_choices[["Blockwise"]] <- "None"
+        }
+        
+        if (is.null(selected_method) || is.null(selected_opt1) || is.null(selected_opt2) || 
+            !any(selected_method == method_select_choices)) {
+          
+          # this is a new or impossible to render select input method
+          
+          selected_method <- "None"
+          
+          updateSelectInput(session, paste0("sel_", id),
+                            choices = method_select_choices, selected = selected_method)
+          updateSelectInput(session, paste0("opt_1_", id),
+                            choices = opt1_select_choices[[selected_method]],
+                            selected = opt1_select_choices[[selected_method]][1])
+          updateSelectInput(session, paste0("opt_2_", id),
+                            choices = opt2_select_choices[[selected_method]],
+                            selected = opt2_select_choices[[selected_method]][1])
+          
+          expected_interval_select_input[["method"]][id] <<- "None"
+          expected_interval_select_input[["opt1"]][id] <<- "None"
+          expected_interval_select_input[["opt2"]][id] <<- "None"
+          
+          method_changed <- TRUE
+          
+        } else {
+          
+          # the method / option select inputs have valid values
+          
+          if (expected_interval_select_input[["method"]][id] != selected_method ||
+              !any(selected_opt1 == opt1_select_choices[[selected_method]]) ||
+              !any(selected_opt2 == opt2_select_choices[[selected_method]])
+              ) {
+            
+            # there has been a change in the method select input or selected options are not anymore valid
+            
+            updateSelectInput(session, paste0("sel_", id),
+                              choices = method_select_choices, selected = selected_method)
+            updateSelectInput(session, paste0("opt_1_", id),
+                              choices = opt1_select_choices[[selected_method]],
+                              selected = opt1_select_choices[[selected_method]][1])
+            updateSelectInput(session, paste0("opt_2_", id),
+                              choices = opt2_select_choices[[selected_method]],
+                              selected = opt2_select_choices[[selected_method]][1])
+            
+            expected_interval_select_input[["method"]][id] <<- selected_method
+            expected_interval_select_input[["opt1"]][id] <<- opt1_select_choices[[selected_method]][1]
+            expected_interval_select_input[["opt2"]][id] <<- opt2_select_choices[[selected_method]][1]
+            
+            method_changed <- TRUE
+            
+          }
+          
+          else if (expected_interval_select_input[["opt1"]][id] != selected_opt1) {
+            
+            # there has been a change in the opt1 select input
+            
+            updateSelectInput(session, paste0("sel_", id),
+                              choices = method_select_choices, selected = selected_method)
+            updateSelectInput(session, paste0("opt_1_", id),
+                              choices = opt1_select_choices[[selected_method]],
+                              selected = selected_opt1)
+            updateSelectInput(session, paste0("opt_2_", id),
+                              choices = opt2_select_choices[[selected_method]],
+                              selected = opt2_select_choices[[selected_method]][1])
+            
+            expected_interval_select_input[["method"]][id] <<- selected_method
+            expected_interval_select_input[["opt1"]][id] <<- selected_opt1
+            expected_interval_select_input[["opt2"]][id] <<- opt2_select_choices[[selected_method]][1]
+            
+            method_changed <- TRUE
+            
+          }
+          
+          else if (expected_interval_select_input[["opt2"]][id] != selected_opt2) {
+            
+            # there has been a change in the opt2 select input
+            
+            updateSelectInput(session, paste0("sel_", id),
+                              choices = method_select_choices, selected = selected_method)
+            updateSelectInput(session, paste0("opt_1_", id),
+                              choices = opt1_select_choices[[selected_method]],
+                              selected = selected_opt1)
+            updateSelectInput(session, paste0("opt_2_", id),
+                              choices = opt2_select_choices[[selected_method]],
+                              selected = selected_opt2)
+            
+            expected_interval_select_input[["method"]][id] <<- selected_method
+            expected_interval_select_input[["opt1"]][id] <<- selected_opt1
+            expected_interval_select_input[["opt2"]][id] <<- selected_opt2
+            
+            method_changed <- TRUE
+            
+          }
+          
+          else {
+            
+            # there hasn't been a change in the select inputs, still update in case the choices changed
+            
+            updateSelectInput(session, paste0("sel_", id),
+                              choices = method_select_choices, selected = selected_method)
+            updateSelectInput(session, paste0("opt_1_", id),
+                              choices = opt1_select_choices[[selected_method]],
+                              selected = selected_opt1)
+            updateSelectInput(session, paste0("opt_2_", id),
+                              choices = opt2_select_choices[[selected_method]],
+                              selected = selected_opt2)
+            
+          }
+        }
+      })
     }
-  }, suspended = TRUE)
+  })
   
   output$intervalPlot <- renderPlotly({
     
-    browser()
+    req(!is.null(interval_tmp_mdl$id))
+    req(!is.null(input$interval_index))
+    req(!is.null(input$intervalElement))
+    
+    # browser()
     
     element <- input$intervalElement
-    index <- index$custom[[input$intervalIndex]]
     
-    if (input$timeDisplay == "Absolute") {
-      measurement_time <- parsed_info$time_col
-    } else if (input$timeDisplay == "Relative") {
-      measurement_time <- parsed_info$delta_t
-      if (input$timeUnit == "Seconds") {
-        units(measurement_time) <- "secs"
-      } else if (input$timeUnit == "Minutes") {
-        units(measurement_time) <- "mins"
-      } else if (input$timeUnit == "Hours") {
-        units(measurement_time) <- "hours"
-      }
-    }
+    plot_time <- convert_time(numeric_time = parsed_info$time_col,
+                              to_time_unit = switch(input$timeDisplay,
+                                                    Absolute = "Date",
+                                                    Relative = input$timeUnit),
+                              numeric_origin = parsed_info$time_col[1])
     
-    if ((element != "") && (!is.null(index))) {
+    model_time <- parsed_info$delta_t
+    
+    if (input$interval_inter_mode == "Create") {
       
-      x <- measurement_time[index]
-      y <- analyte()[["value"]][index , element]
+      index <- index$custom[[input$interval_index]]
       
-      intervalPlot <- plot_ly(x= ~x, y= ~y, type = 'scatter', mode = 'markers', source = "intervalPlot")
+      plot_x_index <- plot_time[index]
+      y_index_value <- analyte()[["value"]][index , element]
+      y_index_sd <- analyte()[["SD"]][index , element]
       
-      if(!is.null(interval_models$temp[["time_slices"]])) {
+      model_x_index <- model_time[index]
+      
+      plot_t0s <- convert_time(numeric_time = interval_tmp_mdl$slices_t0(),
+                               to_time_unit = switch(input$timeDisplay,
+                                                     Absolute = "Date",
+                                                     Relative = input$timeUnit),
+                               numeric_origin = parsed_info$time_col[1])
+      model_t0s <- convert_time(numeric_time = interval_tmp_mdl$slices_t0(),
+                               to_time_unit = "Seconds",
+                               numeric_origin = parsed_info$time_col[1])
+      
+      plot_tfs <- convert_time(numeric_time = interval_tmp_mdl$slices_tf(),
+                               to_time_unit = switch(input$timeDisplay,
+                                                     Absolute = "Date",
+                                                     Relative = input$timeUnit),
+                               numeric_origin = parsed_info$time_col[1])
+      model_tfs <- convert_time(numeric_time = interval_tmp_mdl$slices_tf(),
+                                to_time_unit = "Seconds",
+                                numeric_origin = parsed_info$time_col[1])
         
-        for (time_slice in interval_models$temp[["time_slices"]]) {
-          intervalPlot <- intervalPlot %>% add_trace(x = rep(as.POSIXct(time_slice, origin = "1970-01-01"),
-                                                             times = 2),
-                    y = c(min(y), max(y)), type = 'scatter', mode = 'lines')
-        }
-      }
-      
-    } else {
-      intervalPlot <- plot_ly()
     }
-    
-    intervalPlot_observer$resume()
-    testObserve$resume()
-    
-    intervalPlot
-    
+    else if (input$interval_inter_mode == "View") {
+      if (!is.null(interval_models[[input$interval_names]])) {
+      }
+    }
+      intervalPlot <- plot_ly(x= ~plot_x_index, y= ~y_index_value, type = 'scatter', mode = 'markers',
+                              source = "intervalPlot", marker = list(size = 10))
+      
+        if(length(plot_t0s) != 0) {
+  
+          for (i in seq(length(plot_t0s))) {
+              
+            id <- interval_tmp_mdl$id[i]
+            
+            sel_method <- input[[paste0("sel_", id)]]
+            sel_opt1 <- input[[paste0("opt_1_", id)]]
+            sel_opt2 <- input[[paste0("opt_2_", id)]]
+            
+            req(!is.null(sel_method), !is.null(sel_opt1), !is.null(sel_opt2))
+            req(expected_interval_select_input[["method"]][id] == sel_method,
+                expected_interval_select_input[["opt1"]][id] == sel_opt1,
+                expected_interval_select_input[["opt2"]][id] == sel_opt2)
+            
+              plot_t0 <- plot_t0s[i]
+              plot_tf <- plot_tfs[i]
+              model_t0 <- model_t0s[i]
+              model_tf <- model_tfs[i]
+              
+              sub_index <- interval_tmp_mdl$sub_index()[[i]]
+              slice_index <- (model_t0 <= model_time & model_tf >= model_time)
+              model_x_slice <- model_time[slice_index]
+              plot_x_slice <- plot_time[slice_index]
+              
+              modeled_data <- get_modeled_data(model_x_index[sub_index],
+                                               list(value = y_index_value[sub_index], SD = y_index_sd[sub_index]),
+                                               sel_method,
+                                               sel_opt1,
+                                               sel_opt2,
+                                               model_x_slice)
+              
+              intervalPlot <- intervalPlot %>%
+                add_trace(x = rep(plot_t0, times = 2), mode = 'lines+markers',
+                          y = c(min(analyte()[["value"]][, element]), max(analyte()[["value"]][, element])),
+                          marker = list(size = 1, color = 'rgba(255, 255, 255, 0)')) %>%
+                add_trace(x = plot_x_slice,
+                          y = modeled_data[["value"]], mode = 'markers',
+                          marker = list(size = 8))
+          }
+        }
+      
+      intervalPlot_observer$resume()
+
+      intervalPlot
+
   })
   
-  output$info <- renderPrint({
-    
-    event_data("plotly_click", source = "intervalPlot")
-    
-  })
+  outputOptions(output, "intervalPlot", priority = -1)
   
   # ISTD settings -------------------------------------------------------------
   
@@ -1184,11 +1636,143 @@ ICPMS_server <- function(input, output, session) {
   # Observers -----------------------------------------------------------------
   
   observe({
+    if (!is.null(names(index$custom))) {
+      
+      updateMultipleSelectInput(session = session, input_names = select_input_names,
+                                choices = names(index$custom), selected = names(index$custom)[1])
+    }
+  })
+  
+  observe({
     updateSelectInput(session,"blkPlotElement",choices=analyteNames(),selected=analyteNames()[1])
     updateSelectInput(session,"calibrationElement",choices=analyteNames(),selected=analyteNames()[1])
     updateSelectInput(session,"e_drift",choices=analyteNames(),selected=analyteNames()[1])
     updateSelectInput(session,"intervalElement",choices=analyteNames(),selected=analyteNames()[1])
   })
+  
+  # testObs <- observe({
+  #   
+  #   browser()
+  #   
+  #   req(extracted() != 0)
+  # 
+  #   for (id in interval_tmp_mdl$id) {
+  # 
+  #     i <- which(id == interval_tmp_mdl$id)
+  # 
+  #     method <- input[[paste0("sel_", id)]]
+  #     
+  #     isolate({
+  #       if (!is.null(method)) {
+  #         if (method == "None" || method == "Value" || method == "Average") {
+  #           updateSelectInput(session, paste0("opt_1_", id),
+  #                             choices = "None", selected = "None")
+  #           updateSelectInput(session, paste0("opt_2_", id),
+  #                             choices = "None", selected = "None")
+  #         } else if (method == "Blockwise") {
+  #           
+  #           choices <- c("Average", "Previous")
+  #           
+  #           if (input[[paste0("opt_1_", id)]] %in% choices) {
+  #             selected <- input[[paste0("opt_1_", id)]]
+  #           } else {
+  #             selected <- choices[1]
+  #           }
+  #           
+  #           updateSelectInput(session, paste0("opt_1_", id),
+  #                             choices = choices, selected = selected)
+  #           updateSelectInput(session, paste0("opt_2_", id),
+  #                             choices = "None", selected = "None")
+  #         } else if (method == "Linear Regression") {
+  #           
+  #           point_nb <- length(which(interval_tmp_mdl$sub_index()[[i]]))
+  #           
+  #           choices_1 <- seq(point_nb - 1)
+  #           choices_2 <- c("Force t0", "Force 0")
+  #           
+  #           if (input[[paste0("opt_1_", id)]] %in% choices_1) {
+  #             selected_1 <- input[[paste0("opt_1_", id)]]
+  #           } else {
+  #             selected_1 <- choices_1[1]
+  #           }
+  #           
+  #           if (input[[paste0("opt_2_", id)]] %in% choices_2) {
+  #             selected_2 <- input[[paste0("opt_2_", id)]]
+  #           } else {
+  #             selected_2 <- choices_2[1]
+  #           }
+  #           
+  #           updateSelectInput(session, paste0("opt_1_", id),
+  #                             choices = choices_1, selected = selected_1)
+  #           updateSelectInput(session, paste0("opt_2_", id),
+  #                             choices = choices_2, selected = selected_2)
+  #         }
+  #       }
+  #     })
+  #   }
+  #   
+  #   testObs$suspend()
+  # 
+  # }, suspended = TRUE)
+  
+  # observeEvent(interval_tmp_mdl$interval_sel_inputs()[["method"]], {
+  #   
+  #   browser()
+  #   
+  #   for (id in interval_tmp_mdl$id) {
+  #     
+  #     i <- which(id == interval_tmp_mdl$id)
+  #     
+  #     method <- input[[paste0("sel_", id)]]
+  #     
+  #     if (!is.null(method)) {
+  #       if (method == "None" || method == "Value" || method == "Average") {
+  #         updateSelectInput(session, paste0("opt_1_", id),
+  #                           choices = "None", selected = "None")
+  #         updateSelectInput(session, paste0("opt_2_", id),
+  #                           choices = "None", selected = "None")
+  #       } else if (method == "Blockwise") {
+  #         
+  #         choices <- c("Average", "Previous")
+  #         
+  #         if (input[[paste0("opt_1_", id)]] %in% choices) {
+  #           selected <- input[[paste0("opt_1_", id)]]
+  #         } else {
+  #           selected <- choices[1]
+  #         }
+  #         
+  #         updateSelectInput(session, paste0("opt_1_", id),
+  #                           choices = choices, selected = selected)
+  #         updateSelectInput(session, paste0("opt_2_", id),
+  #                           choices = "None", selected = "None")
+  #       } else if (method == "Linear Regression") {
+  #         
+  #         point_nb <- length(which(interval_tmp_mdl$sub_index()[[i]]))
+  #           
+  #         choices_1 <- seq(point_nb - 1)
+  #         choices_2 <- c("Force t0", "Force 0")
+  #         
+  #         if (input[[paste0("opt_1_", id)]] %in% choices_1) {
+  #           selected_1 <- input[[paste0("opt_1_", id)]]
+  #         } else {
+  #           selected_1 <- choices_1[1]
+  #         }
+  #         
+  #         if (input[[paste0("opt_2_", id)]] %in% choices_2) {
+  #           selected_2 <- input[[paste0("opt_2_", id)]]
+  #         } else {
+  #           selected_2 <- choices_2[1]
+  #         }
+  #         
+  #         updateSelectInput(session, paste0("opt_1_", id),
+  #                           choices = choices_1, selected = selected_1)
+  #         updateSelectInput(session, paste0("opt_2_", id),
+  #                           choices = choices_2, selected = selected_2)
+  #       }
+  #     }
+  #   }
+  #   
+  # }, ignoreInit = TRUE)
   
   observeEvent(input$useBlankCorrection,{
     if(input$useBlankCorrection == TRUE) {
