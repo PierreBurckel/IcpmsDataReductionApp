@@ -162,7 +162,11 @@ getClosestInIndex <- function(refPosition, numericalIndex, searchWhere){
 ##Function that calculates the RSD of a collection of numerical values
 calculateRSD <- function(values){
   if (length(values) > 1){
-    return(sd(values)/mean(values)*100)
+    if (mean(values) == 0) {
+      return(0)
+    } else {
+      return(sd(values)/mean(values)*100)
+    }
   }
   else{
     return(NULL)
@@ -368,7 +372,7 @@ processData <- function(signal, eFullNames, StdDataframe, drift_ind, levelColumn
   elementNumber <- length(eFullNames)
   
   for (i in 1:elementNumber){
-
+    
     eFullName <- eFullNames[i]
 
     eCalibrationData <- getCalibrationData(elementFullName = eFullName, signal=signal,
