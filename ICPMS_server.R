@@ -46,6 +46,10 @@ ICPMS_server <- function(input, output, session) {
   elementNumber <- reactive({
     length(which(index$CPS))})
   
+  ISNames <- reactive({
+    header_1 = extracted$data[["header_1"]]
+    header_1[index$IS_CPS]})
+  
   ISNumber <- reactive({
     length(which(index$IS_CPS))})
   
@@ -225,13 +229,13 @@ ICPMS_server <- function(input, output, session) {
     
     if (displayWhat == "ISTD" & !is.null(IS_CPS())){
       indexTable = cbind(headerRows[index$temp], IS_CPS()[index$temp,])
+      colnames(indexTable) <- c(firstColumnName, ISNames())
     }
     else if (displayWhat == "analytes" & !is.null(CPS())){
       indexTable = cbind(headerRows[index$temp], CPS()[index$temp,])
+      colnames(indexTable) <- c(firstColumnName, elementNames())
     }
     else {return()}
-    
-    colnames(indexTable) <- c(firstColumnName, colnames(IS_CPS())[1:length(IS_CPS())])
     
     indexTable
     
