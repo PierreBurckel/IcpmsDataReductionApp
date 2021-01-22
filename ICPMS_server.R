@@ -271,12 +271,12 @@ ICPMS_server <- function(input, output, session) {
   
   observeEvent(index$custom, {
     if (is.null(index$custom)){return()}
-    updateSelectInput(session,"indexISTDchoiceWhat",choices=names(index$custom),names(index$custom)[1])
-    updateSelectInput(session,"indexBlkchoiceWhat",choices=names(index$custom),names(index$custom)[1])
-    updateSelectInput(session,"indexISTDchoiceIn",choices=names(index$custom),names(index$custom)[1])
-    updateSelectInput(session,"indexBlkchoiceIn",choices=names(index$custom),names(index$custom)[1])
-    updateSelectInput(session,"selectDriftIndex",choices=names(index$custom),names(index$custom)[1])
-    updateSelectInput(session,"viewConcentrationIndex",choices=c("All", names(index$custom)),"All")
+    updateSelectInput(session,"indexISTDchoiceWhat", label  = "Replace what:", choices=names(index$custom),names(index$custom)[1])
+    updateSelectInput(session,"indexBlkchoiceWhat", label  = "Replace what:", choices=names(index$custom),names(index$custom)[1])
+    updateSelectInput(session,"indexISTDchoiceIn", label  = "Replace in:", choices=names(index$custom),names(index$custom)[1])
+    updateSelectInput(session,"indexBlkchoiceIn", label  = "Replace in:", choices=names(index$custom),names(index$custom)[1])
+    updateSelectInput(session,"selectDriftIndex", label  = "Define drift index:", choices=names(index$custom),names(index$custom)[1])
+    updateSelectInput(session,"viewConcentrationIndex", label  = "View index:", choices=c("All", names(index$custom)),"All")
   })
   
   #Render ISTD table if all conditions are met
