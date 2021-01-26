@@ -197,7 +197,7 @@ ICPMS_server <- function(input, output, session) {
   })
   
   ##################################Index creation######################
-  output$indexTable <- DT::renderDT({
+  output$indexTable <- DT::renderDT(datatable({
 
     if (is.null(CPS())){return()}
     
@@ -239,7 +239,11 @@ ICPMS_server <- function(input, output, session) {
     
     indexTable
     
-  }, options = list(dom = '', pageLength = sampleNumber(), ordering=T))
+  }, extensions = c('Scroller', 'Buttons'),
+  options = list(dom = 'Bt', ordering=F, autoWidth = TRUE,
+                 scrollX = TRUE, scrollY = 300, deferRender = TRUE, scroller = TRUE,
+                 buttons = c('copy', 'csv'),
+                 columnDefs = list(list(width = '120px', targets = "_all")))))
   
   observeEvent(input$searchIndexwhat, {
     updateTextInput(session, "searchIndexName", value = input$searchIndexwhat)
@@ -280,7 +284,7 @@ ICPMS_server <- function(input, output, session) {
   })
   
   #Render ISTD table if all conditions are met
-  output$ISTDtable <- DT::renderDT({
+  output$ISTDtable <- DT::renderDT(datatable({
     if (!isValidISTD()){
       print("No available ISTD")
       return()
@@ -299,7 +303,11 @@ ICPMS_server <- function(input, output, session) {
     
     if (ISTDmode == "view") {df_view}
     else if (ISTDmode == "process") {df_process}
-  }, options = list(dom = '', pageLength = sampleNumber(), ordering=F, autoWidth = TRUE, scrollX=T, columnDefs = list(list(width = '150px', targets = "_all"))))
+  }, extensions = c('Scroller', 'Buttons'),
+  options = list(dom = 'Bt', ordering=F, autoWidth = TRUE,
+                 scrollX = TRUE, scrollY = 300, deferRender = TRUE, scroller = TRUE,
+                 buttons = c('copy', 'csv'),
+                 columnDefs = list(list(width = '120px', targets = "_all")))))
   
   #Defines a proxy for changing selections in the table
   ISTDtableProxy <- DT::dataTableProxy("ISTDtable", session = session)
@@ -374,7 +382,7 @@ ICPMS_server <- function(input, output, session) {
 ##################################Blank verif/process######################
   
   #Render ISTD table if all conditions are met
-  output$blkTable <- DT::renderDT({
+  output$blkTable <- DT::renderDT(datatable({
     if (is.null(CPS())){return()}
     blkMode = input$blkInteractionMode
     
@@ -391,7 +399,11 @@ ICPMS_server <- function(input, output, session) {
 
     if (blkMode == "view") {df_view}
     else if (blkMode == "process") {df_process}
-  }, options = list(dom = '', pageLength = sampleNumber(), ordering=F, autoWidth = TRUE, scrollX=T, columnDefs = list(list(width = '120px', targets = "_all"))))
+  }, extensions = c('Scroller', 'Buttons'),
+  options = list(dom = 'Bt', ordering=F, autoWidth = TRUE,
+                 scrollX = TRUE, scrollY = 300, deferRender = TRUE, scroller = TRUE,
+                 buttons = c('copy', 'csv'),
+                 columnDefs = list(list(width = '120px', targets = "_all")))))
   
   #Defines a proxy for changing selections in the table
   blkTableProxy <- DT::dataTableProxy("blkTable", session = session)
