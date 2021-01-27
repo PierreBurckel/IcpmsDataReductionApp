@@ -113,7 +113,7 @@ ICPMS_ui <- shinyUI({
                             actionButton("setDriftCorrection", "Set ISTD correction"),
                             textOutput("warningDrifr")),
                           mainPanel(
-                            tableOutput("smpBlkCorTable"),
+                            DT::DTOutput("smpBlkCorTable"),
                             plotOutput("driftPlot"),
                             tableOutput("test")
                           )
@@ -127,10 +127,9 @@ ICPMS_ui <- shinyUI({
                                         c("Concentrations (ppb)" = 1, "RSD (%)" = 2, "Columnwise concatenation" = 3)),
                             selectInput("viewConcentrationIndex", "View index:",
                                         "All", selected = "All"),
-                            actionButton("process", "Process data"),
-                            downloadButton("downloadData", "Download table")),
+                            actionButton("process", "Process data")),
                           mainPanel(
-                            tableOutput("conc")
+                            DT::DTOutput("conc")
                           )
                         )
                )

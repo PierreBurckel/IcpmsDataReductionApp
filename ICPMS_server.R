@@ -537,7 +537,7 @@ ICPMS_server <- function(input, output, session) {
     }
   })
   
-  output$smpBlkCorTable <- renderTable({
+  output$smpBlkCorTable <- DT::renderDT(datatable({
     if (is.null(process$ratio_cor_b()[[1]]) | is.null(index$drift) | !is.integer(input$e_ind_drift)){return()}
     driftSignal <- process$ratio_cor_b()[[1]]
     if (input$e_ind_drift < 5){
@@ -551,7 +551,11 @@ ICPMS_server <- function(input, output, session) {
     names(driftTable) <- c("Sample Name", names(driftTable)[2:length(driftTable)])
     driftTable
     
-  }, digits = -2)
+  }, extensions = c('Scroller', 'Buttons'),
+  options = list(dom = 'Bt', ordering=F, autoWidth = TRUE,
+                 scrollX = TRUE, scrollY = 300, deferRender = TRUE, scroller = TRUE,
+                 buttons = c('copy', 'csv'),
+                 columnDefs = list(list(width = '120px', targets = "_all")))))
   
   
   
@@ -601,7 +605,7 @@ ICPMS_server <- function(input, output, session) {
     process$conc <- processData(process$ratio_cor_b(), elementNames(), extracted$data[["std"]], index$drift,levelColumn(), timeColumn(), process$driftCorrectedElements)
   })
   
-  output$conc <- renderTable({
+  output$conc <- DT::renderDT(datatable({
     if (is.null(process$conc)){return()}
     
     displayWhat = strtoi(input$viewConcentrationSwitch)
@@ -614,27 +618,9 @@ ICPMS_server <- function(input, output, session) {
     else {}
     
     cbind(nameColumn(), displayMatrix)[index$custom[[displayIndex]],]
-  })
-  
-  #Button to download the list of analyte and ISTD
-  output$downloadData <- downloadHandler(
-    filename = paste("data_", input$viewConcentrationIndex, ".csv", sep = ""),
-    content = function(file) {
-      selectedIndex = index$custom[[input$viewConcentrationIndex]]
-      
-      combinedConcRSD <- mergeMatrixes(matrix1 = process$conc[[1]], matrix2 = process$conc[[2]], name1=NULL, name2="RSD (%)")
-
-      if (strtoi(input$viewConcentrationSwitch) <= 2){
-        write.csv(cbind(nameColumn(),process$conc[[strtoi(input$viewConcentrationSwitch)]])[selectedIndex,],
-                  file, sep=";", quote = FALSE,
-                  row.names = FALSE, col.names = FALSE)
-      }
-      else if (strtoi(input$viewConcentrationSwitch) == 3){
-        write.csv(cbind(nameColumn(), combinedConcRSD)[selectedIndex,],
-                  file, sep=";", quote = FALSE,
-                  row.names = FALSE, col.names = FALSE)
-      }
-    })
-  
-  #callModule(csvFile, "default", nameColumn = reactive(nameColumn()), indexCustom = reactive(index$custom), isValidISTD = reactive(isValidISTD()), IS_CPS = reactive(IS_CPS()), signal=reactive(list(IS_CPS(),IS_CPS_RSD())))
+  }, extensions = c('Scroller', 'Buttons'),
+  options = list(dom = 'Bt', ordering=F, autoWidth = TRUE,
+                 scrollX = TRUE, scrollY = 300, deferRender = TRUE, scroller = TRUE,
+                 buttons = c('copy', 'csv'),
+                 columnDefs = list(list(width = '120px', targets = "_all")))))
 }
