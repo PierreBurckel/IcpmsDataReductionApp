@@ -623,4 +623,28 @@ ICPMS_server <- function(input, output, session) {
                  scrollX = TRUE, scrollY = 300, deferRender = TRUE, scroller = TRUE,
                  buttons = c('copy', 'csv'),
                  columnDefs = list(list(width = '120px', targets = "_all")))))
+  
+  # Download table
+  
+  output$downloadData <- downloadHandler(
+    filename = paste("data_", input$viewConcentrationIndex, ".csv", sep = ""),
+    content = function(file) {
+      
+      selectedIndex <- index$custom[[input$viewConcentrationIndex]]
+      displayWhat <- strtoi(input$viewConcentrationSwitch)
+      
+      combinedConcRSD <- mergeMatrixes(matrix1 = process$conc[[1]],
+                                      matrix2 = process$conc[[2]],
+                                      name1=NULL,
+                                      name2="RSD (%)")
+      
+      if (displayWhat <= 2){
+        write.csv(cbind(nameColumn(), process$conc[[displayWhat]])[selectedIndex, ],
+                  file, sep=";", quote = FALSE, row.names = FALSE, col.names = FALSE)
+      }
+      else if (displayWhat == 3){
+        write.csv(cbind(nameColumn(), combinedConcRSD)[selectedIndex,],
+                  file, sep=";", quote = FALSE, row.names = FALSE, col.names = FALSE)
+      }
+    })
 }

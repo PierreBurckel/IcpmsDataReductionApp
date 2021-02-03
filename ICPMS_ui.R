@@ -127,7 +127,8 @@ ICPMS_ui <- shinyUI({
                                         c("Concentrations (ppb)" = 1, "RSD (%)" = 2, "Columnwise concatenation" = 3)),
                             selectInput("viewConcentrationIndex", "View index:",
                                         "All", selected = "All"),
-                            actionButton("process", "Process data")),
+                            actionButton("process", "Process data"),
+                            downloadButton("downloadData", "Download table")),
                           mainPanel(
                             DT::DTOutput("conc")
                           )
