@@ -88,6 +88,18 @@ ICPMS_ui <- shinyUI({
                         )
                ),
                
+               tabPanel("Element corrections",
+                        sidebarLayout(
+                          sidebarPanel(
+                            shinyjs::useShinyjs(),
+                            selectInput("correctionIndex", "Correction Index", "", selected = ""),
+                            selectInput("interferedElement", "Interfered element", "", selected = ""),
+                            selectInput("interferingElement", "Interfering element", "", selected = ""),
+                            actionButton("setCorrection", "Set correction")),
+                          mainPanel()
+                        )
+               ),
+               
                tabPanel("Calibration verification",
                         sidebarLayout(
                           sidebarPanel(

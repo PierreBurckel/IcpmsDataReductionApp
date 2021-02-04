@@ -12,6 +12,7 @@ ICPMS_server <- function(input, output, session) {
   extracted <- reactiveValues()
   #index contains all indexes serving as masks to display/process specific lines or columns of the raw data
   index <- reactiveValues()
+  elementCorrections <- reactiveValues()
   process <- reactiveValues()
   #tempDataFile stores the current file loaded by the user
   tempDataFile <- reactive({input$file})
@@ -96,9 +97,22 @@ ICPMS_server <- function(input, output, session) {
     replaceValues(CPS()/ISTDmatrix(), RSD(), 1:elementNumber(), input$blkInterpolationMethod, replaceIndexWhat, replaceIndexIn)})
   
   process$ratio_cor_b <- reactive({propagateUncertainty(a=process$ratio(), b=process$blk_ratio, operation="substraction")})
-
-  yplus <- reactive({(process$ratio_cor_b()[[1]] + process$ratio_cor_b()[[2]]/100*process$ratio_cor_b()[[1]])[index$drift,grep(input$e_drift, elementNames(),fixed=TRUE)]})
-  yminus <- reactive({(process$ratio_cor_b()[[1]] - process$ratio_cor_b()[[2]]/100*process$ratio_cor_b()[[1]])[index$drift,grep(input$e_drift, elementNames(),fixed=TRUE)]})
+  
+  process$ratio_cor_b_e <- reactive({
+    
+    browser()
+    
+    req(elementCorrections)
+    
+    ratio_cor_b_e <- process$ratio_cor_b()
+    for (i in seq(elementCorrections)) {
+      ratio_cor_b_e <- propagateUncertainty(a=ratio_cor_b_e, b=elementCorrections[[i]], operation="substraction")
+    }
+    return(ratio_cor_b_e)
+  })
+  
+  yplus <- reactive({(process$ratio_cor_b_e()[[1]] + process$ratio_cor_b_e()[[2]]/100*process$ratio_cor_b_e()[[1]])[index$drift,grep(input$e_drift, elementNames(),fixed=TRUE)]})
+  yminus <- reactive({(process$ratio_cor_b_e()[[1]] - process$ratio_cor_b_e()[[2]]/100*process$ratio_cor_b_e()[[1]])[index$drift,grep(input$e_drift, elementNames(),fixed=TRUE)]})
   ###########################File import and viewing###########################
   
   #Text display of imported file
@@ -281,6 +295,7 @@ ICPMS_server <- function(input, output, session) {
     updateSelectInput(session,"indexBlkchoiceIn", label  = "Replace in:", choices=names(index$custom),names(index$custom)[1])
     updateSelectInput(session,"selectDriftIndex", label  = "Define drift index:", choices=names(index$custom),names(index$custom)[1])
     updateSelectInput(session,"viewConcentrationIndex", label  = "View index:", choices=c("All", names(index$custom)),"All")
+    updateSelectInput(session,"correctionIndex", label  = "View index:", choices=names(index$custom),names(index$custom)[1])
   })
   
   #Render ISTD table if all conditions are met
@@ -483,19 +498,59 @@ ICPMS_server <- function(input, output, session) {
     DT::selectRows(liveReplaceBlkTableProxy, NULL)
   })
   
+  ################################## Element correction ############################
+  
+  observeEvent(input$setCorrection, {
+    
+    browser()
+    
+    correctionIndex = index$custom[[input$correctionIndex]]
+    interferedElement <- input$interferedElement
+    interferingElement <- input$interferingElement
+    
+    ratio_cor_b_values <- process$ratio_cor_b()[[1]]
+    ratio_cor_b_RSD <- process$ratio_cor_b()[[2]]
+    
+    if (length(correctionIndex) == 1) { # one sample used for correction
+      correctionFactorValue <- ratio_cor_b_values[correctionIndex, interferedElement] / ratio_cor_b_values[correctionIndex, interferingElement]
+      correctionFactorRSD <- sqrt((ratio_cor_b_RSD[correctionIndex, interferedElement]/100)^2 + (ratio_cor_b_RSD[correctionIndex, interferingElement]/100)^2)*100
+    }
+    else if (length(correctionIndex) > 1) { # several samples used for correction
+      correctionFactorValue <- mean(ratio_cor_b_values[correctionIndex, interferedElement] / ratio_cor_b_values[correctionIndex, interferingElement])
+      correctionFactorRSD <- sd(ratio_cor_b_values[correctionIndex, interferedElement] / ratio_cor_b_values[correctionIndex, interferingElement]) / correctionFactorValue * 100
+    }
+    else {return()}
+    
+    zeroDf <- as.data.frame(matrix(0, nrow = sampleNumber(), ncol = elementNumber()))
+    colnames(zeroDf) <- elementNames()
+    
+    interferenceValueDf <- zeroDf
+    interferenceRSDDf <- zeroDf
+    
+    interferenceValue <- correctionFactorValue * ratio_cor_b_values[ , interferingElement]
+    interferenceRSD <- sqrt((correctionFactorRSD/100)^2 + (ratio_cor_b_RSD[ , interferingElement]/100)^2) * 100
+    
+    interferenceValueDf[, interferedElement] <- interferenceValue
+    interferenceRSDDf[, interferedElement] <- interferenceRSD
+    
+    elementCorrections[[length(elementCorrections) + 1]] <- list(interferenceValueDf, interferenceRSDDf)
+  })
+  
   ################################## Calibration verification ######################
   observeEvent(elementNames(), {
     if (is.null(elementNames())){return()}
     updateSelectInput(session,"calibrationElement",choices=elementNames(),selected=elementNames()[1])
     updateSelectInput(session,"e_drift",choices=elementNames(),selected=elementNames()[1])
+    updateSelectInput(session,"interferedElement",choices=elementNames(),selected=elementNames()[1])
+    updateSelectInput(session,"interferingElement",choices=elementNames(),selected=elementNames()[1])
   })
   
   output$calibrationPlot <- renderPlotly({
-    if (is.null(process$ratio_cor_b()[[1]]) | input$calibrationElement ==""){return()}
+    if (is.null(process$ratio_cor_b_e()[[1]]) | input$calibrationElement ==""){return()}
     
     eFullName <- input$calibrationElement
     
-    calibrationData <- getCalibrationData(elementFullName = eFullName, signal=process$ratio_cor_b(),
+    calibrationData <- getCalibrationData(elementFullName = eFullName, signal=process$ratio_cor_b_e(),
                        stdIdentificationColumn=levelColumn(), stdDataFrame = extracted$data[["std"]])
     
     if (input$useWeithedRegression == TRUE) {
@@ -538,8 +593,8 @@ ICPMS_server <- function(input, output, session) {
   })
   
   output$smpBlkCorTable <- DT::renderDT(datatable({
-    if (is.null(process$ratio_cor_b()[[1]]) | is.null(index$drift) | !is.integer(input$e_ind_drift)){return()}
-    driftSignal <- process$ratio_cor_b()[[1]]
+    if (is.null(process$ratio_cor_b_e()[[1]]) | is.null(index$drift) | !is.integer(input$e_ind_drift)){return()}
+    driftSignal <- process$ratio_cor_b_e()[[1]]
     if (input$e_ind_drift < 5){
       lc <- 1
     }
@@ -570,9 +625,9 @@ ICPMS_server <- function(input, output, session) {
   })
   
   output$driftPlot <- renderPlot({
-    if (is.null(process$ratio_cor_b()[[1]]) | is.null(index$drift)){return()}
+    if (is.null(process$ratio_cor_b_e()[[1]]) | is.null(index$drift)){return()}
     driftTime = dtimeColumn()[index$drift]
-    driftValue = process$ratio_cor_b()[[1]][index$drift,grep(input$e_drift, elementNames(),fixed=TRUE)]
+    driftValue = process$ratio_cor_b_e()[[1]][index$drift,grep(input$e_drift, elementNames(),fixed=TRUE)]
     plot(x=driftTime,y=driftValue,xlab = "Time (seconds)", ylab = input$e_drift, pch=21, bg="lightblue")
 
     if (process$driftCorrectedElements[input$e_ind_drift] == TRUE){
@@ -602,7 +657,7 @@ ICPMS_server <- function(input, output, session) {
   ####################Process
   observeEvent(input$process, {
     if (is.null(process$driftCorrectedElements)){return()}
-    process$conc <- processData(process$ratio_cor_b(), elementNames(), extracted$data[["std"]], index$drift,levelColumn(), timeColumn(), process$driftCorrectedElements)
+    process$conc <- processData(process$ratio_cor_b_e(), elementNames(), extracted$data[["std"]], index$drift,levelColumn(), timeColumn(), process$driftCorrectedElements)
   })
   
   output$conc <- DT::renderDT(datatable({
