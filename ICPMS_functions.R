@@ -243,8 +243,6 @@ removeDuplicateLines <- function(df){
 ##replace_type is the replacement type (mean or previous value)
 replaceValues <- function(ICPsignal, RSD, colRange, replaceType, lineIndex, sourceLineIndex){
   
-  browser()
-  
   #This condition is useful when the signal hasn't been extracted and the function is called -> returns null
   if(is.null(ICPsignal)| is.null(RSD)){return(NULL)}
   #This condition is useful in shiny tables to return the table signal and RSD when no replacements are required

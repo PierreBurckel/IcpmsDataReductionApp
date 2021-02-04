@@ -105,8 +105,8 @@ ICPMS_server <- function(input, output, session) {
     req(elementCorrections)
     
     ratio_cor_b_e <- process$ratio_cor_b()
-    for (i in seq(elementCorrections)) {
-      ratio_cor_b_e <- propagateUncertainty(a=ratio_cor_b_e, b=elementCorrections[[i]], operation="substraction")
+    for (s in names(elementCorrections)) {
+      ratio_cor_b_e <- propagateUncertainty(a=ratio_cor_b_e, b=elementCorrections[[s]], operation="substraction")
     }
     return(ratio_cor_b_e)
   })
@@ -295,7 +295,7 @@ ICPMS_server <- function(input, output, session) {
     updateSelectInput(session,"indexBlkchoiceIn", label  = "Replace in:", choices=names(index$custom),names(index$custom)[1])
     updateSelectInput(session,"selectDriftIndex", label  = "Define drift index:", choices=names(index$custom),names(index$custom)[1])
     updateSelectInput(session,"viewConcentrationIndex", label  = "View index:", choices=c("All", names(index$custom)),"All")
-    updateSelectInput(session,"correctionIndex", label  = "View index:", choices=names(index$custom),names(index$custom)[1])
+    updateSelectInput(session,"correctionIndex", label  = "Correction Index", choices=names(index$custom),names(index$custom)[1])
   })
   
   #Render ISTD table if all conditions are met
@@ -533,7 +533,34 @@ ICPMS_server <- function(input, output, session) {
     interferenceValueDf[, interferedElement] <- interferenceValue
     interferenceRSDDf[, interferedElement] <- interferenceRSD
     
-    elementCorrections[[length(elementCorrections) + 1]] <- list(interferenceValueDf, interferenceRSDDf)
+    correctionName <- paste(make.names(input$correctionIndex), make.names(interferedElement), make.names(interferingElement), sep = "_")
+    
+    elementCorrections[[correctionName]] <- list(interferenceValueDf, interferenceRSDDf)
+  })
+  
+  observeEvent(input$rmCorrection, {
+    
+    req(input$elementCorrection)
+    
+    if (input$elementCorrection %in% names(elementCorrections)) {
+      elementCorrections[[input$elementCorrection]] <- NULL
+    } 
+    else {
+      return()
+    }
+    
+  })
+  
+  output$elementCorrectionTable <- renderTable({
+    
+    req(elementCorrections)
+    
+    data.frame(Corrections = names(elementCorrections))
+    
+  })
+  
+  observeEvent(elementCorrections, {
+    updateSelectInput(session,"elementCorrection", label  = "Element corrections", choices=names(elementCorrections), names(elementCorrections)[1])
   })
   
   ################################## Calibration verification ######################

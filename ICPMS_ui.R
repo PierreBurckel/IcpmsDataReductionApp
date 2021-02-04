@@ -95,8 +95,10 @@ ICPMS_ui <- shinyUI({
                             selectInput("correctionIndex", "Correction Index", "", selected = ""),
                             selectInput("interferedElement", "Interfered element", "", selected = ""),
                             selectInput("interferingElement", "Interfering element", "", selected = ""),
-                            actionButton("setCorrection", "Set correction")),
-                          mainPanel()
+                            actionButton("setCorrection", "Set correction"),
+                            selectInput("elementCorrection", "Element corrections", "", selected = ""),
+                            actionButton("rmCorrection", "Remove correction")),
+                          mainPanel(tableOutput("elementCorrectionTable"))
                         )
                ),
                
