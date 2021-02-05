@@ -12,7 +12,7 @@ ICPMS_server <- function(input, output, session) {
   extracted <- reactiveValues()
   #index contains all indexes serving as masks to display/process specific lines or columns of the raw data
   index <- reactiveValues()
-  elementCorrections <- reactiveValues()
+  elementCorrections <- reactiveValues(data = list())
   process <- reactiveValues()
   #tempDataFile stores the current file loaded by the user
   tempDataFile <- reactive({input$file})
@@ -102,11 +102,11 @@ ICPMS_server <- function(input, output, session) {
     
     browser()
     
-    req(elementCorrections)
+    req(elementCorrections$data)
     
     ratio_cor_b_e <- process$ratio_cor_b()
-    for (s in names(elementCorrections)) {
-      ratio_cor_b_e <- propagateUncertainty(a=ratio_cor_b_e, b=elementCorrections[[s]], operation="substraction")
+    for (s in names(elementCorrections$data)) {
+      ratio_cor_b_e <- propagateUncertainty(a=ratio_cor_b_e, b=elementCorrections$data[[s]], operation="substraction")
     }
     return(ratio_cor_b_e)
   })
@@ -535,15 +535,17 @@ ICPMS_server <- function(input, output, session) {
     
     correctionName <- paste(make.names(input$correctionIndex), make.names(interferedElement), make.names(interferingElement), sep = "_")
     
-    elementCorrections[[correctionName]] <- list(interferenceValueDf, interferenceRSDDf)
+    elementCorrections$data[[correctionName]] <- list(interferenceValueDf, interferenceRSDDf)
+    updateSelectInput(session,"elementCorrection", label  = "Element corrections", choices=names(elementCorrections$data), names(elementCorrections$data)[1])
   })
   
   observeEvent(input$rmCorrection, {
     
     req(input$elementCorrection)
     
-    if (input$elementCorrection %in% names(elementCorrections)) {
-      elementCorrections[[input$elementCorrection]] <- NULL
+    if (input$elementCorrection %in% names(elementCorrections$data)) {
+      elementCorrections$data[[input$elementCorrection]] <- NULL
+      updateSelectInput(session,"elementCorrection", label  = "Element corrections", choices=names(elementCorrections$data), names(elementCorrections$data)[1])
     } 
     else {
       return()
@@ -553,14 +555,10 @@ ICPMS_server <- function(input, output, session) {
   
   output$elementCorrectionTable <- renderTable({
     
-    req(elementCorrections)
+    req(elementCorrections$data)
     
-    data.frame(Corrections = names(elementCorrections))
+    data.frame(Corrections = names(elementCorrections$data))
     
-  })
-  
-  observeEvent(elementCorrections, {
-    updateSelectInput(session,"elementCorrection", label  = "Element corrections", choices=names(elementCorrections), names(elementCorrections)[1])
   })
   
   ################################## Calibration verification ######################
