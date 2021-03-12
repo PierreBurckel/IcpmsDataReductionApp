@@ -80,21 +80,23 @@ ICPMS_server <- function(input, output, session) {
   
   dtimeColumn <- reactive({
     timeColumn() - timeColumn()[1]})
-
-  liveReplaceISTDtable <- reactive({
-    req(isValidISTD())
-    replaceIndexWhat = index$custom[[input$indexISTDchoiceWhat]]
-    replaceIndexIn = index$custom[[input$indexISTDchoiceIn]]
-    replaceValues(IS_CPS(), IS_CPS_RSD(), 1:ISNumber(), input$ISTDcorrectionMethod, replaceIndexWhat, replaceIndexIn)})
   
-  ISTDmatrix <- reactive({createISTDMatrix(extracted$data[["ISTD"]], process$ISTDsignal)})
+  ISTDmatrix <- reactive({
+    if (isValidISTD()) {
+      return(createISTDMatrix(extracted$data[["ISTD"]], list(signal=IS_CPS(), RSD=IS_CPS_RSD())))
+    } else {
+      return(list(signal = matrix(1, nrow = sampleNumber(), ncol = elementNumber()),
+                  RSD = matrix(0, nrow = sampleNumber(), ncol = elementNumber())))
+    }
+  })
   
-  process$ratio <- reactive({list(signal=CPS()/ISTDmatrix(), RSD=RSD())})
+  process$ratio <- reactive({propagateUncertainty(a = list(signal=CPS(), RSD=RSD()), b = ISTDmatrix(), operation="division")})
   
   liveReplaceBlkTable <- reactive({
     replaceIndexWhat = index$custom[[input$indexBlkchoiceWhat]]
     replaceIndexIn = index$custom[[input$indexBlkchoiceIn]]
-    replaceValues(CPS()/ISTDmatrix(), RSD(), 1:elementNumber(), input$blkInterpolationMethod, replaceIndexWhat, replaceIndexIn)})
+    replaceValues(propagateUncertainty(a = list(signal=CPS(), RSD=RSD()), b = ISTDmatrix(), operation="division"),
+                  1:elementNumber(), input$blkInterpolationMethod, replaceIndexWhat, replaceIndexIn)})
   
   process$ratio_cor_b <- reactive({propagateUncertainty(a=process$ratio(), b=process$blk_ratio, operation="substraction")})
   
@@ -189,8 +191,7 @@ ICPMS_server <- function(input, output, session) {
     
     ##Defines an a priori ISTD variable that will be possible to modified in the next pane
     if (isValidISTD()) {
-      process$ISTDsignal <- IS_CPS()
-      process$blk_ratio <- list(signal=CPS()/ISTDmatrix(),RSD=RSD())
+      process$blk_ratio <- propagateUncertainty(a = list(signal=CPS(), RSD=RSD()), b = ISTDmatrix(), operation="division")
     } else {
       process$blk_ratio <- list(signal=CPS(),RSD=RSD())
     }
@@ -285,113 +286,14 @@ ICPMS_server <- function(input, output, session) {
       DT::selectRows(indexTableProxy, c(1:length(index$temp)))
     }
   })
-  ##################################ISTD verif/process######################
   
   observeEvent(index$custom, {
     if (is.null(index$custom)){return()}
-    updateSelectInput(session,"indexISTDchoiceWhat", label  = "Replace what:", choices=names(index$custom),names(index$custom)[1])
     updateSelectInput(session,"indexBlkchoiceWhat", label  = "Replace what:", choices=names(index$custom),names(index$custom)[1])
-    updateSelectInput(session,"indexISTDchoiceIn", label  = "Replace in:", choices=names(index$custom),names(index$custom)[1])
     updateSelectInput(session,"indexBlkchoiceIn", label  = "Replace in:", choices=names(index$custom),names(index$custom)[1])
     updateSelectInput(session,"selectDriftIndex", label  = "Define drift index:", choices=names(index$custom),names(index$custom)[1])
     updateSelectInput(session,"viewConcentrationIndex", label  = "View index:", choices=c("All", names(index$custom)),"All")
     updateSelectInput(session,"correctionIndex", label  = "Correction Index", choices=names(index$custom),names(index$custom)[1])
-  })
-  
-  #Render ISTD table if all conditions are met
-  output$ISTDtable <- DT::renderDT(datatable({
-    if (!isValidISTD()){
-      print("No available ISTD")
-      return()
-      }
-    ISTDmode = input$ISTDinteractionMode
-
-    lc = input$ISTDcolSlider[1]
-    uc = input$ISTDcolSlider[2]
-    
-    df_view <- cbind(nameColumn(), process$ISTDsignal)
-    names(df_view) <- c("Sample Name", names(df_view)[2:length(df_view)])
-    df_view <- format(df_view, digits = 3, scientific=T)
-    df_process <- cbind(nameColumn(), liveReplaceISTDtable()[[1]][, lc:uc, drop = FALSE])
-    names(df_process) <- c("Sample Name", names(df_process)[2:length(df_process)])
-    df_process <- format(df_process, digits = 3, scientific=T)
-    
-    if (ISTDmode == "view") {df_view}
-    else if (ISTDmode == "process") {df_process}
-  }, extensions = c('Scroller', 'Buttons'),
-  options = list(dom = 'Bt', ordering=F, autoWidth = TRUE,
-                 scrollX = TRUE, scrollY = 300, deferRender = TRUE, scroller = TRUE,
-                 buttons = c('copy', 'csv'),
-                 columnDefs = list(list(width = '120px', targets = "_all")))))
-  
-  #Defines a proxy for changing selections in the table
-  ISTDtableProxy <- DT::dataTableProxy("ISTDtable", session = session)
-  
-  observeEvent(input$ISTDcolSlider, {
-    if (!is.null(input$indexISTDchoiceWhat) & isValidISTD()){
-      DT::selectRows(ISTDtableProxy, index$custom[[input$indexISTDchoiceWhat]])
-    }
-    else {}
-  })
-  
-  observeEvent(input$indexISTDchoiceWhat, {
-    if (!is.null(input$indexISTDchoiceWhat) & isValidISTD()){
-      DT::selectRows(ISTDtableProxy, index$custom[[input$indexISTDchoiceWhat]])
-    }
-    else {}
-  })
-  
-  observeEvent(input$indexISTDchoiceIn, {
-    if (!is.null(input$indexISTDchoiceWhat) & isValidISTD()){
-      DT::selectRows(ISTDtableProxy, index$custom[[input$indexISTDchoiceWhat]])
-    }
-    else {}
-  })
-  
-  observeEvent(input$ISTDinteractionMode, {
-    if (!is.null(input$indexISTDchoiceWhat) & isValidISTD()){
-      DT::selectRows(ISTDtableProxy, index$custom[[input$indexISTDchoiceWhat]])
-    }
-    else {}
-  })
-  
-  observeEvent(input$ISTDcorrectionMethod, {
-    if (!is.null(input$indexISTDchoiceWhat) & isValidISTD()){
-      DT::selectRows(ISTDtableProxy, index$custom[[input$indexISTDchoiceWhat]])
-    }
-    else {}
-  })
-  
-  #Assigns the current state of the ISTD table to the ISTD variable that will be used for calculations
-  observeEvent(input$setISTDcorrectionMethod, {
-    repIndex = index$custom[[input$indexISTDchoiceWhat]]
-    if (is.null(liveReplaceISTDtable()) | is.null(repIndex) | !isValidISTD()) {return()}
-
-    lc = input$ISTDcolSlider[1]
-    uc = input$ISTDcolSlider[2]
-    
-    process$ISTDsignal[repIndex, lc:uc] <- liveReplaceISTDtable()[[1]][repIndex, lc:uc, drop = FALSE]
-  })
-  
-  #Updates the slider for row and col selections when modifications are made in IS_CPS(), i.e. when the extract button is hit
-  observeEvent(IS_CPS(), {
-    if (!isValidISTD()){return()}
-    updateSliderInput(session,"ISTDcolSlider", max=length(IS_CPS()), value = c(1,length(IS_CPS())))
-  })
-  
-  observe({
-    if(input$ISTDinteractionMode == "process") {
-      shinyjs::enable("setISTDcorrectionMethod")
-      shinyjs::enable("ISTDcolSlider")
-      shinyjs::enable("ISTDcorrectionMethod")
-      shinyjs::enable("indexISTDchoiceIn")
-    }
-    else if(input$ISTDinteractionMode == "view") {
-      shinyjs::disable("setISTDcorrectionMethod")
-      shinyjs::disable("ISTDcolSlider")
-      shinyjs::disable("ISTDcorrectionMethod")
-      shinyjs::disable("indexISTDchoiceIn")
-    }
   })
 
 ##################################Blank verif/process######################
