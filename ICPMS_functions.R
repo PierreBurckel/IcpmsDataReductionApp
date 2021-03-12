@@ -241,7 +241,10 @@ removeDuplicateLines <- function(df){
 ##ICPsignal and RSD are the dataframe containing the signal and RSD of the signal 
 ##col_range is the column range for line index replacement,
 ##replace_type is the replacement type (mean or previous value)
-replaceValues <- function(ICPsignal, RSD, colRange, replaceType, lineIndex, sourceLineIndex){
+replaceValues <- function(sourceValues, colRange, replaceType, lineIndex, sourceLineIndex){
+  
+  ICPsignal = sourceValues[["signal"]]
+  RSD = sourceValues[["RSD"]]
   
   #This condition is useful when the signal hasn't been extracted and the function is called -> returns null
   if(is.null(ICPsignal)| is.null(RSD)){return(NULL)}
@@ -352,17 +355,19 @@ extractData <- function(dataFileName, stdFileName){
 }
   
   
-createISTDMatrix <- function(ISTD_file, ISTD_signal){
+createISTDMatrix <- function(ISTD_file, ISTD){
   
-  if(is.null(ISTD_file) | is.null(ISTD_signal)){return(1)}
+  if(is.null(ISTD_file) | is.null(ISTD)){return(1)}
+  
+  browser()
+  
+  ISTD.matrix <- list(signal = matrix(nrow = nrow(ISTD[["signal"]]), ncol = nrow(ISTD_file)),
+                      RSD = matrix(nrow = nrow(ISTD[["signal"]]), ncol = nrow(ISTD_file)))
   
   for (j in 1:nrow(ISTD_file)){
     eISTD <- ISTD_file[j,2]
-    if (j == 1){
-      ISTD.matrix <- ISTD_signal[eISTD]
-    } else {
-      ISTD.matrix <- cbind(ISTD.matrix, ISTD_signal[eISTD])
-    }
+    ISTD.matrix[["signal"]][ , j] <- ISTD[["signal"]][, eISTD]
+    ISTD.matrix[["RSD"]][ , j] <- ISTD[["RSD"]][, eISTD]
   }
   return(ISTD.matrix)
 }

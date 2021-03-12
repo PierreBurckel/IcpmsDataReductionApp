@@ -44,28 +44,6 @@ ICPMS_ui <- shinyUI({
                         )
                ),
                
-               tabPanel("ISTD verification/processing",
-                        sidebarLayout(
-                          sidebarPanel(
-                            shinyjs::useShinyjs(),
-                            sliderInput("ISTDcolSlider", label = NULL, min = 1, 
-                                      max = 100, value = c(1, 1)),
-                            selectInput("ISTDinteractionMode", "Select a mode:",
-                                        c("View" = "view", "Process" = "process")),
-                            selectInput("indexISTDchoiceWhat", "Replace what:",
-                                        "", selected = ""),
-                            selectInput("ISTDcorrectionMethod", "Replacement method:",
-                                        c("None" = "none", "Average blanks" = "mean",
-                                          "Previous blank" = "prev")),
-                            selectInput("indexISTDchoiceIn", "Replace in:",
-                                        "All", selected = "All"),
-                            actionButton("setISTDcorrectionMethod", "Set ISTD correction")),
-                          mainPanel(
-                            DT::DTOutput("ISTDtable")
-                          )
-                        )
-               ),
-               
                tabPanel("Blank verification/processing",
                         sidebarLayout(
                           sidebarPanel(
