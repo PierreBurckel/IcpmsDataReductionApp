@@ -2,12 +2,16 @@ library(DT)
 library(stringr)
 library(plotly)
 source('C:/Users/pierr/Desktop/IPGP/R/ICP-MS_process/ICPMS_functions.R')
+source('C:/Users/pierr/Desktop/IPGP/R/ICP-MS_process/ICPMS_R6.R')
+
+
 
 ICPMS_server <- function(input, output, session) {
   
+  icpDataReactive <- IcpDataReactive$new( list(countValues = NULL, countSd = NULL) )
   #Setting up lists of reactiveValues variables
   #uploadedFile contains the information about user-uploaded files
-  uploadedFile <- reactiveValues()
+  uploadedFiles <- reactiveValues()
   #extracted$data contains the list of important data after extraction
   extracted <- reactiveValues()
   #index contains all indexes serving as masks to display/process specific lines or columns of the raw data
@@ -17,7 +21,7 @@ ICPMS_server <- function(input, output, session) {
   #tempDataFile stores the current file loaded by the user
   tempDataFile <- reactive({input$file})
   #extractionReady is TRUE or FALSE, depending on whether extraction can be done or not (required files assigned, variables names inputed)
-  extractionReady <- reactive({!is.null(uploadedFile$raw) & !is.null(uploadedFile$std)})
+  extractionReady <- reactive({!is.null(uploadedFiles$raw) & !is.null(uploadedFiles$std)})
   isValidISTD <- reactive({(!is.null(index$IS_CPS)) & (!is.null(extracted$data[["ISTD"]]))})
   
   #Line indexes
@@ -119,46 +123,58 @@ ICPMS_server <- function(input, output, session) {
   
   #Text display of imported file
   output$raw_assignment_txt <- renderText({
-    raw_file = uploadedFile$raw
+    raw_file = uploadedFiles$raw
     renderState(!is.null(raw_file), stateTxt = "Raw file name: ", invalidStateTxt = "Unassigned", validStateTxt = raw_file$name)
   })
   output$std_assignment_txt <- renderText({
-    std_file = uploadedFile$std
+    std_file = uploadedFiles$std
     renderState(!is.null(std_file), stateTxt = "Standard file name: ", invalidStateTxt = "Unassigned", validStateTxt = std_file$name)
   })
   output$ISTD_assignment_txt <- renderText({
-    ISTD_file = uploadedFile$ISTD
+    ISTD_file = uploadedFiles$ISTD
     renderState(!is.null(ISTD_file), stateTxt = "ISTD file name: ", invalidStateTxt = "Unassigned", validStateTxt = ISTD_file$name)
   })
   
   #Table rendering of current uploaded file
-  output$table <- renderTable({
-    req(tempDataFile())
-    tempDataTable = read.table(tempDataFile()$datapath, sep =";", header = FALSE)
-    rowNumber <- min(nrow(tempDataTable), input$fileUpload_nrow) 
-    columnNumber <- min(length(tempDataTable), input$fileUpload_ncolumn) 
-    tempDataTable[1:rowNumber, 1:columnNumber]
-  })
+  output$countParseVizualisationTable <- DT::renderDT(datatable({
+    
+    displayedData <- switch(   
+      input$countParseChoiceOfCountVizualisation,   
+      "countValues"= icpDataReactive$getCountValues(),   
+      "countSd"= icpDataReactive$getCountSd(),   
+      "countRsd"= icpDataReactive$getCountRsd()
+    )
+    
+    displayedDataRowNames <- icpDataReactive$getMetadata()[ , input$countParseChoiceOfMetadata]
+    colnames(displayedData) <- displayedDataRowNames
+    
+    
+    
+  }, extensions = c('Scroller', 'Buttons'),
+  options = list(dom = 'Bt', ordering=F, autoWidth = TRUE,
+                 scrollX = TRUE, scrollY = 300, deferRender = TRUE, scroller = TRUE,
+                 buttons = c('copy', 'csv'),
+                 columnDefs = list(list(width = '120px', targets = "_all")))))
   
   #Buttons to set raw, std and ISTD files
   observeEvent(input$setAsRaw, {
     req(tempDataFile())
-    uploadedFile$raw <- tempDataFile()
+    uploadedFiles$raw <- tempDataFile()
   })
   observeEvent(input$setAsStd, {
     req(tempDataFile())
-    uploadedFile$std <- tempDataFile()
+    uploadedFiles$std <- tempDataFile()
   })
   observeEvent(input$setAsISTD, {
     req(tempDataFile())
-    uploadedFile$ISTD <- tempDataFile()
+    uploadedFiles$ISTD <- tempDataFile()
   })
   
   #Button to download the list of analyte and ISTD
   output$downloadISTDTemplate <- downloadHandler(
     filename = "ISTD_Template.csv",
     content = function(file) {
-      write.csv(createISTDtemplate((uploadedFile$raw)$datapath),
+      write.csv(createISTDtemplate((uploadedFiles$raw)$datapath),
                 file, sep=";", quote = FALSE,
                 row.names = FALSE, col.names = FALSE)
       })
@@ -166,40 +182,45 @@ ICPMS_server <- function(input, output, session) {
   #Button to extract important information and signal of the dataframe
   observeEvent(input$extract, {
     #Defines name space
-    raw_file = uploadedFile$raw
-    std_file = uploadedFile$std
-    ISTD_file = uploadedFile$ISTD
+    rawFile = uploadedFiles$raw
+    # std_file = uploadedFiles$std
+    # ISTD_file = uploadedFiles$ISTD
     #Allows extraction if extraction condition are met (see extractionReady reactive value)
-    if (!extractionReady()){
-      return()
-    } else {}
+    countValuesAndRsd <- ExtractCountValuesAndRsdFromRawAgilentFile( rawFile$datapath )
+    icpMetadata <- GetMetadataFromRawAgilentFile( rawFile$datapath )
     
-    extracted$data <-  extractData(raw_file$datapath, std_file$datapath)
+    icpDataReactive$setCountValuesAndRsd( countValuesAndRsd )
+    # UpdateElementNamesUiDependencies( session, icpDataReactive$getElementFullNames() )
     
-    index$CPS <- extracted$data[["header_2"]] == "CPS" & !grepl("ISTD", extracted$data[["header_1"]])
-    index$CPS_RSD <- extracted$data[["header_2"]] == "CPS RSD" & !grepl("ISTD", extracted$data[["header_1"]])
-    index$IS_CPS <- extracted$data[["header_2"]] == "CPS" & grepl("ISTD", extracted$data[["header_1"]])
-    index$IS_CPS_RSD <- extracted$data[["header_2"]] == "CPS RSD" & grepl("ISTD", extracted$data[["header_1"]])
-    index$numericalColumns <- min(which(index$CPS)):length(extracted$data[["raw"]])
+    icpDataReactive$setMetadata( icpMetadata )
+    # UpdateMetadataUiDependencies( session, icpDataReactive$getMetadata() )
     
-    extracted$data[["raw"]][,index$numericalColumns] <- sapply(extracted$data[["raw"]][,index$numericalColumns], as.numeric)
     
-    ##If there exists an ISTD file that has been uploaded, extract and store it
-    if (!is.null(ISTD_file)) {
-      extracted$data[["ISTD"]]  <- read.table(ISTD_file$datapath, header = TRUE, sep=';', stringsAsFactors=FALSE)
-    } else {}
     
-    ##Defines an a priori ISTD variable that will be possible to modified in the next pane
-    if (isValidISTD()) {
-      process$blk_ratio <- propagateUncertainty(a = list(signal=CPS(), RSD=RSD()), b = ISTDmatrix(), operation="division")
-    } else {
-      process$blk_ratio <- list(signal=CPS(),RSD=RSD())
-    }
-    
-    index$custom[["All"]] <- which(rep(x= TRUE, sampleNumber()))
-    
-    ##Creates a boolean vector containing the decision of whether or not to correct signal drift for each element
-    process$driftCorrectedElements <- rep(FALSE,elementNumber())
+    # index$CPS <- extracted$data[["header_2"]] == "CPS" & !grepl("ISTD", extracted$data[["header_1"]])
+    # index$CPS_RSD <- extracted$data[["header_2"]] == "CPS RSD" & !grepl("ISTD", extracted$data[["header_1"]])
+    # index$IS_CPS <- extracted$data[["header_2"]] == "CPS" & grepl("ISTD", extracted$data[["header_1"]])
+    # index$IS_CPS_RSD <- extracted$data[["header_2"]] == "CPS RSD" & grepl("ISTD", extracted$data[["header_1"]])
+    # index$numericalColumns <- min(which(index$CPS)):length(extracted$data[["raw"]])
+    # 
+    # extracted$data[["raw"]][,index$numericalColumns] <- sapply(extracted$data[["raw"]][,index$numericalColumns], as.numeric)
+    # 
+    # ##If there exists an ISTD file that has been uploaded, extract and store it
+    # if (!is.null(ISTD_file)) {
+    #   extracted$data[["ISTD"]]  <- read.table(ISTD_file$datapath, header = TRUE, sep=';', stringsAsFactors=FALSE)
+    # } else {}
+    # 
+    # ##Defines an a priori ISTD variable that will be possible to modified in the next pane
+    # if (isValidISTD()) {
+    #   process$blk_ratio <- propagateUncertainty(a = list(signal=CPS(), RSD=RSD()), b = ISTDmatrix(), operation="division")
+    # } else {
+    #   process$blk_ratio <- list(signal=CPS(),RSD=RSD())
+    # }
+    # 
+    # index$custom[["All"]] <- which(rep(x= TRUE, sampleNumber()))
+    # 
+    # ##Creates a boolean vector containing the decision of whether or not to correct signal drift for each element
+    # process$driftCorrectedElements <- rep(FALSE,elementNumber())
     
   })
   
@@ -208,7 +229,7 @@ ICPMS_server <- function(input, output, session) {
     renderState(extractionReady(), stateTxt = "Data extraction ", invalidStateTxt = "impossible", validStateTxt = "ready")
   })
   output$ISTD_not_extracted_txt <- renderText({
-    renderState(!(!is.null(uploadedFile$ISTD) & !is.null(extracted$data) & (isValidISTD() == FALSE)), stateTxt = "", invalidStateTxt = "Caution, ISTD not extracted", validStateTxt = NULL)
+    renderState(!(!is.null(uploadedFiles$ISTD) & !is.null(extracted$data) & (isValidISTD() == FALSE)), stateTxt = "", invalidStateTxt = "Caution, ISTD not extracted", validStateTxt = NULL)
   })
   
   ##################################Index creation######################
@@ -464,8 +485,10 @@ ICPMS_server <- function(input, output, session) {
   })
   
   ################################## Calibration verification ######################
-  observeEvent(elementNames(), {
+  observeEvent(icpDataReactive$getElementFullNames(), {
     if (is.null(elementNames())){return()}
+    updateSelectInput(session,"countParseChoiceOfMetadata", label = "Row names :",
+                      choices=icpDataReactive$getElementFullNames(),selected=icpDataReactive$getElementFullNames()[1])
     updateSelectInput(session,"calibrationElement",choices=elementNames(),selected=elementNames()[1])
     updateSelectInput(session,"e_drift",choices=elementNames(),selected=elementNames()[1])
     updateSelectInput(session,"interferedElement",choices=elementNames(),selected=elementNames()[1])

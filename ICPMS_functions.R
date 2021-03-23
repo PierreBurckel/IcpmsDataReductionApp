@@ -203,14 +203,14 @@ propagateUncertainty <- function(a, b, operation){
 
 ##Function that replaces each value in a text vector by its previous value if the current value is empty (=="")
 ##Note that if the first value of the vector is empty, there will be empty values in the returned vector
-fillEmptyStrings <- function(textVector){
-  for (i in 2:length(textVector)){
-    if (textVector[i] == ""){
-      textVector[i] <- textVector[i-1]
+fillEmptyCharacterWithPrecedingCharacter <- function(characterVector){
+  for (characterNumber in 2:length( characterVector )){
+    if (characterVector[ characterNumber ] == ""){
+      characterVector[ characterNumber ] <- characterVector[ characterNumber - 1 ]
     }
   }
   
-  return(textVector)
+  return(characterVector)
 }
 
 removeDuplicateLines <- function(df){
@@ -311,7 +311,7 @@ createISTDtemplate <- function(dataFileName){
   header_2 <- scan(dataFileName, nlines = 1, what = character(),sep=';',skip=1)
   
   #fills empty values in header_1 based on previous values
-  header_1 <- fillEmptyStrings(header_1)
+  header_1 <- fillEmptyCharacterWithPrecedingCharacter(header_1)
   
   #finds the analyte and the ISTD in the headers based on the occurence of CPS and ISTD keywords
   analyteIndex <- (header_2 == "CPS") & (!grepl("ISTD", header_1))
@@ -324,35 +324,79 @@ createISTDtemplate <- function(dataFileName){
   return(data.frame(analyte=analyteColumn, ISTD=ISTDColumn))
 }
 
-##Function that takes the raw data and standard file along with some options
-##and returns the extracted information from these file. Extracted information
-##is CPS, RSD, IS.CPS, IS.RSD, etc...
-extractData <- function(dataFileName, stdFileName){
+UpdateElementNamesUiDependencies <- function(session, elementFullNames){
   
-  #header_1 contains the first line of the file
-  header_1 <- scan(dataFileName, nlines = 1, what = character(),sep=';')
-  #header_2 contains the second line of the file
-  header_2 <- scan(dataFileName, nlines = 1, what = character(),sep=';', skip=1)
-  
-  #fills empty values in header_1 based on previous values
-  header_1 <- fillEmptyStrings(header_1)
-  
-  #Import raw data without headers as they are imported previously. header_1 is used for column names
-  dat.raw <- read.csv2(dataFileName, skip = 2, header = FALSE, stringsAsFactors=FALSE)
-  names(dat.raw) <- header_1
-  
-  #Import the standard data, we consider here that there are headers corresponding to the standard names
-  StdDataframe <- read.table(stdFileName, header = TRUE, sep=';', stringsAsFactors=FALSE)
-  
-  #Remove potential duplicates of element names in the standard dataframe
-  StdDataframe <- removeDuplicateLines(StdDataframe)
-  
-  #Assigns the first column of the std file to the row names then removes the first column
-  row.names(StdDataframe) <- StdDataframe[,1]
-  StdDataframe <- StdDataframe[,2:length(StdDataframe)]
-  
-  return(list(raw=dat.raw, std=StdDataframe, header_1=header_1, header_2=header_2))
 }
+
+UpdateMetadataUiDependencies <- function(session, elementFullNames){
+  
+}
+
+GetMetadataFromRawAgilentFile <- function(icpRawAgilentDataFile){
+  
+  firstAgilentFileHeader <- scan(icpRawAgilentDataFile, nlines = 1, what = character(),sep=';')
+  firstAgilentFileHeader <- fillEmptyCharacterWithPrecedingCharacter(firstAgilentFileHeader)
+  secondAgilentFileHeader <- scan(icpRawAgilentDataFile, nlines = 1, what = character(),sep=';', skip=1)
+  fullAgilentDataTable <- read.csv2(icpRawAgilentDataFile, skip = 2, header = FALSE, stringsAsFactors=FALSE)
+  
+  metadataDataFrame <- fullAgilentDataTable[ , firstAgilentFileHeader == "Sample" ]
+  metadataDataFrameColumnNames <- secondAgilentFileHeader[ firstAgilentFileHeader == "Sample" ]
+  
+  colnames(metadataDataFrame) <- metadataDataFrameColumnNames
+  
+  return( metadataDataFrame )
+}
+
+ExtractCountValuesAndRsdFromRawAgilentFile <- function(icpRawAgilentDataFile){
+  
+  firstAgilentFileHeader <- scan(icpRawAgilentDataFile, nlines = 1, what = character(),sep=';')
+  firstAgilentFileHeader <- fillEmptyCharacterWithPrecedingCharacter(firstAgilentFileHeader)
+  secondAgilentFileHeader <- scan(icpRawAgilentDataFile, nlines = 1, what = character(),sep=';', skip=1)
+  fullAgilentDataTable <- read.csv2(icpRawAgilentDataFile, skip = 2, header = FALSE, stringsAsFactors=FALSE)
+  
+  fullElementNames <- firstAgilentFileHeader[ secondAgilentFileHeader == "CPS" ]
+  
+  countValues <- fullAgilentDataTable[ , secondAgilentFileHeader == "CPS"]
+  countRsd <- fullAgilentDataTable[ , secondAgilentFileHeader == "CPS RSD"]
+  
+  countValues <- sapply(countValues, as.numeric)
+  countRsd <- sapply(countRsd, as.numeric)
+  
+  colnames(countValues) <- fullElementNames
+  colnames(countRsd) <- fullElementNames
+  
+  return( list(countValues = countValues, countRsd = countRsd) )
+}
+
+# ##Function that takes the raw data and standard file along with some options
+# ##and returns the extracted information from these file. Extracted information
+# ##is CPS, RSD, IS.CPS, IS.RSD, etc...
+# createIcpDataFromRawAgilentFile <- function(icpRawAgilentDataFile){
+#   
+#   #header_1 contains the first line of the file
+#   header_1 <- scan(icpRawDataFile, nlines = 1, what = character(),sep=';')
+#   #header_2 contains the second line of the file
+#   header_2 <- scan(icpRawDataFile, nlines = 1, what = character(),sep=';', skip=1)
+#   
+#   #fills empty values in header_1 based on previous values
+#   header_1 <- fillEmptyCharacterWithPrecedingCharacter(header_1)
+#   
+#   #Import raw data without headers as they are imported previously. header_1 is used for column names
+#   dat.raw <- read.csv2(icpRawDataFile, skip = 2, header = FALSE, stringsAsFactors=FALSE)
+#   names(dat.raw) <- header_1
+#   
+#   #Import the standard data, we consider here that there are headers corresponding to the standard names
+#   StdDataframe <- read.table(icpStandardConcentrationsFile, header = TRUE, sep=';', stringsAsFactors=FALSE)
+#   
+#   #Remove potential duplicates of element names in the standard dataframe
+#   StdDataframe <- removeDuplicateLines(StdDataframe)
+#   
+#   #Assigns the first column of the std file to the row names then removes the first column
+#   row.names(StdDataframe) <- StdDataframe[,1]
+#   StdDataframe <- StdDataframe[,2:length(StdDataframe)]
+#   
+#   return(list(countValues=dat.raw, countSd=StdDataframe, header_1=header_1, header_2=header_2))
+# }
   
   
 createISTDMatrix <- function(ISTD_file, ISTD){
