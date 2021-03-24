@@ -138,6 +138,9 @@ ICPMS_server <- function(input, output, session) {
   #Table rendering of current uploaded file
   output$countParseVizualisationTable <- DT::renderDT(datatable({
     
+    req( icpDataReactive$getCountValues() )
+    req( input$countParseChoiceOfMetadata )
+    
     displayedData <- switch(   
       input$countParseChoiceOfCountVizualisation,   
       "countValues"= icpDataReactive$getCountValues(),   
@@ -146,7 +149,7 @@ ICPMS_server <- function(input, output, session) {
     )
     
     displayedDataRowNames <- icpDataReactive$getMetadata()[ , input$countParseChoiceOfMetadata]
-    colnames(displayedData) <- displayedDataRowNames
+    row.names(displayedData) <- displayedDataRowNames
     
     
     
@@ -182,6 +185,7 @@ ICPMS_server <- function(input, output, session) {
   #Button to extract important information and signal of the dataframe
   observeEvent(input$extract, {
     #Defines name space
+    browser()
     rawFile = uploadedFiles$raw
     # std_file = uploadedFiles$std
     # ISTD_file = uploadedFiles$ISTD
@@ -193,6 +197,12 @@ ICPMS_server <- function(input, output, session) {
     # UpdateElementNamesUiDependencies( session, icpDataReactive$getElementFullNames() )
     
     icpDataReactive$setMetadata( icpMetadata )
+    updateSelectInput(session,"countParseChoiceOfMetadata", label = "Row names :",
+                      choices=icpDataReactive$getMetadataNames(),selected=icpDataReactive$getMetadataNames()[1])
+    updateSelectInput(session,"calibrationElement",choices=elementNames(),selected=elementNames()[1])
+    updateSelectInput(session,"e_drift",choices=elementNames(),selected=elementNames()[1])
+    updateSelectInput(session,"interferedElement",choices=elementNames(),selected=elementNames()[1])
+    updateSelectInput(session,"interferingElement",choices=elementNames(),selected=elementNames()[1])
     # UpdateMetadataUiDependencies( session, icpDataReactive$getMetadata() )
     
     
@@ -485,15 +495,16 @@ ICPMS_server <- function(input, output, session) {
   })
   
   ################################## Calibration verification ######################
-  observeEvent(icpDataReactive$getElementFullNames(), {
-    if (is.null(elementNames())){return()}
-    updateSelectInput(session,"countParseChoiceOfMetadata", label = "Row names :",
-                      choices=icpDataReactive$getElementFullNames(),selected=icpDataReactive$getElementFullNames()[1])
-    updateSelectInput(session,"calibrationElement",choices=elementNames(),selected=elementNames()[1])
-    updateSelectInput(session,"e_drift",choices=elementNames(),selected=elementNames()[1])
-    updateSelectInput(session,"interferedElement",choices=elementNames(),selected=elementNames()[1])
-    updateSelectInput(session,"interferingElement",choices=elementNames(),selected=elementNames()[1])
-  })
+  # observeEvent(icpDataReactive$getElementFullNames(), {
+  #   browser()
+  #   
+  #   updateSelectInput(session,"countParseChoiceOfMetadata", label = "Row names :",
+  #                     choices=icpDataReactive$getElementFullNames(),selected=icpDataReactive$getElementFullNames()[1])
+  #   updateSelectInput(session,"calibrationElement",choices=elementNames(),selected=elementNames()[1])
+  #   updateSelectInput(session,"e_drift",choices=elementNames(),selected=elementNames()[1])
+  #   updateSelectInput(session,"interferedElement",choices=elementNames(),selected=elementNames()[1])
+  #   updateSelectInput(session,"interferingElement",choices=elementNames(),selected=elementNames()[1])
+  # }, ignoreInit = TRUE)
   
   output$calibrationPlot <- renderPlotly({
     if (is.null(process$ratio_cor_b_e()[[1]]) | input$calibrationElement ==""){return()}
