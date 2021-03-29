@@ -38,11 +38,11 @@ IcpDataReactive <- R6::R6Class(
     },
     getMetadata = function() {
       private$rxTrigger$depend()
-      return(private$metadata)
+      return(private$sharedEnvironment$metadata)
     },
     getMetadataNames = function() {
       private$rxTrigger$depend()
-      return( colnames(private$metadata) ) 
+      return( colnames(private$sharedEnvironment$metadata) ) 
     },
     setCountValuesAndSd = function(IcpData) {
       private$rxTrigger$trigger()
@@ -56,13 +56,13 @@ IcpDataReactive <- R6::R6Class(
     },
     setMetadata = function(IcpMetadata) {
       private$rxTrigger$trigger()
-      private$metadata = IcpMetadata
+      private$sharedEnvironment$metadata = IcpMetadata
     }
   ),
   private = list(
+    sharedEnvironment = new.env(),
     countValues = NULL,
     countSd = NULL,
-    metadata = NULL,
     rxTrigger = reactiveTrigger()
   )
 )

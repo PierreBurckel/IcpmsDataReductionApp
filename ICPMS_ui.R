@@ -6,29 +6,29 @@ ICPMS_ui <- shinyUI({
     navbarPage("ICP-MS processing",
                
                tabPanel(
-                 "ICP File upload and parameters",
+                 "ICP data file parser",
                  sidebarLayout(
                    sidebarPanel(
-                     fileInput("file", "File upload"),
-                     actionButton("setAsRaw", "Set as raw file"),
+                     fileInput("dataFile", "Upload your data file"),
+                     # actionButton("defineAsCountFile", "Define as count file"),
                      # actionButton("setAsStd", "Set as standard file"),
                      # downloadButton("downloadISTDTemplate", "Download ISTD template"),
                      # actionButton("setAsISTD", "Set as ISTD file"),
-                     actionButton("extract", "Extract"),
-                     selectInput("countParseChoiceOfCountVizualisation", "Display :", c("Count Values" = "countValues",
+                     actionButton("parseDataFile", "Parse data"),
+                     selectInput("icpDataParser_displayWhat", "Display :", c("Count Values" = "countValues",
                                                                               "Count SD" = "countSd",
                                                                               "Count RSD" = "countRsd")),
-                     selectInput("countParseChoiceOfMetadata", "Row names :", "", selected = "")
+                     selectInput("icpDataParser_rowNamesChoice", "Row names :", "", selected = "")
                      # htmlOutput("extract_ready_txt"),
                      # htmlOutput("ISTD_not_extracted_txt")
                      ),
                    mainPanel(
-                     htmlOutput("raw_assignment_txt"),
+                     # htmlOutput("raw_assignment_txt"),
                      # htmlOutput("std_assignment_txt"),
                      # htmlOutput("ISTD_assignment_txt"),
                      # div(style="display:inline-block",numericInput(inputId="fileUpload_nrow", label="Rows", value = 10, min = 1)),
                      # div(style="display:inline-block",numericInput(inputId="fileUpload_ncolumn", label="Columns", value = 6, min = 1)),
-                     DT::DTOutput("countParseVizualisationTable")
+                     DT::DTOutput("icpDataParser_verificationTable")
                    )
                  )
                ),

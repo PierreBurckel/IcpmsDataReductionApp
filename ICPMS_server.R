@@ -19,9 +19,9 @@ ICPMS_server <- function(input, output, session) {
   elementCorrections <- reactiveValues(data = list())
   process <- reactiveValues()
   #tempDataFile stores the current file loaded by the user
-  tempDataFile <- reactive({input$file})
+  # tempDataFile <- reactive({input$dataFile})
   #extractionReady is TRUE or FALSE, depending on whether extraction can be done or not (required files assigned, variables names inputed)
-  extractionReady <- reactive({!is.null(uploadedFiles$raw) & !is.null(uploadedFiles$std)})
+  # extractionReady <- reactive({!is.null(uploadedFiles$raw) & !is.null(uploadedFiles$std)})
   isValidISTD <- reactive({(!is.null(index$IS_CPS)) & (!is.null(extracted$data[["ISTD"]]))})
   
   #Line indexes
@@ -121,37 +121,37 @@ ICPMS_server <- function(input, output, session) {
   yminus <- reactive({(process$ratio_cor_b_e()[[1]] - process$ratio_cor_b_e()[[2]]/100*process$ratio_cor_b_e()[[1]])[index$drift,grep(input$e_drift, elementNames(),fixed=TRUE)]})
   ###########################File import and viewing###########################
   
-  #Text display of imported file
-  output$raw_assignment_txt <- renderText({
-    raw_file = uploadedFiles$raw
-    renderState(!is.null(raw_file), stateTxt = "Raw file name: ", invalidStateTxt = "Unassigned", validStateTxt = raw_file$name)
-  })
-  output$std_assignment_txt <- renderText({
-    std_file = uploadedFiles$std
-    renderState(!is.null(std_file), stateTxt = "Standard file name: ", invalidStateTxt = "Unassigned", validStateTxt = std_file$name)
-  })
-  output$ISTD_assignment_txt <- renderText({
-    ISTD_file = uploadedFiles$ISTD
-    renderState(!is.null(ISTD_file), stateTxt = "ISTD file name: ", invalidStateTxt = "Unassigned", validStateTxt = ISTD_file$name)
-  })
+  # #Text display of imported file
+  # output$raw_assignment_txt <- renderText({
+  #   raw_file = uploadedFiles$raw
+  #   renderState(!is.null(raw_file), stateTxt = "Raw file name: ", invalidStateTxt = "Unassigned", validStateTxt = raw_file$name)
+  # })
+  # output$std_assignment_txt <- renderText({
+  #   std_file = uploadedFiles$std
+  #   renderState(!is.null(std_file), stateTxt = "Standard file name: ", invalidStateTxt = "Unassigned", validStateTxt = std_file$name)
+  # })
+  # output$ISTD_assignment_txt <- renderText({
+  #   ISTD_file = uploadedFiles$ISTD
+  #   renderState(!is.null(ISTD_file), stateTxt = "ISTD file name: ", invalidStateTxt = "Unassigned", validStateTxt = ISTD_file$name)
+  # })
   
   #Table rendering of current uploaded file
-  output$countParseVizualisationTable <- DT::renderDT(datatable({
+  output$icpDataParser_verificationTable <- DT::renderDT(datatable({
     
     req( icpDataReactive$getCountValues() )
-    req( input$countParseChoiceOfMetadata )
+    req( input$icpDataParser_rowNamesChoice )
     
     displayedData <- switch(   
-      input$countParseChoiceOfCountVizualisation,   
+      input$icpDataParser_displayWhat,   
       "countValues"= icpDataReactive$getCountValues(),   
       "countSd"= icpDataReactive$getCountSd(),   
       "countRsd"= icpDataReactive$getCountRsd()
     )
     
-    displayedDataRowNames <- icpDataReactive$getMetadata()[ , input$countParseChoiceOfMetadata]
+    displayedDataRowNames <- icpDataReactive$getMetadata()[ , input$icpDataParser_rowNamesChoice]
     row.names(displayedData) <- displayedDataRowNames
     
-    
+    displayedData
     
   }, extensions = c('Scroller', 'Buttons'),
   options = list(dom = 'Bt', ordering=F, autoWidth = TRUE,
@@ -160,18 +160,18 @@ ICPMS_server <- function(input, output, session) {
                  columnDefs = list(list(width = '120px', targets = "_all")))))
   
   #Buttons to set raw, std and ISTD files
-  observeEvent(input$setAsRaw, {
-    req(tempDataFile())
-    uploadedFiles$raw <- tempDataFile()
-  })
-  observeEvent(input$setAsStd, {
-    req(tempDataFile())
-    uploadedFiles$std <- tempDataFile()
-  })
-  observeEvent(input$setAsISTD, {
-    req(tempDataFile())
-    uploadedFiles$ISTD <- tempDataFile()
-  })
+  # observeEvent(input$defineAsCountFile, {
+  #   req(tempDataFile())
+  #   uploadedFiles$raw <- tempDataFile()
+  # })
+  # observeEvent(input$setAsStd, {
+  #   req(tempDataFile())
+  #   uploadedFiles$std <- tempDataFile()
+  # })
+  # observeEvent(input$setAsISTD, {
+  #   req(tempDataFile())
+  #   uploadedFiles$ISTD <- tempDataFile()
+  # })
   
   #Button to download the list of analyte and ISTD
   output$downloadISTDTemplate <- downloadHandler(
@@ -183,27 +183,24 @@ ICPMS_server <- function(input, output, session) {
       })
 
   #Button to extract important information and signal of the dataframe
-  observeEvent(input$extract, {
-    #Defines name space
-    browser()
-    rawFile = uploadedFiles$raw
+  observeEvent(input$parseDataFile, {
+    
     # std_file = uploadedFiles$std
     # ISTD_file = uploadedFiles$ISTD
-    #Allows extraction if extraction condition are met (see extractionReady reactive value)
-    countValuesAndRsd <- ExtractCountValuesAndRsdFromRawAgilentFile( rawFile$datapath )
-    icpMetadata <- GetMetadataFromRawAgilentFile( rawFile$datapath )
+    countValuesAndRsd <- ExtractCountValuesAndRsdFromRawAgilentFile( input$dataFile$datapath )
+    icpMetadata <- GetMetadataFromRawAgilentFile( input$dataFile$datapath )
     
     icpDataReactive$setCountValuesAndRsd( countValuesAndRsd )
-    # UpdateElementNamesUiDependencies( session, icpDataReactive$getElementFullNames() )
-    
     icpDataReactive$setMetadata( icpMetadata )
-    updateSelectInput(session,"countParseChoiceOfMetadata", label = "Row names :",
-                      choices=icpDataReactive$getMetadataNames(),selected=icpDataReactive$getMetadataNames()[1])
-    updateSelectInput(session,"calibrationElement",choices=elementNames(),selected=elementNames()[1])
-    updateSelectInput(session,"e_drift",choices=elementNames(),selected=elementNames()[1])
-    updateSelectInput(session,"interferedElement",choices=elementNames(),selected=elementNames()[1])
-    updateSelectInput(session,"interferingElement",choices=elementNames(),selected=elementNames()[1])
-    # UpdateMetadataUiDependencies( session, icpDataReactive$getMetadata() )
+    
+    UpdateIcpDataUiDependencies(session, icpDataReactive)
+    
+    # updateSelectInput(session,"countParseChoiceOfMetadata", label = "Row names :",
+    #                   choices=icpDataReactive$getMetadataNames(),selected=icpDataReactive$getMetadataNames()[1])
+    # updateSelectInput(session,"calibrationElement",choices=elementNames(),selected=elementNames()[1])
+    # updateSelectInput(session,"e_drift",choices=elementNames(),selected=elementNames()[1])
+    # updateSelectInput(session,"interferedElement",choices=elementNames(),selected=elementNames()[1])
+    # updateSelectInput(session,"interferingElement",choices=elementNames(),selected=elementNames()[1])
     
     
     
@@ -235,12 +232,12 @@ ICPMS_server <- function(input, output, session) {
   })
   
   #Here we render warnings texts to help the user
-  output$extract_ready_txt <- renderText({
-    renderState(extractionReady(), stateTxt = "Data extraction ", invalidStateTxt = "impossible", validStateTxt = "ready")
-  })
-  output$ISTD_not_extracted_txt <- renderText({
-    renderState(!(!is.null(uploadedFiles$ISTD) & !is.null(extracted$data) & (isValidISTD() == FALSE)), stateTxt = "", invalidStateTxt = "Caution, ISTD not extracted", validStateTxt = NULL)
-  })
+  # output$extract_ready_txt <- renderText({
+  #   renderState(extractionReady(), stateTxt = "Data extraction ", invalidStateTxt = "impossible", validStateTxt = "ready")
+  # })
+  # output$ISTD_not_extracted_txt <- renderText({
+  #   renderState(!(!is.null(uploadedFiles$ISTD) & !is.null(extracted$data) & (isValidISTD() == FALSE)), stateTxt = "", invalidStateTxt = "Caution, ISTD not extracted", validStateTxt = NULL)
+  # })
   
   ##################################Index creation######################
   output$indexTable <- DT::renderDT(datatable({

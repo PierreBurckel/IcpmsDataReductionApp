@@ -324,12 +324,21 @@ createISTDtemplate <- function(dataFileName){
   return(data.frame(analyte=analyteColumn, ISTD=ISTDColumn))
 }
 
-UpdateElementNamesUiDependencies <- function(session, elementFullNames){
+UpdateIcpDataUiDependencies <- function(session, icpDataReactive){
   
-}
-
-UpdateMetadataUiDependencies <- function(session, elementFullNames){
+  metaDataNames <- icpDataReactive$getMetadataNames()
+  elementFullNames <- icpDataReactive$getElementFullNames()
   
+  updateSelectInput(session,"icpDataParser_rowNamesChoice", label = "Row names :",
+                    choices = metaDataNames, selected = metaDataNames[1])
+  updateSelectInput(session,"calibrationElement",
+                    choices=elementFullNames,selected=elementFullNames[1])
+  updateSelectInput(session,"e_drift",
+                    choices=elementFullNames,selected=elementFullNames[1])
+  updateSelectInput(session,"interferedElement",
+                    choices=elementFullNames,selected=elementFullNames[1])
+  updateSelectInput(session,"interferingElement",
+                    choices=elementFullNames,selected=elementFullNames[1])
 }
 
 GetMetadataFromRawAgilentFile <- function(icpRawAgilentDataFile){
