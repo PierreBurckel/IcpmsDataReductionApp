@@ -36,6 +36,7 @@ IcpDataReactive <- R6::R6Class(
       private$rxTrigger$depend()
       return( colnames(private$countValues) )
     },
+    
     getMetadata = function() {
       private$rxTrigger$depend()
       return(private$sharedEnvironment$metadata)
@@ -44,6 +45,15 @@ IcpDataReactive <- R6::R6Class(
       private$rxTrigger$depend()
       return( colnames(private$sharedEnvironment$metadata) ) 
     },
+    getStandardTable = function() {
+      private$rxTrigger$depend()
+      return(private$sharedEnvironment$standardTable)
+    },
+    getElementStandardConcentration = function(elementFullName) {
+      private$rxTrigger$depend()
+      return(private$sharedEnvironment$standardTable[elementFullName, ])
+    },
+    
     setCountValuesAndSd = function(IcpData) {
       private$rxTrigger$trigger()
       private$countValues = IcpData$countValues
@@ -54,9 +64,14 @@ IcpDataReactive <- R6::R6Class(
       private$countValues = IcpData$countValues
       private$countSd = IcpData$countRsd / 100 * IcpData$countValues
     },
+    
     setMetadata = function(IcpMetadata) {
       private$rxTrigger$trigger()
       private$sharedEnvironment$metadata = IcpMetadata
+    },
+    setStandardTable = function(standardTable) {
+      private$rxTrigger$trigger()
+      private$sharedEnvironment$standardTable = standardTable
     }
   ),
   private = list(

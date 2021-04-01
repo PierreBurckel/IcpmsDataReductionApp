@@ -231,6 +231,26 @@ ICPMS_server <- function(input, output, session) {
     
   })
   
+  output$icpStandardParser_verificationTable <- DT::renderDT(datatable({
+    
+    req( icpDataReactive$getStandardTable() )
+    
+    icpDataReactive$getStandardTable()
+    
+  }, extensions = c('Scroller', 'Buttons'),
+  options = list(dom = 'Bt', ordering=F, autoWidth = TRUE,
+                 scrollX = TRUE, scrollY = 300, deferRender = TRUE, scroller = TRUE,
+                 buttons = c('copy', 'csv'),
+                 columnDefs = list(list(width = '120px', targets = "_all")))))
+  
+  
+  observeEvent(input$parseStandardFile, {
+    
+    standardTable <- ExtractStandardConcentrationsFromFile( input$standardFile$datapath )
+    icpDataReactive$setStandardTable( standardTable )
+    
+  })
+  
   #Here we render warnings texts to help the user
   # output$extract_ready_txt <- renderText({
   #   renderState(extractionReady(), stateTxt = "Data extraction ", invalidStateTxt = "impossible", validStateTxt = "ready")

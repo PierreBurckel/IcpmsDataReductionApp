@@ -33,6 +33,19 @@ ICPMS_ui <- shinyUI({
                  )
                ),
                
+               tabPanel(
+                 "Standard data file parser",
+                 sidebarLayout(
+                   sidebarPanel(
+                     fileInput("standardFile", "Upload your standard file"),
+                     actionButton("parseStandardFile", "Parse standard"),
+                   ),
+                   mainPanel(
+                     DT::DTOutput("icpStandardParser_verificationTable")
+                   )
+                 )
+               ),
+               
                tabPanel("Index creation",
                         sidebarLayout(
                           sidebarPanel(

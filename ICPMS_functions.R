@@ -213,26 +213,24 @@ fillEmptyCharacterWithPrecedingCharacter <- function(characterVector){
   return(characterVector)
 }
 
-removeDuplicateLines <- function(df){
-  nLine <- 1
-  while (nLine < nrow(df)){
+RemoveDuplicateRowsInTable <- function(dataTable){
+  thisLineNumber <- 1
+  lastLineNumber <- nrow(dataTable)
+  while (thisLineNumber < lastLineNumber){
     linesToDelete <- numeric()
-    for (i in (nLine + 1):nrow(df)){
-      if (identical(as.character(df[i,]), as.character(df[nLine,]))){
-        linesToDelete <- c(linesToDelete, i)
+    for (otherLineNumber in (thisLineNumber + 1) : lastLineNumber){
+      if (identical(as.character(dataTable[otherLineNumber, ]), as.character(dataTable[thisLineNumber, ]))){
+        linesToDelete <- c(linesToDelete, otherLineNumber)
       }
-      else{}
     }
     
     if (length(linesToDelete) != 0){
-      df <- df[-linesToDelete, ]
+      dataTable <- dataTable[-linesToDelete, ]
     }
-    else {}
-    
-    nLine <- nLine + 1
+    thisLineNumber <- thisLineNumber + 1
   }
   
-  return(df)
+  return(dataTable)
 }
 ##Function that replaces all values in lineIndex
 ##Values are replaced by new values, based on the sourceLineIndex index
@@ -356,6 +354,19 @@ GetMetadataFromRawAgilentFile <- function(icpRawAgilentDataFile){
   return( metadataDataFrame )
 }
 
+ExtractStandardConcentrationsFromFile <- function(standardDataFile){
+  
+  standardDataframe <- read.table(standardDataFile, header = TRUE, sep=';', stringsAsFactors=FALSE)
+  standardDataframe <- RemoveDuplicateRowsInTable(standardDataframe)
+
+  #Assigns the first column of the std file to the row names then removes the first column
+  row.names(standardDataframe) <- standardDataframe[ , 1 ]
+  standardDataframe <- standardDataframe[ , 2:ncol(standardDataframe) ]
+  standardMatrix <- as.matrix(standardDataframe)
+  
+  return(standardMatrix)
+}
+
 ExtractCountValuesAndRsdFromRawAgilentFile <- function(icpRawAgilentDataFile){
   
   firstAgilentFileHeader <- scan(icpRawAgilentDataFile, nlines = 1, what = character(),sep=';')
@@ -398,7 +409,7 @@ ExtractCountValuesAndRsdFromRawAgilentFile <- function(icpRawAgilentDataFile){
 #   StdDataframe <- read.table(icpStandardConcentrationsFile, header = TRUE, sep=';', stringsAsFactors=FALSE)
 #   
 #   #Remove potential duplicates of element names in the standard dataframe
-#   StdDataframe <- removeDuplicateLines(StdDataframe)
+#   StdDataframe <- RemoveDuplicateRowsInTable(StdDataframe)
 #   
 #   #Assigns the first column of the std file to the row names then removes the first column
 #   row.names(StdDataframe) <- StdDataframe[,1]
