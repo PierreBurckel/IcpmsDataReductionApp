@@ -54,7 +54,7 @@ ICPMS_ui <- shinyUI({
                                         "", selected = ""),
                             selectInput("blkInterpolationMethod", "Replacement method:",
                                         c("None" = "none", "Average blanks" = "mean",
-                                          "Previous blank" = "prev")),
+                                          "Previous blank" = "prev", "Average in index" = "averageInBlankIndex")),
                             selectInput("indexBlkchoiceIn", "Replace in:",
                                         "All", selected = "All"),
                             actionButton("setBlkInterpolationMethod", "Set blank interpolation")),

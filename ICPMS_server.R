@@ -93,16 +93,19 @@ ICPMS_server <- function(input, output, session) {
   process$ratio <- reactive({propagateUncertainty(a = list(signal=CPS(), RSD=RSD()), b = ISTDmatrix(), operation="division")})
   
   liveReplaceBlkTable <- reactive({
+    
     replaceIndexWhat = index$custom[[input$indexBlkchoiceWhat]]
     replaceIndexIn = index$custom[[input$indexBlkchoiceIn]]
-    replaceValues(propagateUncertainty(a = list(signal=CPS(), RSD=RSD()), b = ISTDmatrix(), operation="division"),
-                  1:elementNumber(), input$blkInterpolationMethod, replaceIndexWhat, replaceIndexIn)})
+    
+    replaceValues(process$ratio(), 1:elementNumber(), input$blkInterpolationMethod, replaceIndexWhat, replaceIndexIn)
+    })
+    
   
-  process$ratio_cor_b <- reactive({propagateUncertainty(a=process$ratio(), b=process$blk_ratio, operation="substraction")})
+  process$ratio_cor_b <- reactive({
+      propagateUncertainty(a=process$ratio(), b=process$blk_ratio, operation="substraction")
+  })
   
   process$ratio_cor_b_e <- reactive({
-    
-    browser()
     
     req(elementCorrections$data)
     
@@ -403,8 +406,6 @@ ICPMS_server <- function(input, output, session) {
   ################################## Element correction ############################
   
   observeEvent(input$setCorrection, {
-    
-    browser()
     
     correctionIndex = index$custom[[input$correctionIndex]]
     interferedElement <- input$interferedElement

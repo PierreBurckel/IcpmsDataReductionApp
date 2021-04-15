@@ -245,6 +245,8 @@ replaceValues <- function(sourceValues, colRange, replaceType, lineIndex, source
   
   ICPsignal = sourceValues[["signal"]]
   RSD = sourceValues[["RSD"]]
+  modifiedIcpSignal <- ICPsignal
+  modifiedIcpRsd <- RSD
   
   #This condition is useful when the signal hasn't been extracted and the function is called -> returns null
   if(is.null(ICPsignal)| is.null(RSD)){return(NULL)}
@@ -288,16 +290,33 @@ replaceValues <- function(sourceValues, colRange, replaceType, lineIndex, source
       if (replaceType == "mean"){
         nextLine <- getClosestInIndex(nLine, nSourceLineIndex, "next")
         nextValue <- ICPsignal[nextLine,j]
-        ICPsignal[nLine,j] <- mean(c(prevValue,nextValue))
-        RSD[nLine,j] <- calculateRSD(c(prevValue,nextValue))
+        modifiedIcpSignal[nLine,j] <- mean(c(prevValue,nextValue))
+        modifiedIcpRsd[nLine,j] <- calculateRSD(c(prevValue,nextValue))
       } 
       else if (replaceType == "prev"){
-        ICPsignal[nLine,j] <- prevValue
-        RSD[nLine,j] <- prevValueRSD
+        modifiedIcpSignal[nLine,j] <- prevValue
+        modifiedIcpRsd[nLine,j] <- prevValueRSD
+      }
+      else if (replaceType == "averageInBlankIndex"){
+        if (length(nSourceLineIndex) > 1) {
+          modifiedIcpSignal[nLine,j] <- mean(ICPsignal[nSourceLineIndex, j])
+          modifiedIcpRsd[nLine,j] <- sd(ICPsignal[nSourceLineIndex, j]) / ICPsignal[nLine,j] * 100
+        }
+        else if (length(nSourceLineIndex) == 1) 
+        {
+          modifiedIcpSignal[nLine,j] <- ICPsignal[nSourceLineIndex, j]
+          modifiedIcpRsd[nLine,j] <- RSD[nSourceLineIndex, j]
+        }
+        else 
+        {
+          modifiedIcpSignal[nLine,j] <- NA
+          modifiedIcpRsd[nLine,j] <- NA
+          
+        }
       }
     }
   }
-  return(list(signal=ICPsignal,RSD=RSD))
+  return(list(signal=modifiedIcpSignal,RSD=modifiedIcpRsd))
 }
 
 ##Function to create the ISTD template based on raw datafile
@@ -358,8 +377,6 @@ extractData <- function(dataFileName, stdFileName){
 createISTDMatrix <- function(ISTD_file, ISTD){
   
   if(is.null(ISTD_file) | is.null(ISTD)){return(1)}
-  
-  browser()
   
   ISTD.matrix <- list(signal = matrix(nrow = nrow(ISTD[["signal"]]), ncol = nrow(ISTD_file)),
                       RSD = matrix(nrow = nrow(ISTD[["signal"]]), ncol = nrow(ISTD_file)))
