@@ -1,7 +1,10 @@
 library(DT)
 library(stringr)
 library(plotly)
+library(shinyjs)
 source('C:/Users/pierr/Desktop/IPGP/R/ICP-MS_process/ICPMS_functions.R')
+
+C_LETTER_KEYCODE <- 67
 
 ICPMS_server <- function(input, output, session) {
   
@@ -578,6 +581,11 @@ ICPMS_server <- function(input, output, session) {
     process$driftCorrectedElements[input$e_ind_drift] <- !process$driftCorrectedElements[input$e_ind_drift]
   })
   
+  observeEvent(input$pressedKey, {
+    if (is.null(process$driftCorrectedElements) || input$pressedKeyId != C_LETTER_KEYCODE || input$tagId != "e_ind_drift"){return()}
+    process$driftCorrectedElements[input$e_ind_drift] <- !process$driftCorrectedElements[input$e_ind_drift]
+  })
+  
   output$test <- renderTable({
     if (is.null(process$driftCorrectedElements)){return()}
     process$driftCorrectedElements
@@ -612,15 +620,15 @@ ICPMS_server <- function(input, output, session) {
   output$downloadData <- downloadHandler(
     filename = paste("data_", input$viewConcentrationIndex, ".csv", sep = ""),
     content = function(file) {
-      
+
       selectedIndex <- index$custom[[input$viewConcentrationIndex]]
       displayWhat <- strtoi(input$viewConcentrationSwitch)
-      
+
       combinedConcRSD <- mergeMatrixes(matrix1 = process$conc[[1]],
                                       matrix2 = process$conc[[2]],
                                       name1=NULL,
                                       name2="RSD (%)")
-      
+
       if (displayWhat <= 2){
         write.csv(cbind(nameColumn(), process$conc[[displayWhat]])[selectedIndex, ],
                   file, sep=";", quote = FALSE, row.names = FALSE, col.names = FALSE)
@@ -630,4 +638,18 @@ ICPMS_server <- function(input, output, session) {
                   file, sep=";", quote = FALSE, row.names = FALSE, col.names = FALSE)
       }
     })
+  
+  output$downloadBlankCorrectedTable <- downloadHandler(
+    filename = "blankCorrectedTable.csv",
+    content = function(file) {
+
+      blankCorrectedTable <- mergeMatrixes(matrix1 = process$ratio_cor_b()[["signal"]],
+                                           matrix2 = process$ratio_cor_b()[["RSD"]],
+                                           name1 = NULL,
+                                           name2 = "RSD (%)")
+
+      write.csv(cbind(nameColumn(), blankCorrectedTable), file, sep=";", quote = FALSE, row.names = FALSE, col.names = FALSE)
+
+    }
+  )
 }

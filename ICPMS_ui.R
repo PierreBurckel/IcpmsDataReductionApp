@@ -103,7 +103,16 @@ ICPMS_ui <- shinyUI({
                             selectInput("e_drift", "Choose element:", "", selected = ""),
                             numericInput("e_ind_drift", "Element number", 1),
                             actionButton("setDriftCorrection", "Set ISTD correction"),
-                            textOutput("warningDrifr")),
+                            textOutput("warningDrifr"),
+                            tags$script('
+                              pressedKeyCount = 0;
+                              $(document).on("keydown", function (e) {
+                                 var tag = e.target.id;
+                                 Shiny.onInputChange("tagId", tag);
+                                 Shiny.onInputChange("pressedKey", pressedKeyCount++);
+                                 Shiny.onInputChange("pressedKeyId", e.which);
+                              });'
+                            )),
                           mainPanel(
                             DT::DTOutput("smpBlkCorTable"),
                             plotOutput("driftPlot"),
@@ -120,7 +129,8 @@ ICPMS_ui <- shinyUI({
                             selectInput("viewConcentrationIndex", "View index:",
                                         "All", selected = "All"),
                             actionButton("process", "Process data"),
-                            downloadButton("downloadData", "Download table")),
+                            downloadButton("downloadData", "Download table"),
+                            downloadButton("downloadBlankCorrectedTable", "Download blank corrected table")),
                           mainPanel(
                             DT::DTOutput("conc")
                           )
