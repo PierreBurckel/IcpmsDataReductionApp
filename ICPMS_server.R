@@ -15,7 +15,6 @@ ICPMS_server <- function(input, output, session) {
   extracted <- reactiveValues()
   #index contains all indexes serving as masks to display/process specific lines or columns of the raw data
   index <- reactiveValues()
-  elementCorrections <- reactiveValues(data = list())
   process <- reactiveValues()
   #tempDataFile stores the current file loaded by the user
   tempDataFile <- reactive({input$file})
@@ -108,20 +107,10 @@ ICPMS_server <- function(input, output, session) {
       propagateUncertainty(a=process$ratio(), b=process$blk_ratio, operation="substraction")
   })
   
-  process$ratio_cor_b_e <- reactive({
-    
-    req(elementCorrections$data)
-    
-    ratio_cor_b_e <- process$ratio_cor_b()
-    for (s in names(elementCorrections$data)) {
-      ratio_cor_b_e <- propagateUncertainty(a=ratio_cor_b_e, b=elementCorrections$data[[s]], operation="substraction")
-    }
-    return(ratio_cor_b_e)
-  })
+  yplus <- reactive({(process$ratio_cor_b()[[1]] + process$ratio_cor_b()[[2]]/100*process$ratio_cor_b()[[1]])[index$drift,grep(input$e_drift, elementNames(),fixed=TRUE)]})
+  yminus <- reactive({(process$ratio_cor_b()[[1]] - process$ratio_cor_b()[[2]]/100*process$ratio_cor_b()[[1]])[index$drift,grep(input$e_drift, elementNames(),fixed=TRUE)]})
   
-  yplus <- reactive({(process$ratio_cor_b_e()[[1]] + process$ratio_cor_b_e()[[2]]/100*process$ratio_cor_b_e()[[1]])[index$drift,grep(input$e_drift, elementNames(),fixed=TRUE)]})
-  yminus <- reactive({(process$ratio_cor_b_e()[[1]] - process$ratio_cor_b_e()[[2]]/100*process$ratio_cor_b_e()[[1]])[index$drift,grep(input$e_drift, elementNames(),fixed=TRUE)]})
-  ###########################File import and viewing###########################
+# File import and viewing -------------------------------------------------
   
   #Text display of imported file
   output$raw_assignment_txt <- renderText({
@@ -206,7 +195,6 @@ ICPMS_server <- function(input, output, session) {
     
     ##Creates a boolean vector containing the decision of whether or not to correct signal drift for each element
     process$driftCorrectedElements <- rep(FALSE,elementNumber())
-    
   })
   
   #Here we render warnings texts to help the user
@@ -217,7 +205,8 @@ ICPMS_server <- function(input, output, session) {
     renderState(!(!is.null(uploadedFile$ISTD) & !is.null(extracted$data) & (isValidISTD() == FALSE)), stateTxt = "", invalidStateTxt = "Caution, ISTD not extracted", validStateTxt = NULL)
   })
   
-  ##################################Index creation######################
+# Index creation ----------------------------------------------------------
+
   output$indexTable <- DT::renderDT(datatable({
 
     if (is.null(CPS())){return()}
@@ -299,11 +288,10 @@ ICPMS_server <- function(input, output, session) {
     updateSelectInput(session,"indexBlkchoiceIn", label  = "Replace in:", choices=names(index$custom),names(index$custom)[1])
     updateSelectInput(session,"selectDriftIndex", label  = "Define drift index:", choices=names(index$custom),names(index$custom)[1])
     updateSelectInput(session,"viewConcentrationIndex", label  = "View index:", choices=c("All", names(index$custom)),"All")
-    updateSelectInput(session,"correctionIndex", label  = "Correction Index", choices=names(index$custom),names(index$custom)[1])
   })
 
-##################################Blank verif/process######################
-  
+# Blank verif/process -----------------------------------------------------
+
   #Render ISTD table if all conditions are met
   output$blkTable <- DT::renderDT(datatable({
     if (is.null(CPS())){return()}
@@ -405,118 +393,9 @@ ICPMS_server <- function(input, output, session) {
   observeEvent(input$searchBlkSelect, {
     DT::selectRows(liveReplaceBlkTableProxy, NULL)
   })
-  
-  ################################## Element correction ############################
-  
-  observeEvent(input$setCorrection, {
-    
-    correctionIndex = index$custom[[input$correctionIndex]]
-    interferedElement <- input$interferedElement
-    interferingElement <- input$interferingElement
-    
-    ratio_cor_b_values <- process$ratio_cor_b()[[1]]
-    ratio_cor_b_RSD <- process$ratio_cor_b()[[2]]
-    
-    if (length(correctionIndex) == 1) { # one sample used for correction
-      correctionFactorValue <- ratio_cor_b_values[correctionIndex, interferedElement] / ratio_cor_b_values[correctionIndex, interferingElement]
-      correctionFactorRSD <- sqrt((ratio_cor_b_RSD[correctionIndex, interferedElement]/100)^2 + (ratio_cor_b_RSD[correctionIndex, interferingElement]/100)^2)*100
-    }
-    else if (length(correctionIndex) > 1) { # several samples used for correction
-      correctionFactorValue <- mean(ratio_cor_b_values[correctionIndex, interferedElement] / ratio_cor_b_values[correctionIndex, interferingElement])
-      correctionFactorRSD <- sd(ratio_cor_b_values[correctionIndex, interferedElement] / ratio_cor_b_values[correctionIndex, interferingElement]) / correctionFactorValue * 100
-    }
-    else {return()}
-    
-    zeroDf <- as.data.frame(matrix(0, nrow = sampleNumber(), ncol = elementNumber()))
-    colnames(zeroDf) <- elementNames()
-    
-    interferenceValueDf <- zeroDf
-    interferenceRSDDf <- zeroDf
-    
-    interferenceValue <- correctionFactorValue * ratio_cor_b_values[ , interferingElement]
-    interferenceRSD <- sqrt((correctionFactorRSD/100)^2 + (ratio_cor_b_RSD[ , interferingElement]/100)^2) * 100
-    
-    interferenceValueDf[, interferedElement] <- interferenceValue
-    interferenceRSDDf[, interferedElement] <- interferenceRSD
-    
-    correctionName <- paste(make.names(input$correctionIndex), make.names(interferedElement), make.names(interferingElement), sep = "_")
-    
-    elementCorrections$data[[correctionName]] <- list(interferenceValueDf, interferenceRSDDf)
-    updateSelectInput(session,"elementCorrection", label  = "Element corrections", choices=names(elementCorrections$data), names(elementCorrections$data)[1])
-  })
-  
-  observeEvent(input$rmCorrection, {
-    
-    req(input$elementCorrection)
-    
-    if (input$elementCorrection %in% names(elementCorrections$data)) {
-      elementCorrections$data[[input$elementCorrection]] <- NULL
-      updateSelectInput(session,"elementCorrection", label  = "Element corrections", choices=names(elementCorrections$data), names(elementCorrections$data)[1])
-    } 
-    else {
-      return()
-    }
-    
-  })
-  
-  output$elementCorrectionTable <- renderTable({
-    
-    req(elementCorrections$data)
-    
-    data.frame(Corrections = names(elementCorrections$data))
-    
-  })
-  
-  ################################## Calibration verification ######################
-  observeEvent(elementNames(), {
-    if (is.null(elementNames())){return()}
-    updateSelectInput(session,"calibrationElement",choices=elementNames(),selected=elementNames()[1])
-    updateSelectInput(session,"e_drift",choices=elementNames(),selected=elementNames()[1])
-    updateSelectInput(session,"interferedElement",choices=elementNames(),selected=elementNames()[1])
-    updateSelectInput(session,"interferingElement",choices=elementNames(),selected=elementNames()[1])
-  })
-  
-  output$calibrationPlot <- renderPlotly({
-    if (is.null(process$ratio_cor_b_e()[[1]]) | input$calibrationElement ==""){return()}
-    
-    eFullName <- input$calibrationElement
-    
-    calibrationData <- getCalibrationData(elementFullName = eFullName, signal=process$ratio_cor_b_e(),
-                       stdIdentificationColumn=levelColumn(), stdDataFrame = extracted$data[["std"]])
-    
-    if (input$useWeithedRegression == TRUE) {
-      calibrationWeights <- getWeights(calibrationData = calibrationData, fn = input$regressionWeight)
-      calibrationModel <- lm(Signal ~ 0+Concentration, data=as.data.frame(calibrationData),
-                             weights = calibrationWeights)
-      print(calibrationData)
-    } else{
-      calibrationModel <- lm(Signal ~ 0+Concentration, data=as.data.frame(calibrationData))
-    }
-    
-    
-    concentrationInterval <- c(0, calibrationData[nrow(calibrationData),"Concentration"])
-    
-    calibrationPredict = summary(calibrationModel)$coefficients[1,1]*concentrationInterval
-    
-    if (input$useWeithedRegression == TRUE) {
-      signalResiduals <- ((calibrationData[,"Signal"] - summary(calibrationModel)$coefficients[1,1]*calibrationData[,"Concentration"]) * calibrationWeights)
-      print(calibrationData)
-    } else{
-      signalResiduals <- ((calibrationData[,"Signal"] - summary(calibrationModel)$coefficients[1,1]*calibrationData[,"Concentration"]))
-    }
-    
-    calibrationPlot <- plot_ly()
-    calibrationPlot <- add_trace(calibrationPlot, x=concentrationInterval, y=calibrationPredict, type = 'scatter', mode = 'lines')
-    calibrationPlot <- add_trace(calibrationPlot, x=calibrationData[,"Concentration"], y=calibrationData[,"Signal"], type = 'scatter', mode = 'markers') 
-    
-    residualPlot <- plot_ly()
-    residualPlot <- add_trace(residualPlot, x=calibrationData[,"Concentration"], y=signalResiduals, type = 'scatter', mode = 'markers')
-    
-    subplot(calibrationPlot, residualPlot, nrows = 2)
 
-  })
-  
-  ##################################Drift verif/process######################
+# Drift verif/process -----------------------------------------------------
+
   observeEvent(input$setAsDriftIndex, {
     if (input$selectDriftIndex != ""){
       index$drift <- index$custom[[input$selectDriftIndex]]
@@ -524,8 +403,8 @@ ICPMS_server <- function(input, output, session) {
   })
   
   output$smpBlkCorTable <- DT::renderDT(datatable({
-    if (is.null(process$ratio_cor_b_e()[[1]]) | is.null(index$drift) | !is.integer(input$e_ind_drift)){return()}
-    driftSignal <- process$ratio_cor_b_e()[[1]]
+    if (is.null(process$ratio_cor_b()[[1]]) | is.null(index$drift) | !is.integer(input$e_ind_drift)){return()}
+    driftSignal <- process$ratio_cor_b()[[1]]
     if (input$e_ind_drift < 5){
       lc <- 1
     }
@@ -544,6 +423,10 @@ ICPMS_server <- function(input, output, session) {
                  columnDefs = list(list(width = '120px', targets = "_all")))))
   
   
+  observeEvent(elementNames(), {
+    if (is.null(elementNames())){return()}
+    updateSelectInput(session,"e_drift",choices=elementNames(),selected=elementNames()[1])
+  })
   
   observeEvent(input$e_drift, {
     if (is.null(input$e_drift)){return()}
@@ -556,9 +439,9 @@ ICPMS_server <- function(input, output, session) {
   })
   
   output$driftPlot <- renderPlot({
-    if (is.null(process$ratio_cor_b_e()[[1]]) | is.null(index$drift)){return()}
+    if (is.null(process$ratio_cor_b()[[1]]) | is.null(index$drift)){return()}
     driftTime = dtimeColumn()[index$drift]
-    driftValue = process$ratio_cor_b_e()[[1]][index$drift,grep(input$e_drift, elementNames(),fixed=TRUE)]
+    driftValue = process$ratio_cor_b()[[1]][index$drift,grep(input$e_drift, elementNames(),fixed=TRUE)]
     plot(x=driftTime,y=driftValue,xlab = "Time (seconds)", ylab = input$e_drift, pch=21, bg="lightblue")
 
     if (process$driftCorrectedElements[input$e_ind_drift] == TRUE){
@@ -585,15 +468,12 @@ ICPMS_server <- function(input, output, session) {
     if (is.null(process$driftCorrectedElements) || input$pressedKeyId != C_LETTER_KEYCODE || input$tagId != "e_ind_drift"){return()}
     process$driftCorrectedElements[input$e_ind_drift] <- !process$driftCorrectedElements[input$e_ind_drift]
   })
+
+# Process -----------------------------------------------------------------
   
-  output$test <- renderTable({
-    if (is.null(process$driftCorrectedElements)){return()}
-    process$driftCorrectedElements
-  })
-  ####################Process
   observeEvent(input$process, {
     if (is.null(process$driftCorrectedElements)){return()}
-    process$conc <- processData(process$ratio_cor_b_e(), elementNames(), extracted$data[["std"]], index$drift,levelColumn(), timeColumn(), process$driftCorrectedElements)
+    process$conc <- processData(process$ratio_cor_b(), elementNames(), extracted$data[["std"]], index$drift,levelColumn(), timeColumn(), process$driftCorrectedElements)
   })
   
   output$conc <- DT::renderDT(datatable({
@@ -615,7 +495,8 @@ ICPMS_server <- function(input, output, session) {
                  buttons = c('copy', 'csv'),
                  columnDefs = list(list(width = '120px', targets = "_all")))))
   
-  # Download table
+
+# Downloadable data -------------------------------------------------------
   
   output$downloadData <- downloadHandler(
     filename = paste("data_", input$viewConcentrationIndex, ".csv", sep = ""),

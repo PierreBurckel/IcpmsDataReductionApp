@@ -66,35 +66,6 @@ ICPMS_ui <- shinyUI({
                         )
                ),
                
-               tabPanel("Element corrections",
-                        sidebarLayout(
-                          sidebarPanel(
-                            shinyjs::useShinyjs(),
-                            selectInput("correctionIndex", "Correction Index", "", selected = ""),
-                            selectInput("interferedElement", "Interfered element", "", selected = ""),
-                            selectInput("interferingElement", "Interfering element", "", selected = ""),
-                            actionButton("setCorrection", "Set correction"),
-                            selectInput("elementCorrection", "Element corrections", "", selected = ""),
-                            actionButton("rmCorrection", "Remove correction")),
-                          mainPanel(tableOutput("elementCorrectionTable"))
-                        )
-               ),
-               
-               tabPanel("Calibration verification",
-                        sidebarLayout(
-                          sidebarPanel(
-                            checkboxInput("autoAdaptCalibration", "Use min/max standards", value = FALSE),
-                            checkboxInput("useWeithedRegression", "Use weighted linear regression", value = FALSE),
-                            selectInput("regressionWeight", "Weight:", c("1/SD" = "1/SD", "1/SD^2" = "1/SD^2")),
-                            actionButton("setRegression", "Set regression"),
-                            actionButton("setRegressionALL", "Set to all")),
-                          mainPanel(
-                            selectInput("calibrationElement", "Element:", "", selected = ""),
-                            plotlyOutput("calibrationPlot")
-                          )
-                        )
-               ),
-               
                tabPanel("Drift verification/processing",
                         sidebarLayout(
                           sidebarPanel(
