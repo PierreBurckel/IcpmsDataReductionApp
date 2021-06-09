@@ -261,7 +261,7 @@ ICPMS_server <- function(input, output, session) {
   
   observeEvent(input$searchIndexCreate, {
     indexName = input$searchIndexName
-    customNumIndex = c(1:sampleNumber())[index$temp][input$indexTable_rows_selected]
+    customNumIndex = c(1:sampleNumber())[index$temp][sort(input$indexTable_rows_selected)]
     if (is.null(index$custom)) {
       index$custom <- list()
     }
@@ -271,10 +271,10 @@ ICPMS_server <- function(input, output, session) {
   indexTableProxy <- DT::dataTableProxy("indexTable", session = session)
   
   observeEvent(input$indexSelectAll, {
-    if (is.null(input$indexTable_rows_selected)){
+    if (is.null(sort(input$indexTable_rows_selected))){
       DT::selectRows(indexTableProxy, c(1:length(index$temp)))
     }
-    else if (input$indexTable_rows_selected == c(1:length(index$temp))){
+    else if (sort(input$indexTable_rows_selected) == c(1:length(index$temp))){
       DT::selectRows(indexTableProxy, NULL)
     }
     else{
