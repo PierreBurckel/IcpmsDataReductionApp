@@ -1,8 +1,8 @@
-library(DT)
-library(stringr)
-library(plotly)
-library(shinyjs)
-source('C:/Users/pierr/Desktop/IPGP/R/ICP-MS_process/ICPMS_functions.R')
+# library(DT)
+# library(stringr)
+# library(plotly)
+# library(shinyjs)
+# source('C:/Users/pierr/Desktop/IPGP/R/ICP-MS_process/ICPMS_functions.R')
 
 C_LETTER_KEYCODE <- 67
 
@@ -107,8 +107,8 @@ ICPMS_server <- function(input, output, session) {
       propagateUncertainty(a=process$ratio(), b=process$blk_ratio, operation="substraction")
   })
   
-  yplus <- reactive({(process$ratio_cor_b()[[1]] + process$ratio_cor_b()[[2]]/100*process$ratio_cor_b()[[1]])[index$drift,grep(input$e_drift, elementNames(),fixed=TRUE)]})
-  yminus <- reactive({(process$ratio_cor_b()[[1]] - process$ratio_cor_b()[[2]]/100*process$ratio_cor_b()[[1]])[index$drift,grep(input$e_drift, elementNames(),fixed=TRUE)]})
+  yplus <- reactive({(process$ratio_cor_b()[[1]] + process$ratio_cor_b()[[2]]/100*process$ratio_cor_b()[[1]])[index$drift, input$e_ind_drift]})
+  yminus <- reactive({(process$ratio_cor_b()[[1]] - process$ratio_cor_b()[[2]]/100*process$ratio_cor_b()[[1]])[index$drift, input$e_ind_drift]})
   
 # File import and viewing -------------------------------------------------
   
@@ -426,9 +426,10 @@ ICPMS_server <- function(input, output, session) {
   observeEvent(elementNames(), {
     if (is.null(elementNames())){return()}
     updateSelectInput(session,"e_drift",choices=elementNames(),selected=elementNames()[1])
+    updateNumericInput(session,"e_ind_drift", "Element number", 1, min = 1, max = length(elementNames()))
   })
   
-  observeEvent(input$e_drift, {
+  observeEvent(input$changeElementDisplayedForDrift, {
     if (is.null(input$e_drift)){return()}
     updateNumericInput(session, "e_ind_drift", value = grep(input$e_drift,elementNames(),fixed=TRUE))
   })
@@ -440,9 +441,10 @@ ICPMS_server <- function(input, output, session) {
   
   output$driftPlot <- renderPlot({
     if (is.null(process$ratio_cor_b()[[1]]) | is.null(index$drift)){return()}
+    elementName = elementNames()[input$e_ind_drift]
     driftTime = dtimeColumn()[index$drift]
-    driftValue = process$ratio_cor_b()[[1]][index$drift,grep(input$e_drift, elementNames(),fixed=TRUE)]
-    plot(x=driftTime,y=driftValue,xlab = "Time (seconds)", ylab = input$e_drift, pch=21, bg="lightblue")
+    driftValue = process$ratio_cor_b()[[1]][index$drift,input$e_ind_drift]
+    plot(x=driftTime,y=driftValue,xlab = "Time (seconds)", ylab = elementName, pch=21, bg="lightblue")
 
     if (process$driftCorrectedElements[input$e_ind_drift] == TRUE){
       time_0 = driftTime[1]

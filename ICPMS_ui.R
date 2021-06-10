@@ -1,5 +1,5 @@
-library(plotly)
-source('C:/Users/pierr/Desktop/IPGP/R/ICP-MS_process/ICPMS_functions.R')
+# library(plotly)
+# source('C:/Users/pierr/Desktop/IPGP/R/ICP-MS_process/ICPMS_functions.R')
 
 ICPMS_ui <- shinyUI({
   fluidPage(
@@ -72,6 +72,7 @@ ICPMS_ui <- shinyUI({
                             selectInput("selectDriftIndex", "Define drift index:", "", selected = ""),
                             actionButton("setAsDriftIndex", "Set drift index"),
                             selectInput("e_drift", "Choose element:", "", selected = ""),
+                            actionButton("changeElementDisplayedForDrift", "Switch to element"),
                             numericInput("e_ind_drift", "Element number", 1),
                             actionButton("setDriftCorrection", "Set ISTD correction"),
                             textOutput("warningDrifr"),

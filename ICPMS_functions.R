@@ -1,5 +1,5 @@
-library(shiny)
-library(stringr)
+# library(shiny)
+# library(stringr)
 
 agilentElementNamePattern <- "[ ]{2}[A-Z]{1}[a-z]*[ ]{2}"
 
