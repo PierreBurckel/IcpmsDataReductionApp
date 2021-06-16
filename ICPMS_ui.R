@@ -102,7 +102,8 @@ ICPMS_ui <- shinyUI({
                                         "All", selected = "All"),
                             actionButton("process", "Process data"),
                             downloadButton("downloadData", "Download table"),
-                            downloadButton("downloadBlankCorrectedTable", "Download blank corrected table")),
+                            downloadButton("downloadBlankCorrectedTable", "Download blank corrected table"),
+                            downloadButton("downloadConcentrationTable", "Download blank corrected table")),
                           mainPanel(
                             DT::DTOutput("conc")
                           )
