@@ -3,6 +3,37 @@
 
 agilentElementNamePattern <- "[ ]{2}[A-Z]{1}[a-z]*[ ]{2}"
 
+setMatrixFormat <- function(matrixToFormat, columnNamesToAdd, parameters) {
+  
+  columnsToAdd <- parameters[["categoricalDataAndTime"]][ , columnNamesToAdd]
+  
+  if (class(matrixToFormat) == "matrix" || class(matrixToFormat) ==  "data.frame") {
+    matrixToFormat <- as.matrix(matrixToFormat)
+    formatedMatrix <- cbind(columnsToAdd, matrixToFormat)
+    colnames(formatedMatrix) <- c(columnNamesToAdd, parameters[["elementNames"]])
+  }
+  
+  if (class(matrixToFormat) == "list") {
+    matrixToFormat[[1]] <- as.matrix(matrixToFormat[[1]])
+    matrixToFormat[[2]] <- as.matrix(matrixToFormat[[2]])
+    formatedMatrix <- matrix(0, nrow = parameters[["sampleNumber"]], ncol = 2 * parameters[["elementNumber"]])
+    formatedMatrixColumnNames <- rep("", 2 * parameters[["elementNumber"]])
+    
+    firstMatrixInsertionIndex <- seq(from = 1, to = 2 * parameters[["elementNumber"]], by = 2)
+    secondMatrixInsertionIndex <- seq(from = 2, to = 2 * parameters[["elementNumber"]], by = 2)
+    
+    formatedMatrix[ , firstMatrixInsertionIndex] <- matrixToFormat[[1]]
+    formatedMatrix[ , secondMatrixInsertionIndex] <- matrixToFormat[[2]]
+    formatedMatrixColumnNames[firstMatrixInsertionIndex] <- parameters[["elementNames"]]
+    formatedMatrixColumnNames[secondMatrixInsertionIndex] <- paste0(parameters[["elementNames"]], " RSD (%)")
+    
+    formatedMatrix <- cbind(columnsToAdd, formatedMatrix)
+    colnames(formatedMatrix) <- c(columnNamesToAdd, formatedMatrixColumnNames)
+  }
+  
+  return(formatedMatrix)
+}
+
 getWeights <- function(calibrationData, fn) {
   if (fn == "1/SD") {
     return(1/(calibrationData[,"RSD"]/100 *calibrationData[,"Signal"]))
@@ -386,77 +417,9 @@ createISTDMatrix <- function(ISTD_file, ISTD){
     ISTD.matrix[["signal"]][ , j] <- ISTD[["signal"]][, eISTD]
     ISTD.matrix[["RSD"]][ , j] <- ISTD[["RSD"]][, eISTD]
   }
+  
+  colnames(ISTD.matrix[["signal"]]) <- ISTD_file[ ,1]
+  colnames(ISTD.matrix[["RSD"]]) <- ISTD_file[ ,1]
+  
   return(ISTD.matrix)
-}
-
-
-processData <- function(signal, eFullNames, StdDataframe, drift_ind, levelColumn, timeColumn, eDriftChoice){
-  
-  elementNumber <- length(eFullNames)
-  
-  for (i in 1:elementNumber){
-    
-    eFullName <- eFullNames[i]
-
-    eCalibrationData <- getCalibrationData(elementFullName = eFullName, signal=signal,
-                                       stdIdentificationColumn=levelColumn, stdDataFrame = StdDataframe)
-
-    eDriftIndex <-  getElementDriftIndex(elementFullName = eFullName, stdDataFrame = StdDataframe, 
-                                        stdIdentificationColumn=levelColumn, driftIndex = drift_ind)
-
-    dtimeColumn <- timeColumn - timeColumn[eDriftIndex][1]
-    dtimeColumn[dtimeColumn < 0] <- 0
-
-    eDriftData <- cbind(Signal=signal[[1]][eDriftIndex,i],dt=dtimeColumn[eDriftIndex])  
-
-    #defines the calibration linear model
-    calibrationModel <- lm(Concentration ~ 0+Signal, data=as.data.frame(eCalibrationData))
-    
-    #Here be drift model creation and signal prediction along the whole sequence for the drift standard
-    #if no drift signal, don't try to create a model for the drift and set drift prediction to NA
-    #else create a model. Predict the drift signal on the whole sequence. Doesn't mean that it is going to be used
-    if (all(is.na(signal[[1]][eDriftIndex,i]))){
-      driftPredict = rep(NA, nrow(signal[[1]]))
-    }
-    else{
-      driftModel <- lm(Signal ~ poly(dt, degree=2, raw=TRUE), data = as.data.frame(eDriftData))
-      driftPredict=predict(driftModel, newdata = data.frame(dt=dtimeColumn))
-    }
-
-    #Here we fill a dataframe and a vector containing the predicted drift signals and calibration coefficient respectively for all elements
-    #If i == 1, this is the first element and we need to initialize the variables
-    #Else we can directly fill the dataframe and vector using dataframe[i] or vector[i]
-    if (i == 1){
-      driftDataFrame <- data.frame(driftPredict)
-      coefVector <- summary(calibrationModel)$coefficients[1,1]
-    }
-    else{
-      driftDataFrame[i] <- driftPredict
-      coefVector[i] <- summary(calibrationModel)$coefficients[1,1]
-    }
-    
-    #If we chose to correct for the drift (eDriftChoice[i] == TRUE)
-    #Divide the drift dataframe at the ith position by the intersect at dt = 0 of the drift model
-    #We transform the drift dataframe by a drift relative to dt = 0 so that we can apply the drift correction by simple multiplication
-    #Else, if we chose not to correct the drift, we fill the dataframe at the ith position with 1 so that multiplication produces identity
-    if (eDriftChoice[i]){
-      driftDataFrame[i] <- driftDataFrame[i] / summary(driftModel)$coefficients[1,1]
-      driftDataFrame[is.na(driftDataFrame[,i]), i] <- 1
-    } 
-    else {
-      driftDataFrame[i] <- rep(1, nrow(signal[[1]]))
-    }
-  }
-  
-  print(driftDataFrame)
-  
-  signalDriftCorrectedRatio <- signal[[1]] / driftDataFrame
-  signalDriftCorrectedRSD <- signal[[2]]
-  concentration <- t(t(signalDriftCorrectedRatio)*coefVector)
-  concentration[concentration < 0] <- "<blk"
-  
-  concentrationRSD <- signalDriftCorrectedRSD
-  concentrationRSD[concentration < 0] <- "N/A"
-  
-  return(list(concentration,concentrationRSD))
 }

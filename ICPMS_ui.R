@@ -96,16 +96,18 @@ ICPMS_ui <- shinyUI({
                tabPanel("Process",
                         sidebarLayout(
                           sidebarPanel(
-                            selectInput("viewConcentrationSwitch", "Display:",
-                                        c("Concentrations (ppb)" = 1, "RSD (%)" = 2, "Columnwise concatenation" = 3)),
+                            selectInput("viewCustomDataSwitch", "Display:",
+                                        c("Value" = 1, "Uncertainty" = 2, "Columnwise concatenation" = 3)),
                             selectInput("viewConcentrationIndex", "View index:",
                                         "All", selected = "All"),
-                            actionButton("process", "Process data"),
-                            downloadButton("downloadData", "Download table"),
-                            downloadButton("downloadBlankCorrectedTable", "Download blank corrected table"),
-                            downloadButton("downloadConcentrationTable", "Download blank corrected table")),
+                            selectInput("dataReductionStateSelection", "Select the type of data to download:",
+                                        c("Counts per second", "Internal Standard matrix (adapted for analytes)",
+                                          "Internal Standard ratio", "Blank matrix", "Blank corrected signal (CPS or ratio)",
+                                          "Drift matrix", "Drift corrected signal (CPS or ratio, blank corrected)", "Concentration"),
+                                        selected = "Concentration"),
+                            downloadButton("downloadCustomTable", "Download custom table")),
                           mainPanel(
-                            DT::DTOutput("conc")
+                            DT::DTOutput("customDataTable")
                           )
                         )
                )

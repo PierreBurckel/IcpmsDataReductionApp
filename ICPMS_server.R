@@ -16,6 +16,7 @@ ICPMS_server <- function(input, output, session) {
   #index contains all indexes serving as masks to display/process specific lines or columns of the raw data
   index <- reactiveValues()
   process <- reactiveValues()
+  parameters <- reactiveValues()
   #tempDataFile stores the current file loaded by the user
   tempDataFile <- reactive({input$file})
   #extractionReady is TRUE or FALSE, depending on whether extraction can be done or not (required files assigned, variables names inputed)
@@ -149,12 +150,12 @@ ICPMS_server <- function(input, output, session) {
       }
     }
     
-    return(driftDataFrame)
+    return(list(signal = driftDataFrame, RSD = matrix(0, nrow = sampleNumber(), ncol = elementNumber())))
   })
   
   process$driftAndBlankCorrectedMatrix <- reactive({
     
-    signalDriftCorrectedRatio <- process$ratio_cor_b()[[1]] / process$driftFactorMatrix()
+    signalDriftCorrectedRatio <- process$ratio_cor_b()[[1]] / process$driftFactorMatrix()[["signal"]]
     signalDriftCorrectedRSD <- process$ratio_cor_b()[[2]]
     return(list(signal = signalDriftCorrectedRatio, RSD = signalDriftCorrectedRSD))
   })
@@ -188,6 +189,48 @@ ICPMS_server <- function(input, output, session) {
     concentrationRSD[concentration < 0] <- "N/A"
     
     return(list(signal = concentration, RSD = concentrationRSD))
+  })
+  
+  downloadTabData <- reactive({
+    
+    selectedIndex <- index$custom[[input$viewConcentrationIndex]]
+    
+    downloadTabDataSignal <- switch(input$dataReductionStateSelection,
+                                     "Counts per second" = CPS(),
+                                     "Internal Standard matrix (adapted for analytes)" = ISTDmatrix()[["signal"]],
+                                     "Internal Standard ratio" = process$ratio()[["signal"]],
+                                     "Blank matrix" = process$blk_ratio[["signal"]],
+                                     "Blank corrected signal (CPS or ratio)" = process$ratio_cor_b()[["signal"]],
+                                     "Drift matrix" = process$driftFactorMatrix()[["signal"]],
+                                     "Drift corrected signal (CPS or ratio, blank corrected)" = process$driftAndBlankCorrectedMatrix()[["signal"]],
+                                     "Concentration" = process$concentration()[["signal"]]
+    )
+    
+    downloadTabDataRsd <- switch(input$dataReductionStateSelection,
+                                  "Counts per second" = RSD(),
+                                  "Internal Standard matrix (adapted for analytes)" = ISTDmatrix()[["RSD"]],
+                                  "Internal Standard ratio" = process$ratio()[["RSD"]],
+                                  "Blank matrix" = process$blk_ratio[["RSD"]],
+                                  "Blank corrected signal (CPS or ratio)" = process$ratio_cor_b()[["RSD"]],
+                                  "Drift matrix" = process$driftFactorMatrix()[["RSD"]],
+                                  "Drift corrected signal (CPS or ratio, blank corrected)" = process$driftAndBlankCorrectedMatrix()[["RSD"]],
+                                  "Concentration" = process$concentration()[["RSD"]]
+    )
+    
+    downloadTabDataSignalFormated <- setMatrixFormat(downloadTabDataSignal, columnNamesToAdd = "Sample Name", parameters = parameters)
+    downloadTabDataRsdFormated <- setMatrixFormat(downloadTabDataRsd, columnNamesToAdd = "Sample Name", parameters = parameters)
+    mergedSignalAndRsdFormated <- setMatrixFormat(list(signal = downloadTabDataSignal, RSD = downloadTabDataRsd),
+                                          columnNamesToAdd = "Sample Name", parameters = parameters)
+    
+    
+    customData <- switch(input$viewCustomDataSwitch,
+                         "1" = downloadTabDataSignalFormated,
+                         "2" = downloadTabDataRsdFormated,
+                         "3" = mergedSignalAndRsdFormated
+    )
+    
+    return(customData[selectedIndex, ])
+    
   })
   
 # File import and viewing -------------------------------------------------
@@ -271,10 +314,21 @@ ICPMS_server <- function(input, output, session) {
       process$blk_ratio <- list(signal=CPS(),RSD=RSD())
     }
     
+    colnames(process$blk_ratio[["signal"]]) <- elementNames()
+    colnames(process$blk_ratio[["RSD"]]) <- elementNames()
+    
     index$custom[["All"]] <- which(rep(x= TRUE, sampleNumber()))
     
     ##Creates a boolean vector containing the decision of whether or not to correct signal drift for each element
     process$driftCorrectedElements <- rep(FALSE,elementNumber())
+    
+    parameters[["categoricalDataAndTime"]] <- cbind(timeColumn(), nameColumn(), typeColumn(), levelColumn(), dtimeColumn())
+    colnames(parameters[["categoricalDataAndTime"]]) <- c("Time", "Sample Name", "Type", "Level", "Delta-Time")
+    parameters[["elementNames"]] <- elementNames()
+    parameters[["elementNumber"]] <- elementNumber()
+    parameters[["internalStandardNames"]] <- ISNames()
+    parameters[["internalStandardNumber"]] <- ISNumber()
+    parameters[["sampleNumber"]] <- sampleNumber()
   })
   
   #Here we render warnings texts to help the user
@@ -553,119 +607,24 @@ ICPMS_server <- function(input, output, session) {
 
 # Process -----------------------------------------------------------------
   
-  observeEvent(input$process, {
-    if (is.null(process$driftCorrectedElements)){return()}
-    process$conc <- processData(process$ratio_cor_b(), elementNames(), extracted$data[["std"]], index$drift,levelColumn(), timeColumn(), process$driftCorrectedElements)
-  })
-  
-  output$conc <- DT::renderDT(datatable({
-    if (is.null(process$concentration())){return()}
+  output$customDataTable <- DT::renderDT(datatable({
     
-    displayWhat = strtoi(input$viewConcentrationSwitch)
-    displayIndex = input$viewConcentrationIndex
+    downloadTabData()
     
-    if (displayWhat <= 2){displayMatrix <- process$concentration()[[displayWhat]]}
-    else if (displayWhat == 3){
-      displayMatrix <- mergeMatrixes(matrix1 = process$concentration()[[1]], matrix2 = process$concentration()[[2]], name1=NULL, name2="RSD (%)")
-    }
-    else {}
-    
-    cbind(nameColumn(), displayMatrix)[index$custom[[displayIndex]],]
   }, extensions = c('Scroller', 'Buttons'),
   options = list(dom = 'Bt', ordering=F, autoWidth = TRUE,
                  scrollX = TRUE, scrollY = 300, deferRender = TRUE, scroller = TRUE,
                  buttons = c('copy', 'csv'),
                  columnDefs = list(list(width = '120px', targets = "_all")))))
   
-  # output$conc <- DT::renderDT(datatable({
-  #   if (is.null(process$conc)){return()}
-  #   
-  #   displayWhat = strtoi(input$viewConcentrationSwitch)
-  #   displayIndex = input$viewConcentrationIndex
-  #   
-  #   if (displayWhat <= 2){displayMatrix <- process$conc[[displayWhat]]}
-  #   else if (displayWhat == 3){
-  #     displayMatrix <- mergeMatrixes(matrix1 = process$conc[[1]], matrix2 = process$conc[[2]], name1=NULL, name2="RSD (%)")
-  #   }
-  #   else {}
-  #   
-  #   cbind(nameColumn(), displayMatrix)[index$custom[[displayIndex]],]
-  # }, extensions = c('Scroller', 'Buttons'),
-  # options = list(dom = 'Bt', ordering=F, autoWidth = TRUE,
-  #                scrollX = TRUE, scrollY = 300, deferRender = TRUE, scroller = TRUE,
-  #                buttons = c('copy', 'csv'),
-  #                columnDefs = list(list(width = '120px', targets = "_all")))))
-  
 
 # Downloadable data -------------------------------------------------------
  
-  output$downloadData <- downloadHandler(
-    filename = paste("data_", input$viewConcentrationIndex, ".csv", sep = ""),
+  output$downloadCustomTable <- downloadHandler(
+    filename = paste0("data_", input$viewConcentrationIndex, ".csv"),
     content = function(file) {
       
-      selectedIndex <- index$custom[[input$viewConcentrationIndex]]
-      displayWhat <- strtoi(input$viewConcentrationSwitch)
-      
-      combinedConcRSD <- mergeMatrixes(matrix1 = process$concentration()[[1]],
-                                       matrix2 = process$concentration()[[2]],
-                                       name1=NULL,
-                                       name2="RSD (%)")
-      
-      if (displayWhat <= 2){
-        write.csv(cbind(nameColumn(), process$concentration()[[displayWhat]])[selectedIndex, ],
-                  file, sep=";", quote = FALSE, row.names = FALSE, col.names = FALSE)
-      }
-      else if (displayWhat == 3){
-        write.csv(cbind(nameColumn(), combinedConcRSD)[selectedIndex,],
-                  file, sep=";", quote = FALSE, row.names = FALSE, col.names = FALSE)
-      }
-    })
-   
-  # output$downloadData <- downloadHandler(
-  #   filename = paste("data_", input$viewConcentrationIndex, ".csv", sep = ""),
-  #   content = function(file) {
-  # 
-  #     selectedIndex <- index$custom[[input$viewConcentrationIndex]]
-  #     displayWhat <- strtoi(input$viewConcentrationSwitch)
-  # 
-  #     combinedConcRSD <- mergeMatrixes(matrix1 = process$conc[[1]],
-  #                                     matrix2 = process$conc[[2]],
-  #                                     name1=NULL,
-  #                                     name2="RSD (%)")
-  # 
-  #     if (displayWhat <= 2){
-  #       write.csv(cbind(nameColumn(), process$conc[[displayWhat]])[selectedIndex, ],
-  #                 file, sep=";", quote = FALSE, row.names = FALSE, col.names = FALSE)
-  #     }
-  #     else if (displayWhat == 3){
-  #       write.csv(cbind(nameColumn(), combinedConcRSD)[selectedIndex,],
-  #                 file, sep=";", quote = FALSE, row.names = FALSE, col.names = FALSE)
-  #     }
-  #   })
-  # 
-  output$downloadBlankCorrectedTable <- downloadHandler(
-    filename = "blankCorrectedTable.csv",
-    content = function(file) {
-
-      blankCorrectedTable <- mergeMatrixes(matrix1 = process$ratio_cor_b()[["signal"]],
-                                           matrix2 = process$ratio_cor_b()[["RSD"]],
-                                           name1 = NULL,
-                                           name2 = "RSD (%)")
-
-      write.csv(cbind(nameColumn(), blankCorrectedTable), file, sep=";", quote = FALSE, row.names = FALSE, col.names = FALSE)
-
-    }
-  )
-  output$downloadConcentrationTable <- downloadHandler(
-    filename = "concentrationTable.csv",
-    content = function(file) {
-      
-      concentrationTable <- mergeMatrixes(matrix1 = process$concentration()[["signal"]],
-                                          matrix2 = process$concentration()[["RSD"]],
-                                          name1 = NULL,
-                                          name2 = "RSD (%)")
-      
-      write.csv(cbind(nameColumn(), concentrationTable), file, sep=";", quote = FALSE, row.names = FALSE, col.names = FALSE)
+      write.csv(downloadTabData(), file, sep=";", quote = FALSE, row.names = FALSE, col.names = FALSE)
       
     }
   )
