@@ -3,27 +3,29 @@
 
 ICPMS_ui <- shinyUI({
   fluidPage(
+    useShinyalert(),
+    shinyjs::useShinyjs(),
     navbarPage("ICP-MS processing",
                
                tabPanel(
                  "File upload and parameters",
                  sidebarLayout(
                    sidebarPanel(
-                     fileInput("file", "File upload"),
-                     actionButton("setAsRaw", "Set as raw file"),
-                     actionButton("setAsStd", "Set as standard file"),
+                     fileInput("uploadedFile", "File upload"),
+                     actionButton("setAsMainFile", "Set as main file"),
+                     actionButton("setAsStandardFile", "Set as standard file"),
                      downloadButton("downloadISTDTemplate", "Download ISTD template"),
-                     actionButton("setAsISTD", "Set as ISTD file"),
+                     actionButton("setAsInternalStandardFile", "Set as ISTD file"),
                      actionButton("extract", "Extract"),
                      htmlOutput("extract_ready_txt"),
                      htmlOutput("ISTD_not_extracted_txt")),
                    mainPanel(
-                     htmlOutput("raw_assignment_txt"),
-                     htmlOutput("std_assignment_txt"),
-                     htmlOutput("ISTD_assignment_txt"),
-                     div(style="display:inline-block",numericInput(inputId="fileUpload_nrow", label="Rows", value = 10, min = 1)),
-                     div(style="display:inline-block",numericInput(inputId="fileUpload_ncolumn", label="Columns", value = 6, min = 1)),
-                     tableOutput("table")
+                     htmlOutput("mainFileAssignmentText"),
+                     htmlOutput("standardFileAssignmentText"),
+                     htmlOutput("internalStandardFileAssignmentText"),
+                     div(style="display:inline-block", numericInput(inputId="fileUpload_nrow", label="Rows", value = 10, min = 1)),
+                     div(style="display:inline-block", numericInput(inputId="fileUpload_ncolumn", label="Columns", value = 6, min = 1)),
+                     tableOutput("uploadedFilePreviewTable")
                    )
                  )
                ),
@@ -47,7 +49,6 @@ ICPMS_ui <- shinyUI({
                tabPanel("Blank verification/processing",
                         sidebarLayout(
                           sidebarPanel(
-                            shinyjs::useShinyjs(),
                             selectInput("blkInteractionMode", "Select a mode:",
                                         c("View" = "view", "Process" = "process")),
                             selectInput("indexBlkchoiceWhat", "Replace what:",

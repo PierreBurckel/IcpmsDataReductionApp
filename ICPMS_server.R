@@ -1,12 +1,12 @@
-# library(DT)
-# library(stringr)
-# library(plotly)
-# library(shinyjs)
-# source('C:/Users/pierr/Desktop/IPGP/R/ICP-MS_process/ICPMS_functions.R')
 
 C_LETTER_KEYCODE <- 67
 
 ICPMS_server <- function(input, output, session) {
+  
+  shinyjs::disable(selector = '.navbar-nav a[data-value="Index creation"')
+  shinyjs::disable(selector = '.navbar-nav a[data-value="Blank verification/processing"')
+  shinyjs::disable(selector = '.navbar-nav a[data-value="Drift verification/processing"')
+  shinyjs::disable(selector = '.navbar-nav a[data-value="Process"')
   
   #Setting up lists of reactiveValues variables
   #uploadedFile contains the information about user-uploaded files
@@ -17,10 +17,9 @@ ICPMS_server <- function(input, output, session) {
   index <- reactiveValues()
   process <- reactiveValues()
   parameters <- reactiveValues()
-  #tempDataFile stores the current file loaded by the user
-  tempDataFile <- reactive({input$file})
-  #extractionReady is TRUE or FALSE, depending on whether extraction can be done or not (required files assigned, variables names inputed)
-  extractionReady <- reactive({!is.null(uploadedFile$raw) & !is.null(uploadedFile$std)})
+  applicationState <- reactiveValues(isExtractionSuccessful = FALSE)
+  #isExtractionReady is TRUE or FALSE, depending on whether extraction can be done or not (required files assigned, variables names inputed)
+  
   isValidISTD <- reactive({(!is.null(index$IS_CPS)) & (!is.null(extracted$data[["ISTD"]]))})
   
   #Line indexes
@@ -162,6 +161,9 @@ ICPMS_server <- function(input, output, session) {
   
   process$calibrationCoefficientMatrix <- reactive({
     
+    calibrationLinearRegressionSlope <- c()
+    elementsWithCalibrationIssues <- c()
+    
     for (elementIndex in 1:elementNumber()){
       
       elementFullName <- elementNames()[elementIndex]
@@ -171,13 +173,21 @@ ICPMS_server <- function(input, output, session) {
       
       calibrationModel <- lm(Concentration ~ 0+Signal, data=as.data.frame(calibrationSignalUncertaintyConcentration))
       
-      if (elementIndex == 1){
-        calibrationLinearRegressionSlope <- summary(calibrationModel)$coefficients[1,1]
+      if (dim(summary(calibrationModel)$coefficients)[1] == 0) {
+        calibrationLinearRegressionSlope <- c(calibrationLinearRegressionSlope, NA)
+        elementsWithCalibrationIssues <- c(elementsWithCalibrationIssues, elementFullName)
       }
-      else{
-        calibrationLinearRegressionSlope[elementIndex] <- summary(calibrationModel)$coefficients[1,1]
+      else
+      {
+        calibrationLinearRegressionSlope <- c(calibrationLinearRegressionSlope, summary(calibrationModel)$coefficients[1,1])
       }
+      
     }
+    
+    if (!is.null(elementsWithCalibrationIssues)) {
+      shinyalert("Calibration alert", paste("Impossible to compute calibration for", paste(elementsWithCalibrationIssues, collapse = ' '), sep = " "), type = "error")
+    }
+    
     return(calibrationLinearRegressionSlope)
   })
   
@@ -236,63 +246,71 @@ ICPMS_server <- function(input, output, session) {
 # File import and viewing -------------------------------------------------
   
   #Text display of imported file
-  output$raw_assignment_txt <- renderText({
-    raw_file = uploadedFile$raw
-    renderState(!is.null(raw_file), stateTxt = "Raw file name: ", invalidStateTxt = "Unassigned", validStateTxt = raw_file$name)
+  output$mainFileAssignmentText <- renderText({
+    mainFile = uploadedFile$main
+    createColoredTextForBooleanViewing(!is.null(mainFile), stateText = "Raw file name: ", invalidStateText = "Unassigned", validStateText = mainFile$name)
   })
-  output$std_assignment_txt <- renderText({
-    std_file = uploadedFile$std
-    renderState(!is.null(std_file), stateTxt = "Standard file name: ", invalidStateTxt = "Unassigned", validStateTxt = std_file$name)
+  output$standardFileAssignmentText <- renderText({
+    standardFile = uploadedFile$standard
+    createColoredTextForBooleanViewing(!is.null(standardFile), stateText = "Standard file name: ", invalidStateText = "Unassigned", validStateText = standardFile$name)
   })
-  output$ISTD_assignment_txt <- renderText({
-    ISTD_file = uploadedFile$ISTD
-    renderState(!is.null(ISTD_file), stateTxt = "ISTD file name: ", invalidStateTxt = "Unassigned", validStateTxt = ISTD_file$name)
+  output$internalStandardFileAssignmentText <- renderText({
+    internalStandardFile = uploadedFile$internalStandard
+    createColoredTextForBooleanViewing(!is.null(internalStandardFile), stateText = "ISTD file name: ", invalidStateText = "Unassigned", validStateText = internalStandardFile$name)
   })
   
   #Table rendering of current uploaded file
-  output$table <- renderTable({
-    req(tempDataFile())
-    tempDataTable = read.table(tempDataFile()$datapath, sep =";", header = FALSE)
-    rowNumber <- min(nrow(tempDataTable), input$fileUpload_nrow) 
-    columnNumber <- min(length(tempDataTable), input$fileUpload_ncolumn) 
-    tempDataTable[1:rowNumber, 1:columnNumber]
+  output$uploadedFilePreviewTable <- renderTable({
+    req(input$uploadedFile)
+    tablePreview = read.table(input$uploadedFile$datapath, sep =";", header = FALSE)
+    rowNumber <- min(nrow(tablePreview), input$fileUpload_nrow) 
+    columnNumber <- min(ncol(tablePreview), input$fileUpload_ncolumn) 
+    tablePreview[1:rowNumber, 1:columnNumber]
   })
   
   #Buttons to set raw, std and ISTD files
-  observeEvent(input$setAsRaw, {
-    req(tempDataFile())
-    uploadedFile$raw <- tempDataFile()
+  observeEvent(input$setAsMainFile, {
+    req(input$uploadedFile)
+    uploadedFile$main <- input$uploadedFile
   })
-  observeEvent(input$setAsStd, {
-    req(tempDataFile())
-    uploadedFile$std <- tempDataFile()
+  observeEvent(input$setAsStandardFile, {
+    req(input$uploadedFile)
+    uploadedFile$standard <- input$uploadedFile
   })
-  observeEvent(input$setAsISTD, {
-    req(tempDataFile())
-    uploadedFile$ISTD <- tempDataFile()
+  observeEvent(input$setAsInternalStandardFile, {
+    req(input$uploadedFile)
+    uploadedFile$internalStandard <- input$uploadedFile
   })
   
   #Button to download the list of analyte and ISTD
   output$downloadISTDTemplate <- downloadHandler(
     filename = "ISTD_Template.csv",
     content = function(file) {
-      write.csv(createISTDtemplate((uploadedFile$raw)$datapath),
+      
+      req(isExtractionReady() & !is.null(!is.null(extracted$data[["ISTD"]])))
+      
+      write.csv(createISTDtemplate((uploadedFile$main)$datapath),
                 file, sep=";", quote = FALSE,
                 row.names = FALSE, col.names = FALSE)
       })
 
+  
+  isExtractionReady <- reactive({
+    !is.null(uploadedFile$main) & !is.null(uploadedFile$standard)
+    })
+  
   #Button to extract important information and signal of the dataframe
   observeEvent(input$extract, {
     #Defines name space
-    raw_file = uploadedFile$raw
-    std_file = uploadedFile$std
-    ISTD_file = uploadedFile$ISTD
-    #Allows extraction if extraction condition are met (see extractionReady reactive value)
-    if (!extractionReady()){
+    mainFile = uploadedFile$main
+    standardFile = uploadedFile$standard
+    internalStandardFile = uploadedFile$internalStandard
+    #Allows extraction if extraction condition are met (see isExtractionReady reactive value)
+    if (!isExtractionReady()){
       return()
     } else {}
     
-    extracted$data <-  extractData(raw_file$datapath, std_file$datapath)
+    extracted$data <-  extractData(mainFile$datapath, standardFile$datapath)
     
     index$CPS <- extracted$data[["header_2"]] == "CPS" & !grepl("ISTD", extracted$data[["header_1"]])
     index$CPS_RSD <- extracted$data[["header_2"]] == "CPS RSD" & !grepl("ISTD", extracted$data[["header_1"]])
@@ -303,8 +321,8 @@ ICPMS_server <- function(input, output, session) {
     extracted$data[["raw"]][,index$numericalColumns] <- sapply(extracted$data[["raw"]][,index$numericalColumns], as.numeric)
     
     ##If there exists an ISTD file that has been uploaded, extract and store it
-    if (!is.null(ISTD_file)) {
-      extracted$data[["ISTD"]]  <- read.table(ISTD_file$datapath, header = TRUE, sep=';', stringsAsFactors=FALSE)
+    if (!is.null(internalStandardFile)) {
+      extracted$data[["ISTD"]]  <- read.table(internalStandardFile$datapath, header = TRUE, sep=';', stringsAsFactors=FALSE)
     } else {}
     
     ##Defines an a priori ISTD variable that will be possible to modified in the next pane
@@ -329,14 +347,31 @@ ICPMS_server <- function(input, output, session) {
     parameters[["internalStandardNames"]] <- ISNames()
     parameters[["internalStandardNumber"]] <- ISNumber()
     parameters[["sampleNumber"]] <- sampleNumber()
+    
+    applicationState$isExtractionSuccessful <- TRUE
+  })
+  
+  observeEvent(applicationState$isExtractionSuccessful, {
+    if (applicationState$isExtractionSuccessful == TRUE) {
+      shinyjs::enable(selector = '.navbar-nav a[data-value="Index creation"')
+      shinyjs::enable(selector = '.navbar-nav a[data-value="Blank verification/processing"')
+      shinyjs::enable(selector = '.navbar-nav a[data-value="Drift verification/processing"')
+      shinyjs::enable(selector = '.navbar-nav a[data-value="Process"')
+    }
+    else if (applicationState$isExtractionSuccessful == FALSE) {
+      shinyjs::disable(selector = '.navbar-nav a[data-value="Index creation"')
+      shinyjs::disable(selector = '.navbar-nav a[data-value="Blank verification/processing"')
+      shinyjs::disable(selector = '.navbar-nav a[data-value="Drift verification/processing"')
+      shinyjs::disable(selector = '.navbar-nav a[data-value="Process"')
+    }
   })
   
   #Here we render warnings texts to help the user
   output$extract_ready_txt <- renderText({
-    renderState(extractionReady(), stateTxt = "Data extraction ", invalidStateTxt = "impossible", validStateTxt = "ready")
+    renderState(isExtractionReady(), stateTxt = "Data extraction ", invalidStateTxt = "impossible", validStateTxt = "ready")
   })
   output$ISTD_not_extracted_txt <- renderText({
-    renderState(!(!is.null(uploadedFile$ISTD) & !is.null(extracted$data) & (isValidISTD() == FALSE)), stateTxt = "", invalidStateTxt = "Caution, ISTD not extracted", validStateTxt = NULL)
+    renderState(!(!is.null(uploadedFile$internalStandard) & !is.null(extracted$data) & (isValidISTD() == FALSE)), stateTxt = "", invalidStateTxt = "Caution, ISTD not extracted", validStateTxt = NULL)
   })
   
 # Index creation ----------------------------------------------------------

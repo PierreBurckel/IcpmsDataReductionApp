@@ -143,19 +143,15 @@ mergeMatrixes <- function(matrix1, matrix2, name1=NULL, name2=NULL) {
   return(combinedMatrix)
 }
 
-
-##Returns the state as a text message. State is TRUE or FALSE.
-##If state is TRUE, either stateTxt and validStateTxt is returned, or nothing is returned (used for warnings to pop only when the state is invalid)
-##If state is FALSE, stateTxt and invalidStateTxt is returned
-renderState <- function(state, stateTxt, invalidStateTxt, validStateTxt) {
+createColoredTextForBooleanViewing <- function(state, stateText, invalidStateText, validStateText) {
   
-  if (state == TRUE){
-    #This line is used for warnings to pop up only when invalidState
-    if (is.null(validStateTxt)){return()}
-    else {displayedTxt <- paste('<span style=\"color:green\">', stateTxt, validStateTxt)}}
-  else{displayedTxt <- paste('<span style=\"color:red\">', stateTxt, invalidStateTxt)}
-  
-  return(displayedTxt)
+  if (state == TRUE) {
+    displayedText <- paste('<span style=\"color:green\">', stateText, validStateText)
+  }
+  else if (state == FALSE) {
+    displayedText <- paste('<span style=\"color:red\">', stateText, invalidStateText)
+  }
+  return(displayedText)
 }
 
 ##Function that converts a numerical index to a logical index
