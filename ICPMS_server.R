@@ -606,11 +606,11 @@ ICPMS_server <- function(input, output, session) {
 # Downloadable data -------------------------------------------------------
  
   output$downloadCustomTable <- downloadHandler(
-    filename =  "someFile.csv", # paste0("data_", input$viewConcentrationIndex, ".csv"),
-    content = function(file) {
-      
+    
+    filename =  paste('data_', input$viewConcentrationIndex, '_', Sys.Date(), '.csv', sep=''),
+    content = function(file) 
+    {
       write.csv(downloadTabData(), file, sep=";", quote = FALSE, row.names = FALSE, col.names = FALSE)
-      
     }
   )
 }

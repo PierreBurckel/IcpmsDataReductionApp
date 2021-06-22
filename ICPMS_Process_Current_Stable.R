@@ -20,4 +20,4 @@ source('ICPMS_functions.R')
 
 app <- shinyApp(ui = ICPMS_ui, server = ICPMS_server)
 
-runApp(app, port = 4856)
+runApp(app,  port = 4856, launch.browser = TRUE)
