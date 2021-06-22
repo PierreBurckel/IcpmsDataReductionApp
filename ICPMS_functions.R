@@ -10,22 +10,22 @@ setMatrixFormat <- function(matrixToFormat, columnNamesToAdd, parameters) {
   if (class(matrixToFormat) == "matrix" || class(matrixToFormat) ==  "data.frame") {
     matrixToFormat <- as.matrix(matrixToFormat)
     formatedMatrix <- cbind(columnsToAdd, matrixToFormat)
-    colnames(formatedMatrix) <- c(columnNamesToAdd, parameters[["elementNames"]])
+    colnames(formatedMatrix) <- c(columnNamesToAdd, parameters[["analyteNames"]])
   }
   
   if (class(matrixToFormat) == "list") {
     matrixToFormat[[1]] <- as.matrix(matrixToFormat[[1]])
     matrixToFormat[[2]] <- as.matrix(matrixToFormat[[2]])
-    formatedMatrix <- matrix(0, nrow = parameters[["sampleNumber"]], ncol = 2 * parameters[["elementNumber"]])
-    formatedMatrixColumnNames <- rep("", 2 * parameters[["elementNumber"]])
+    formatedMatrix <- matrix(0, nrow = parameters[["sampleNumber"]], ncol = 2 * parameters[["analyteNumber"]])
+    formatedMatrixColumnNames <- rep("", 2 * parameters[["analyteNumber"]])
     
-    firstMatrixInsertionIndex <- seq(from = 1, to = 2 * parameters[["elementNumber"]], by = 2)
-    secondMatrixInsertionIndex <- seq(from = 2, to = 2 * parameters[["elementNumber"]], by = 2)
+    firstMatrixInsertionIndex <- seq(from = 1, to = 2 * parameters[["analyteNumber"]], by = 2)
+    secondMatrixInsertionIndex <- seq(from = 2, to = 2 * parameters[["analyteNumber"]], by = 2)
     
     formatedMatrix[ , firstMatrixInsertionIndex] <- matrixToFormat[[1]]
     formatedMatrix[ , secondMatrixInsertionIndex] <- matrixToFormat[[2]]
-    formatedMatrixColumnNames[firstMatrixInsertionIndex] <- parameters[["elementNames"]]
-    formatedMatrixColumnNames[secondMatrixInsertionIndex] <- paste0(parameters[["elementNames"]], " RSD (%)")
+    formatedMatrixColumnNames[firstMatrixInsertionIndex] <- parameters[["analyteNames"]]
+    formatedMatrixColumnNames[secondMatrixInsertionIndex] <- paste0(parameters[["analyteNames"]], " RSD (%)")
     
     formatedMatrix <- cbind(columnsToAdd, formatedMatrix)
     colnames(formatedMatrix) <- c(columnNamesToAdd, formatedMatrixColumnNames)
@@ -401,7 +401,7 @@ extractData <- function(dataFileName, stdFileName){
 }
   
   
-createISTDMatrix <- function(ISTD_file, ISTD){
+createInternalStandardMatrixAdaptedToAnalytes <- function(ISTD_file, ISTD){
   
   if(is.null(ISTD_file) | is.null(ISTD)){return(1)}
   

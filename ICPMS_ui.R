@@ -17,8 +17,7 @@ ICPMS_ui <- shinyUI({
                      downloadButton("downloadISTDTemplate", "Download ISTD template"),
                      actionButton("setAsInternalStandardFile", "Set as ISTD file"),
                      actionButton("extract", "Extract"),
-                     htmlOutput("extract_ready_txt"),
-                     htmlOutput("ISTD_not_extracted_txt")),
+                     htmlOutput("extractionReadyText")),
                    mainPanel(
                      htmlOutput("mainFileAssignmentText"),
                      htmlOutput("standardFileAssignmentText"),
