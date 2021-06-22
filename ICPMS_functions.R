@@ -3,36 +3,36 @@
 
 agilentElementNamePattern <- "[ ]{2}[A-Z]{1}[a-z]*[ ]{2}"
 
-setMatrixFormat <- function(matrixToFormat, columnNamesToAdd, parameters) {
-  
-  columnsToAdd <- parameters[["categoricalDataAndTime"]][ , columnNamesToAdd]
-  
-  if (class(matrixToFormat) == "matrix" || class(matrixToFormat) ==  "data.frame") {
-    matrixToFormat <- as.matrix(matrixToFormat)
-    formatedMatrix <- cbind(columnsToAdd, matrixToFormat)
-    colnames(formatedMatrix) <- c(columnNamesToAdd, parameters[["analyteNames"]])
-  }
-  
-  if (class(matrixToFormat) == "list") {
-    matrixToFormat[[1]] <- as.matrix(matrixToFormat[[1]])
-    matrixToFormat[[2]] <- as.matrix(matrixToFormat[[2]])
-    formatedMatrix <- matrix(0, nrow = parameters[["sampleNumber"]], ncol = 2 * parameters[["analyteNumber"]])
-    formatedMatrixColumnNames <- rep("", 2 * parameters[["analyteNumber"]])
-    
-    firstMatrixInsertionIndex <- seq(from = 1, to = 2 * parameters[["analyteNumber"]], by = 2)
-    secondMatrixInsertionIndex <- seq(from = 2, to = 2 * parameters[["analyteNumber"]], by = 2)
-    
-    formatedMatrix[ , firstMatrixInsertionIndex] <- matrixToFormat[[1]]
-    formatedMatrix[ , secondMatrixInsertionIndex] <- matrixToFormat[[2]]
-    formatedMatrixColumnNames[firstMatrixInsertionIndex] <- parameters[["analyteNames"]]
-    formatedMatrixColumnNames[secondMatrixInsertionIndex] <- paste0(parameters[["analyteNames"]], " RSD (%)")
-    
-    formatedMatrix <- cbind(columnsToAdd, formatedMatrix)
-    colnames(formatedMatrix) <- c(columnNamesToAdd, formatedMatrixColumnNames)
-  }
-  
-  return(formatedMatrix)
-}
+# setMatrixFormat <- function(matrixToFormat, matrixToFormatColumnNames = NULL, columnsToAdd, columnsToAddColumnNames = NULL) {
+#   
+#   sampleNumber <- nrow(matrixToFormat)
+#   
+#   if (class(matrixToFormat) == "matrix" || class(matrixToFormat) ==  "data.frame") {
+#     matrixToFormat <- as.matrix(matrixToFormat)
+#     formatedMatrix <- cbind(columnsToAdd, matrixToFormat)
+#     colnames(formatedMatrix) <- c(columnsToAddColumnNames, matrixToFormatColumnNames)
+#   }
+#   
+#   if (class(matrixToFormat) == "list") {
+#     matrixToFormat[[1]] <- as.matrix(matrixToFormat[[1]])
+#     matrixToFormat[[2]] <- as.matrix(matrixToFormat[[2]])
+#     formatedMatrix <- matrix(0, nrow = sampleNumber, ncol = 2 * analyteNumber)
+#     formatedMatrixColumnNames <- rep("", 2 * analyteNumber)
+#     
+#     firstMatrixInsertionIndex <- seq(from = 1, to = 2 * analyteNumber, by = 2)
+#     secondMatrixInsertionIndex <- seq(from = 2, to = 2 * analyteNumber, by = 2)
+#     
+#     formatedMatrix[ , firstMatrixInsertionIndex] <- matrixToFormat[[1]]
+#     formatedMatrix[ , secondMatrixInsertionIndex] <- matrixToFormat[[2]]
+#     formatedMatrixColumnNames[firstMatrixInsertionIndex] <- matrixToFormatColumnNames
+#     formatedMatrixColumnNames[secondMatrixInsertionIndex] <- paste0(matrixToFormatColumnNames, " RSD (%)")
+#     
+#     formatedMatrix <- cbind(columnsToAdd, formatedMatrix)
+#     colnames(formatedMatrix) <- c(columnNamesToAdd, formatedMatrixColumnNames)
+#   }
+#   
+#   return(formatedMatrix)
+# }
 
 getWeights <- function(calibrationData, fn) {
   if (fn == "1/SD") {
@@ -115,32 +115,27 @@ getElementName <- function(elementFullName, pattern) {
   return(gsub(" ", "", str_extract(elementFullName, pattern), fixed = TRUE))
 }
 
-mergeMatrixes <- function(matrix1, matrix2, name1=NULL, name2=NULL) {
-  if (!all(dim(matrix1) == dim(matrix2))){
-    stop("Matrixes of different sizes")
+mergeMatrixes <- function(matrix1, matrix2) {
+  
+  if (!identical(dim(matrix1), dim(matrix2)))
+  {
+    stop("Merged matrixes need to have the same dimensions")
   }
   
+  rowNumber <- nrow(matrix1)
   columnNumber <- ncol(matrix1)
   
-  if (is.null(name1)){}
-  else{colnames(matrix1) <- rep(name1,columnNumber)}
+  matrix1 <- as.matrix(matrix1)
+  matrix2 <- as.matrix(matrix2)
+  mergedMatrix <- matrix(0, nrow = rowNumber, ncol = 2 * columnNumber)
   
-  if (is.null(name2)){}
-  else{colnames(matrix2) <- rep(name2,columnNumber)}
+  firstMatrixInsertionIndex <- seq(from = 1, to = 2 * columnNumber, by = 2)
+  secondMatrixInsertionIndex <- seq(from = 2, to = 2 * columnNumber, by = 2)
   
-  for(i in seq(columnNumber)){
-    if (i == 1){
-      combinedMatrix <- cbind(matrix1[,1],matrix2[,1])
-      colnames(combinedMatrix) <- c(colnames(matrix1)[1],colnames(matrix2)[1])
-    }
-    else{
-      combinedMatrix <- cbind(combinedMatrix, matrix1[,i], matrix2[,i])
-      colnames(combinedMatrix)[ncol(combinedMatrix) - 1] <- colnames(matrix1)[i]
-      colnames(combinedMatrix)[ncol(combinedMatrix)] <- colnames(matrix2)[i]
-    }
-  }
+  mergedMatrix[ , firstMatrixInsertionIndex] <- matrix1
+  mergedMatrix[ , secondMatrixInsertionIndex] <- matrix2
   
-  return(combinedMatrix)
+  return(mergedMatrix)
 }
 
 createColoredTextForBooleanViewing <- function(state, stateText, invalidStateText, validStateText) {

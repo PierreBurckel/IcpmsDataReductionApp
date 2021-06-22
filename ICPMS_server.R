@@ -2,33 +2,24 @@
 C_LETTER_KEYCODE <- 67
 
 ICPMS_server <- function(input, output, session) {
+
+# Code to be executed at start --------------------------------------------
   
   shinyjs::disable(selector = '.navbar-nav a[data-value="Index creation"')
   shinyjs::disable(selector = '.navbar-nav a[data-value="Blank verification/processing"')
   shinyjs::disable(selector = '.navbar-nav a[data-value="Drift verification/processing"')
   shinyjs::disable(selector = '.navbar-nav a[data-value="Process"')
+
+# Declaration of reactive values ------------------------------------------
   
-  #Setting up lists of reactiveValues variables
-  #uploadedFile contains the information about user-uploaded files
   uploadedFile <- reactiveValues()
-  #extracted$data contains the list of important data after extraction
   extracted <- reactiveValues()
-  #index contains all indexes serving as masks to display/process specific lines or columns of the raw data
   rowIndexInMain <- reactiveValues()
-  columnIndexInMain <- reactiveValues()
-  rawData <- reactiveValues()
   process <- reactiveValues()
   parameters <- reactiveValues()
   applicationState <- reactiveValues(isExtractionSuccessful = FALSE)
-  #isExtractionReady is TRUE or FALSE, depending on whether extraction can be done or not (required files assigned, variables names inputed)
-  
-  isValidISTD <- reactive({(!is.null(columnIndexInMain$internalStandardCountsPerSecond)) & (!is.null(extracted$internalStandard))})
-  
-  # columnIndexInMain$analytesCountsPerSecond <- extracted$secondRowOfMain == "CPS" & !grepl("ISTD", extracted$firstRowOfMain)
-  # columnIndexInMain$analytesCountsPerSecondRelativeStandardDeviation <- extracted$secondRowOfMain == "CPS RSD" & !grepl("ISTD", extracted$firstRowOfMain)
-  # columnIndexInMain$internalStandardCountsPerSecond <- extracted$secondRowOfMain == "CPS" & grepl("ISTD", extracted$firstRowOfMain)
-  # columnIndexInMain$internalStandardCountsPerSecondRelativeStandardDeviation <- extracted$secondRowOfMain == "CPS RSD" & grepl("ISTD", extracted$firstRowOfMain)
-  # columnIndexInMain$numericalColumns <- min(which(columnIndexInMain$analytesCountsPerSecond)):length(extracted$main)
+
+# Reactive expressions for data reduction ---------------------------------
   
   process$countsPerSecond <- reactive({
     extracted$main[ , extracted$secondRowOfMain == "CPS", drop=FALSE]
@@ -54,48 +45,7 @@ ICPMS_server <- function(input, output, session) {
     process$relativeStandardDeviation()[ , parameters$internalStandardNames, drop=FALSE]
   })
   
-  # elementNames <- reactive({
-  #   header_1 = extracted$firstRowOfMain
-  #   header_1[columnIndexInMain$analytesCountsPerSecond]})
-  # 
-  # elementNumber <- reactive({
-  #   length(which(columnIndexInMain$analytesCountsPerSecond))})
-  # 
-  # ISNames <- reactive({
-  #   header_1 = extracted$firstRowOfMain
-  #   header_1[columnIndexInMain$internalStandardCountsPerSecond]})
-  # 
-  # ISNumber <- reactive({
-  #   length(which(columnIndexInMain$internalStandardCountsPerSecond))})
-  # 
-  # sampleNumber <- reactive({
-  #   nrow(extracted$main)})
-  # 
-  # #Important columns
-  # timeColumn <- reactive({
-  #   rawData = extracted$main
-  #   header_2 = extracted$secondRowOfMain
-  #   as.POSIXct(rawData[,which(header_2=="Acq. Date-Time")], format="%d/%m/%Y %H:%M")})
-  # 
-  # nameColumn <- reactive({
-  #   rawData = extracted$main
-  #   header_2 = extracted$secondRowOfMain
-  #   rawData[,which(header_2=="Sample Name")]})
-  # 
-  # typeColumn <- reactive({
-  #   rawData = extracted$main
-  #   header_2 = extracted$secondRowOfMain
-  #   rawData[,which(header_2=="Type")]})
-  # 
-  # levelColumn <- reactive({
-  #   rawData = extracted$main
-  #   header_2 = extracted$secondRowOfMain
-  #   rawData[,which(header_2=="Level")]})
-  # 
-  # dtimeColumn <- reactive({
-  #   parameters[["categoricalDataAndTime"]][ , "Time"] - parameters[["categoricalDataAndTime"]][ , "Time"][1]})
-  
-  internalStandardMatrixAdaptedToAnalytes <- reactive({
+  process$internalStandardMatrixAdaptedToAnalytes <- reactive({
     if (!is.null(extracted$internalStandard)) 
     {
       return(createInternalStandardMatrixAdaptedToAnalytes(extracted$internalStandard, list(signal=process$internalStandardCountsPerSecond(), RSD=process$internalStandardCountsPerSecondRelativeStandardDeviation())))
@@ -107,23 +57,11 @@ ICPMS_server <- function(input, output, session) {
     }
   })
   
-  process$ratio <- reactive({propagateUncertainty(a = list(signal=process$analyteCountsPerSecond(), RSD=process$analyteCountsPerSecondRelativeStandardDeviation()), b = internalStandardMatrixAdaptedToAnalytes(), operation="division")})
-  
-  liveReplaceBlkTable <- reactive({
-    
-    replaceIndexWhat = rowIndexInMain$custom[[input$indexBlkchoiceWhat]]
-    replaceIndexIn = rowIndexInMain$custom[[input$indexBlkchoiceIn]]
-    
-    replaceValues(process$ratio(), 1:parameters$analyteNumber, input$blkInterpolationMethod, replaceIndexWhat, replaceIndexIn)
-    })
-    
+  process$ratio <- reactive({propagateUncertainty(a = list(signal=process$analyteCountsPerSecond(), RSD=process$analyteCountsPerSecondRelativeStandardDeviation()), b = process$internalStandardMatrixAdaptedToAnalytes(), operation="division")})
   
   process$ratio_cor_b <- reactive({
       propagateUncertainty(a=process$ratio(), b=process$blk_ratio, operation="substraction")
   })
-  
-  yplus <- reactive({(process$ratio_cor_b()[[1]] + process$ratio_cor_b()[[2]]/100*process$ratio_cor_b()[[1]])[rowIndexInMain$drift, input$e_ind_drift]})
-  yminus <- reactive({(process$ratio_cor_b()[[1]] - process$ratio_cor_b()[[2]]/100*process$ratio_cor_b()[[1]])[rowIndexInMain$drift, input$e_ind_drift]})
   
   process$driftFactorMatrix <- reactive({
   
@@ -216,48 +154,6 @@ ICPMS_server <- function(input, output, session) {
     return(list(signal = concentration, RSD = concentrationRSD))
   })
   
-  downloadTabData <- reactive({
-    
-    selectedIndex <- rowIndexInMain$custom[[input$viewConcentrationIndex]]
-    
-    downloadTabDataSignal <- switch(input$dataReductionStateSelection,
-                                     "Counts per second" = process$analyteCountsPerSecond(),
-                                     "Internal Standard matrix (adapted for analytes)" = internalStandardMatrixAdaptedToAnalytes()[["signal"]],
-                                     "Internal Standard ratio" = process$ratio()[["signal"]],
-                                     "Blank matrix" = process$blk_ratio[["signal"]],
-                                     "Blank corrected signal (CPS or ratio)" = process$ratio_cor_b()[["signal"]],
-                                     "Drift matrix" = process$driftFactorMatrix()[["signal"]],
-                                     "Drift corrected signal (CPS or ratio, blank corrected)" = process$driftAndBlankCorrectedMatrix()[["signal"]],
-                                     "Concentration" = process$concentration()[["signal"]]
-    )
-    
-    downloadTabDataRsd <- switch(input$dataReductionStateSelection,
-                                  "Counts per second" = process$analyteCountsPerSecondRelativeStandardDeviation(),
-                                  "Internal Standard matrix (adapted for analytes)" = internalStandardMatrixAdaptedToAnalytes()[["RSD"]],
-                                  "Internal Standard ratio" = process$ratio()[["RSD"]],
-                                  "Blank matrix" = process$blk_ratio[["RSD"]],
-                                  "Blank corrected signal (CPS or ratio)" = process$ratio_cor_b()[["RSD"]],
-                                  "Drift matrix" = process$driftFactorMatrix()[["RSD"]],
-                                  "Drift corrected signal (CPS or ratio, blank corrected)" = process$driftAndBlankCorrectedMatrix()[["RSD"]],
-                                  "Concentration" = process$concentration()[["RSD"]]
-    )
-    
-    downloadTabDataSignalFormated <- setMatrixFormat(downloadTabDataSignal, columnNamesToAdd = "Sample Name", parameters = parameters)
-    downloadTabDataRsdFormated <- setMatrixFormat(downloadTabDataRsd, columnNamesToAdd = "Sample Name", parameters = parameters)
-    mergedSignalAndRsdFormated <- setMatrixFormat(list(signal = downloadTabDataSignal, RSD = downloadTabDataRsd),
-                                          columnNamesToAdd = "Sample Name", parameters = parameters)
-    
-    
-    customData <- switch(input$viewCustomDataSwitch,
-                         "1" = downloadTabDataSignalFormated,
-                         "2" = downloadTabDataRsdFormated,
-                         "3" = mergedSignalAndRsdFormated
-    )
-    
-    return(customData[selectedIndex, ])
-    
-  })
-  
 # File import and viewing -------------------------------------------------
   
   #Text display of imported file
@@ -328,19 +224,21 @@ ICPMS_server <- function(input, output, session) {
     
     extracted$secondRowOfMain <- scan(mainFileDatapath, nlines = 1, what = character(),sep=';', skip=1)
     
+    requiredStringsInFirstRowOfMain <- "Sample"
+    requiredStringsInSecondRowOfMain <- c("Acq. Date-Time", "Sample Name", "Type", "Level", "CPS", "CPS RSD")
+    
+    if (!all(requiredStringsInFirstRowOfMain %in% extracted$firstRowOfMain) || !all(requiredStringsInSecondRowOfMain %in% extracted$secondRowOfMain)) {
+      shinyalert("Impossible to extract", paste("Missing either the Sample column in the first row of the main file, or  one of the following columns in the second row: ", paste(requiredStringsInSecondRowOfMain, collapse = ', '), sep = " "), type = "error")
+      return(NULL)
+    }
+    
     extracted$main <- read.table(mainFileDatapath, skip = 2, header = FALSE, sep=';', stringsAsFactors=FALSE)
     colnames(extracted$main) <- extracted$firstRowOfMain
     
     extracted$standard <- read.table(standardFileDatapath, header = TRUE, sep=';', stringsAsFactors=FALSE)
     extracted$standard <- removeDuplicateLines(extracted$standard)
-    row.names(extracted$standard) <- extracted$standard[,1]
+    row.names(extracted$standard) <- extracted$standard[ , 1]
     extracted$standard <- extracted$standard[ , -1]
-    
-    # columnIndexInMain$analytesCountsPerSecond <- extracted$secondRowOfMain == "CPS" & !grepl("ISTD", extracted$firstRowOfMain)
-    # columnIndexInMain$analytesCountsPerSecondRelativeStandardDeviation <- extracted$secondRowOfMain == "CPS RSD" & !grepl("ISTD", extracted$firstRowOfMain)
-    # columnIndexInMain$internalStandardCountsPerSecond <- extracted$secondRowOfMain == "CPS" & grepl("ISTD", extracted$firstRowOfMain)
-    # columnIndexInMain$internalStandardCountsPerSecondRelativeStandardDeviation <- extracted$secondRowOfMain == "CPS RSD" & grepl("ISTD", extracted$firstRowOfMain)
-    # columnIndexInMain$numericalColumns <- min(which(columnIndexInMain$analytesCountsPerSecond)):length(extracted$main)
     
     parameters$sampleNumber <- nrow(extracted$main)
     parameters$analyteNames <- extracted$firstRowOfMain[extracted$secondRowOfMain == "CPS" & !grepl("ISTD", extracted$firstRowOfMain)]
@@ -364,7 +262,7 @@ ICPMS_server <- function(input, output, session) {
     if (!is.null(internalStandardFileDatapath)) 
     {
       extracted$internalStandard  <- read.table(internalStandardFileDatapath, header = TRUE, sep= ';', stringsAsFactors = FALSE)
-      process$blk_ratio <- propagateUncertainty(a = list(signal = process$analyteCountsPerSecond(), RSD = process$analyteCountsPerSecondRelativeStandardDeviation()), b = internalStandardMatrixAdaptedToAnalytes(), operation="division")
+      process$blk_ratio <- propagateUncertainty(a = list(signal = process$analyteCountsPerSecond(), RSD = process$analyteCountsPerSecondRelativeStandardDeviation()), b = process$internalStandardMatrixAdaptedToAnalytes(), operation="division")
     }
     else 
     {
@@ -413,7 +311,7 @@ ICPMS_server <- function(input, output, session) {
       headerRows = parameters[["categoricalDataAndTime"]][ , "Level"]
       firstColumnName = "Levels"}
     else if (searchWhere == 'type'){
-      headerRows = typeColumn()
+      headerRows = parameters[["categoricalDataAndTime"]][ , "Type"]
       firstColumnName = "Type"}
     
     searchWhat = input$searchIndexwhat
@@ -423,18 +321,18 @@ ICPMS_server <- function(input, output, session) {
     if (searchType == 'ematch'){searchWhat = paste("^", searchWhat, "$", sep="")}
     
     if (searchWhat == ""){
-      rowIndexInMain$temp <- c(1:parameters$sampleNumber)
+      rowIndexInMain$index_rowsMatchingRegularExpression <- seq(parameters$sampleNumber)
     }
     else{
-      rowIndexInMain$temp <- grep(searchWhat, headerRows)
+      rowIndexInMain$index_rowsMatchingRegularExpression <- grep(searchWhat, headerRows)
     }
     
     if (displayWhat == "ISTD" & !is.null(process$internalStandardCountsPerSecond())){
-      indexTable = cbind(headerRows[rowIndexInMain$temp], process$internalStandardCountsPerSecond()[rowIndexInMain$temp,])
+      indexTable = cbind(headerRows[rowIndexInMain$index_rowsMatchingRegularExpression], process$internalStandardCountsPerSecond()[rowIndexInMain$index_rowsMatchingRegularExpression,])
       colnames(indexTable) <- c(firstColumnName, parameters$internalStandardNames)
     }
     else if (displayWhat == "analytes" & !is.null(process$analyteCountsPerSecond())){
-      indexTable = cbind(headerRows[rowIndexInMain$temp], process$analyteCountsPerSecond()[rowIndexInMain$temp,])
+      indexTable = cbind(headerRows[rowIndexInMain$index_rowsMatchingRegularExpression], process$analyteCountsPerSecond()[rowIndexInMain$index_rowsMatchingRegularExpression,])
       colnames(indexTable) <- c(firstColumnName, parameters$analyteNames)
     }
     else {return()}
@@ -447,13 +345,17 @@ ICPMS_server <- function(input, output, session) {
                  buttons = c('copy', 'csv'),
                  columnDefs = list(list(width = '120px', targets = "_all")))))
   
+  indexTab_selectedRows <- reactive({
+    sort(input$indexTable_rows_selected)
+  })
+  
   observeEvent(input$searchIndexwhat, {
     updateTextInput(session, "searchIndexName", value = input$searchIndexwhat)
   })
   
   observeEvent(input$searchIndexCreate, {
     indexName = input$searchIndexName
-    customNumIndex = c(1:parameters$sampleNumber)[rowIndexInMain$temp][sort(input$indexTable_rows_selected)]
+    customNumIndex = c(1:parameters$sampleNumber)[rowIndexInMain$index_rowsMatchingRegularExpression][indexTab_selectedRows()]
     if (is.null(rowIndexInMain$custom)) {
       rowIndexInMain$custom <- list()
     }
@@ -463,45 +365,60 @@ ICPMS_server <- function(input, output, session) {
   indexTableProxy <- DT::dataTableProxy("indexTable", session = session)
   
   observeEvent(input$indexSelectAll, {
-    if (is.null(sort(input$indexTable_rows_selected))){
-      DT::selectRows(indexTableProxy, c(1:length(rowIndexInMain$temp)))
+    
+    if (is.null(indexTab_selectedRows()))
+    {
+      DT::selectRows(indexTableProxy, seq(rowIndexInMain$index_rowsMatchingRegularExpression))
     }
-    else if (sort(input$indexTable_rows_selected) == c(1:length(rowIndexInMain$temp))){
+    else if (identical(indexTab_selectedRows(), seq(rowIndexInMain$index_rowsMatchingRegularExpression)))
+    {
       DT::selectRows(indexTableProxy, NULL)
     }
-    else{
-      DT::selectRows(indexTableProxy, c(1:length(rowIndexInMain$temp)))
+    else
+    {
+      DT::selectRows(indexTableProxy, seq(rowIndexInMain$index_rowsMatchingRegularExpression))
     }
+    
   })
   
   observeEvent(rowIndexInMain$custom, {
     if (is.null(rowIndexInMain$custom)){return()}
-    updateSelectInput(session,"indexBlkchoiceWhat", label  = "Replace what:", choices=names(rowIndexInMain$custom),names(rowIndexInMain$custom)[1])
-    updateSelectInput(session,"indexBlkchoiceIn", label  = "Replace in:", choices=names(rowIndexInMain$custom),names(rowIndexInMain$custom)[1])
+    updateSelectInput(session,"sliderInput_BlankTab_rowsToReplace", label  = "Replace what:", choices=names(rowIndexInMain$custom),names(rowIndexInMain$custom)[1])
+    updateSelectInput(session,"sliderInput_BlankTab_rowsToReplaceFrom", label  = "Replace in:", choices=names(rowIndexInMain$custom),names(rowIndexInMain$custom)[1])
     updateSelectInput(session,"selectDriftIndex", label  = "Define drift index:", choices=names(rowIndexInMain$custom),names(rowIndexInMain$custom)[1])
     updateSelectInput(session,"viewConcentrationIndex", label  = "View index:", choices=c("All", names(rowIndexInMain$custom)),"All")
   })
 
 # Blank verif/process -----------------------------------------------------
 
+  liveReplaceBlkTable <- reactive({
+    
+    replaceIndexWhat = rowIndexInMain$custom[[input$sliderInput_BlankTab_rowsToReplace]]
+    replaceIndexIn = rowIndexInMain$custom[[input$sliderInput_BlankTab_rowsToReplaceFrom]]
+    
+    replaceValues(process$ratio(), 1:parameters$analyteNumber, input$sliderInput_BlankTab_replacementMethod, replaceIndexWhat, replaceIndexIn)
+  })
+  
   #Render ISTD table if all conditions are met
-  output$blkTable <- DT::renderDT(datatable({
-    if (is.null(process$analyteCountsPerSecond())){return()}
-    blkMode = input$blkInteractionMode
+  output$blankTab_table <- DT::renderDT(datatable({
     
-    lc = input$blkColSlider[1]
-    uc = input$blkColSlider[2]
+    blank_processOrView = input$sliderInput_BlankTab_processOrView
     
-    df_view <- cbind(parameters[["categoricalDataAndTime"]][ , "Sample Name"], process$blk_ratio[[1]])
-    names(df_view) <- c("Sample Name", names(df_view)[2:length(df_view)])
-    df_view <- format(df_view, digits = 3, scientific=T)
+    if (blank_processOrView == "view") 
+    {
+      blankTab_table <- cbind(parameters[["categoricalDataAndTime"]][ , "Sample Name"], process$blk_ratio[[1]])
+      names(blankTab_table) <- c("Sample Name", names(blankTab_table)[2:length(blankTab_table)])
+      blankTab_table <- format(blankTab_table, digits = 3, scientific=T)
+    }
+    if (blank_processOrView == "process") 
+    {
+      blankTab_table <- cbind(parameters[["categoricalDataAndTime"]][ , "Sample Name"], liveReplaceBlkTable()[[1]])
+      names(blankTab_table) <- c("Sample Name", names(blankTab_table)[2:length(blankTab_table)])
+      blankTab_table <- format(blankTab_table, digits = 3, scientific=T)
+    }
     
-    df_process <- cbind(parameters[["categoricalDataAndTime"]][ , "Sample Name"], liveReplaceBlkTable()[[1]][, lc:uc, drop = FALSE])
-    names(df_process) <- c("Sample Name", names(df_process)[2:length(df_process)])
-    df_process <- format(df_process, digits = 3, scientific=T)
-
-    if (blkMode == "view") {df_view}
-    else if (blkMode == "process") {df_process}
+    blankTab_table
+    
   }, extensions = c('Scroller', 'Buttons'),
   options = list(dom = 'Bt', ordering=F, autoWidth = TRUE,
                  scrollX = TRUE, scrollY = 300, deferRender = TRUE, scroller = TRUE,
@@ -509,81 +426,40 @@ ICPMS_server <- function(input, output, session) {
                  columnDefs = list(list(width = '120px', targets = "_all")))))
   
   #Defines a proxy for changing selections in the table
-  blkTableProxy <- DT::dataTableProxy("blkTable", session = session)
+  blankTab_tableProxy <- DT::dataTableProxy("blankTab_table", session = session)
   
-  
-  observeEvent(input$blkColSlider, {
-    if (!is.null(input$indexBlkchoiceWhat)){
-      DT::selectRows(blkTableProxy, rowIndexInMain$custom[[input$indexBlkchoiceWhat]])
+  observe({
+    input$sliderInput_BlankTab_processOrView
+    input$sliderInput_BlankTab_rowsToReplace
+    input$sliderInput_BlankTab_replacementMethod
+    input$sliderInput_BlankTab_rowsToReplaceFrom
+    if (!is.null(input$sliderInput_BlankTab_rowsToReplace)){
+      DT::selectRows(blankTab_tableProxy, rowIndexInMain$custom[[input$sliderInput_BlankTab_rowsToReplace]])
     }
-    else {}
-  })
-  
-  observeEvent(input$indexBlkchoiceWhat, {
-    if (!is.null(input$indexBlkchoiceWhat)){
-      DT::selectRows(blkTableProxy, rowIndexInMain$custom[[input$indexBlkchoiceWhat]])
-    }
-    else {}
-  })
-  
-  observeEvent(input$indexBlkchoiceIn, {
-    if (!is.null(input$indexBlkchoiceWhat)){
-      DT::selectRows(blkTableProxy, rowIndexInMain$custom[[input$indexBlkchoiceWhat]])
-    }
-    else {}
-  })
-  
-  observeEvent(input$blkInteractionMode, {
-    if (!is.null(input$indexBlkchoiceWhat)){
-      DT::selectRows(blkTableProxy, rowIndexInMain$custom[[input$indexBlkchoiceWhat]])
-    }
-    else {}
-  })
-  
-  observeEvent(input$blkInterpolationMethod, {
-    if (!is.null(input$indexBlkchoiceWhat)){
-      DT::selectRows(blkTableProxy, rowIndexInMain$custom[[input$indexBlkchoiceWhat]])
-    }
-    else {}
   })
   
   #Assigns the current state of the ISTD table to the ISTD variable that will be used for calculations
-  observeEvent(input$setBlkInterpolationMethod, {
-    repIndex = rowIndexInMain$custom[[input$indexBlkchoiceWhat]]
-    if (is.null(liveReplaceBlkTable())| is.null(repIndex)) {return()}
-
-    lc = input$blkColSlider[1]
-    uc = input$blkColSlider[2]
-
-    process$blk_ratio[[1]][repIndex,lc:uc] <- liveReplaceBlkTable()[[1]][repIndex, lc:uc, drop = FALSE]
-    process$blk_ratio[[2]][repIndex,lc:uc] <- liveReplaceBlkTable()[[2]][repIndex, lc:uc, drop = FALSE]
-  })
-  
-  #Updates the slider for row and col selections when modifications are made in process$internalStandardCountsPerSecond(), i.e. when the extract button is hit
-  observeEvent(process$analyteCountsPerSecond(), {
-    if (is.null(process$analyteCountsPerSecond())){return()}
-    updateSliderInput(session,"blkRowSlider", max=parameters$sampleNumber, value = c(1,parameters$sampleNumber))
-    updateSliderInput(session,"blkColSlider", max=parameters$analyteNumber, value = c(1,parameters$analyteNumber))
+  observeEvent(input$actionButton_BlankTab_replace, {
+    
+    rowReplacementIndex = rowIndexInMain$custom[[input$sliderInput_BlankTab_rowsToReplace]]
+    
+    req(!is.null(liveReplaceBlkTable()) && !is.null(rowReplacementIndex))
+    
+    process$blk_ratio[[1]][rowReplacementIndex, ] <- liveReplaceBlkTable()[[1]][rowReplacementIndex, , drop = FALSE]
+    process$blk_ratio[[2]][rowReplacementIndex, ] <- liveReplaceBlkTable()[[2]][rowReplacementIndex, , drop = FALSE]
   })
   
   observe({
-    if(input$blkInteractionMode == "process") {
-      shinyjs::enable("setBlkInterpolationMethod")
-      shinyjs::enable("blkColSlider")
-      shinyjs::enable("blkInterpolationMethod")
-      shinyjs::enable("indexBlkchoiceIn")
+    if(input$sliderInput_BlankTab_processOrView == "process") {
+      shinyjs::enable("actionButton_BlankTab_replace")
+      shinyjs::enable("sliderInput_BlankTab_replacementMethod")
+      shinyjs::enable("sliderInput_BlankTab_rowsToReplaceFrom")
     }
-    else if(input$blkInteractionMode == "view") {
-      shinyjs::disable("setBlkInterpolationMethod")
-      shinyjs::disable("blkColSlider")
-      shinyjs::disable("blkInterpolationMethod")
-      shinyjs::disable("indexBlkchoiceIn")
+    else if(input$sliderInput_BlankTab_processOrView == "view") {
+      shinyjs::disable("actionButton_BlankTab_replace")
+      shinyjs::disable("sliderInput_BlankTab_replacementMethod")
+      shinyjs::disable("sliderInput_BlankTab_rowsToReplaceFrom")
     }
-  })
-  
-  #Assigns the current state of the ISTD table to the ISTD variable that will be used for calculations
-  observeEvent(input$searchBlkSelect, {
-    DT::selectRows(liveReplaceBlkTableProxy, NULL)
   })
 
 # Drift verif/process -----------------------------------------------------
@@ -595,13 +471,13 @@ ICPMS_server <- function(input, output, session) {
   })
   
   output$smpBlkCorTable <- DT::renderDT(datatable({
-    if (is.null(process$ratio_cor_b()[[1]]) | is.null(rowIndexInMain$drift) | !is.integer(input$e_ind_drift)){return()}
+    if (is.null(process$ratio_cor_b()[[1]]) | is.null(rowIndexInMain$drift) | !is.integer(input$driftTab_numericInput_analyteNumber)){return()}
     driftSignal <- process$ratio_cor_b()[[1]]
-    if (input$e_ind_drift < 5){
+    if (input$driftTab_numericInput_analyteNumber < 5){
       lc <- 1
     }
     else{
-      lc <- max(which((1:input$e_ind_drift)%%5 == 0))
+      lc <- max(which((1:input$driftTab_numericInput_analyteNumber)%%5 == 0))
     }
     uc <- min(lc + 4, parameters$analyteNumber)
     driftTable <- cbind(parameters[["categoricalDataAndTime"]][ , "Sample Name"][rowIndexInMain$drift],driftSignal[rowIndexInMain$drift,lc:uc])
@@ -617,28 +493,32 @@ ICPMS_server <- function(input, output, session) {
   
   observeEvent(parameters$analyteNames, {
     if (is.null(parameters$analyteNames)){return()}
-    updateSelectInput(session,"e_drift",choices=parameters$analyteNames,selected=parameters$analyteNames[1])
-    updateNumericInput(session,"e_ind_drift", "Element number", 1, min = 1, max = length(parameters$analyteNames))
+    updateSelectInput(session,"driftTab_selectInput_analyteName",choices=parameters$analyteNames,selected=parameters$analyteNames[1])
+    updateNumericInput(session,"driftTab_numericInput_analyteNumber", "Element number", 1, min = 1, max = length(parameters$analyteNames))
   })
   
   observeEvent(input$changeElementDisplayedForDrift, {
-    if (is.null(input$e_drift)){return()}
-    updateNumericInput(session, "e_ind_drift", value = grep(input$e_drift,parameters$analyteNames,fixed=TRUE))
+    if (is.null(input$driftTab_selectInput_analyteName)){return()}
+    updateNumericInput(session, "driftTab_numericInput_analyteNumber", value = grep(input$driftTab_selectInput_analyteName,parameters$analyteNames,fixed=TRUE))
   })
   
-  observeEvent(input$e_ind_drift, {
-    if (is.null(input$e_ind_drift)){return()}
-    updateSelectInput(session,"e_drift",selected=parameters$analyteNames[input$e_ind_drift])
+  observeEvent(input$driftTab_numericInput_analyteNumber, {
+    if (is.null(input$driftTab_numericInput_analyteNumber)){return()}
+    updateSelectInput(session,"driftTab_selectInput_analyteName",selected=parameters$analyteNames[input$driftTab_numericInput_analyteNumber])
   })
+  
+  yplus <- reactive({(process$ratio_cor_b()[[1]] + process$ratio_cor_b()[[2]]/100*process$ratio_cor_b()[[1]])[rowIndexInMain$drift, input$driftTab_numericInput_analyteNumber]})
+  yminus <- reactive({(process$ratio_cor_b()[[1]] - process$ratio_cor_b()[[2]]/100*process$ratio_cor_b()[[1]])[rowIndexInMain$drift, input$driftTab_numericInput_analyteNumber]})
   
   output$driftPlot <- renderPlot({
     if (is.null(process$ratio_cor_b()[[1]]) | is.null(rowIndexInMain$drift)){return()}
-    elementName = parameters$analyteNames[input$e_ind_drift]
+    
+    elementName = parameters$analyteNames[input$driftTab_numericInput_analyteNumber]
     driftTime = parameters[["categoricalDataAndTime"]][ , "Delta Time"][rowIndexInMain$drift]
-    driftValue = process$ratio_cor_b()[[1]][rowIndexInMain$drift,input$e_ind_drift]
+    driftValue = process$ratio_cor_b()[[1]][rowIndexInMain$drift,input$driftTab_numericInput_analyteNumber]
     plot(x=driftTime,y=driftValue,xlab = "Time (seconds)", ylab = elementName, pch=21, bg="lightblue")
 
-    if (parameters$driftCorrectedElements[input$e_ind_drift] == TRUE){
+    if (parameters$driftCorrectedElements[input$driftTab_numericInput_analyteNumber] == TRUE){
       time_0 = driftTime[1]
       time_f = driftTime[length(driftTime)]
       timeInterval = seq(from=as.numeric(time_0), to=as.numeric(time_f), by=as.numeric((time_f - time_0)/100))
@@ -655,15 +535,62 @@ ICPMS_server <- function(input, output, session) {
   
   observeEvent(input$setDriftCorrection, {
     if (is.null(parameters$driftCorrectedElements)){return()}
-    parameters$driftCorrectedElements[input$e_ind_drift] <- !parameters$driftCorrectedElements[input$e_ind_drift]
+    parameters$driftCorrectedElements[input$driftTab_numericInput_analyteNumber] <- !parameters$driftCorrectedElements[input$driftTab_numericInput_analyteNumber]
   })
   
   observeEvent(input$pressedKey, {
-    if (is.null(parameters$driftCorrectedElements) || input$pressedKeyId != C_LETTER_KEYCODE || input$tagId != "e_ind_drift"){return()}
-    parameters$driftCorrectedElements[input$e_ind_drift] <- !parameters$driftCorrectedElements[input$e_ind_drift]
+    if (is.null(parameters$driftCorrectedElements) || input$pressedKeyId != C_LETTER_KEYCODE || input$tagId != "driftTab_numericInput_analyteNumber"){return()}
+    parameters$driftCorrectedElements[input$driftTab_numericInput_analyteNumber] <- !parameters$driftCorrectedElements[input$driftTab_numericInput_analyteNumber]
   })
 
 # Process -----------------------------------------------------------------
+  
+  downloadTabData <- reactive({
+    
+    selectedIndex <- rowIndexInMain$custom[[input$viewConcentrationIndex]]
+    
+    downloadTabDataSignal <- switch(input$dataReductionStateSelection,
+                                    "Counts per second" = process$analyteCountsPerSecond(),
+                                    "Internal Standard matrix (adapted for analytes)" = process$internalStandardMatrixAdaptedToAnalytes()[["signal"]],
+                                    "Internal Standard ratio" = process$ratio()[["signal"]],
+                                    "Blank matrix" = process$blk_ratio[["signal"]],
+                                    "Blank corrected signal (CPS or ratio)" = process$ratio_cor_b()[["signal"]],
+                                    "Drift matrix" = process$driftFactorMatrix()[["signal"]],
+                                    "Drift corrected signal (CPS or ratio, blank corrected)" = process$driftAndBlankCorrectedMatrix()[["signal"]],
+                                    "Concentration" = process$concentration()[["signal"]]
+    )
+    
+    downloadTabDataRsd <- switch(input$dataReductionStateSelection,
+                                 "Counts per second" = process$analyteCountsPerSecondRelativeStandardDeviation(),
+                                 "Internal Standard matrix (adapted for analytes)" = process$internalStandardMatrixAdaptedToAnalytes()[["RSD"]],
+                                 "Internal Standard ratio" = process$ratio()[["RSD"]],
+                                 "Blank matrix" = process$blk_ratio[["RSD"]],
+                                 "Blank corrected signal (CPS or ratio)" = process$ratio_cor_b()[["RSD"]],
+                                 "Drift matrix" = process$driftFactorMatrix()[["RSD"]],
+                                 "Drift corrected signal (CPS or ratio, blank corrected)" = process$driftAndBlankCorrectedMatrix()[["RSD"]],
+                                 "Concentration" = process$concentration()[["RSD"]]
+    )
+    
+    colnames(downloadTabDataSignal) <- parameters[["analyteNames"]]
+    colnames(downloadTabDataRsd) <- parameters[["analyteNames"]]
+    
+    mergedSignalAndRsd <- mergeMatrixes(downloadTabDataSignal, downloadTabDataRsd)
+    mergedSignalAndRsdColumnNames <- mergeMatrixes(matrix(parameters[["analyteNames"]], nrow = 1, ncol = parameters[["analyteNumber"]]),
+                                                           matrix(paste0(parameters[["analyteNames"]], " RSD (%)"), nrow = 1, ncol = parameters[["analyteNumber"]]))
+    colnames(mergedSignalAndRsd) <- mergedSignalAndRsdColumnNames
+    
+    
+    customData <- switch(input$viewCustomDataSwitch,
+                         "1" = downloadTabDataSignal,
+                         "2" = downloadTabDataRsd,
+                         "3" = mergedSignalAndRsd
+    )
+    
+    customDataWithHeader <- cbind(parameters[["categoricalDataAndTime"]][, "Sample Name", drop = FALSE], customData)
+    
+    return(customDataWithHeader[selectedIndex, ])
+    
+  })
   
   output$customDataTable <- DT::renderDT(datatable({
     
@@ -679,7 +606,7 @@ ICPMS_server <- function(input, output, session) {
 # Downloadable data -------------------------------------------------------
  
   output$downloadCustomTable <- downloadHandler(
-    filename = paste0("data_", input$viewConcentrationIndex, ".csv"),
+    filename =  "someFile.csv", # paste0("data_", input$viewConcentrationIndex, ".csv"),
     content = function(file) {
       
       write.csv(downloadTabData(), file, sep=";", quote = FALSE, row.names = FALSE, col.names = FALSE)

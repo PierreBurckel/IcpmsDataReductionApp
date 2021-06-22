@@ -48,20 +48,18 @@ ICPMS_ui <- shinyUI({
                tabPanel("Blank verification/processing",
                         sidebarLayout(
                           sidebarPanel(
-                            selectInput("blkInteractionMode", "Select a mode:",
+                            selectInput("sliderInput_BlankTab_processOrView", "Select a mode:",
                                         c("View" = "view", "Process" = "process")),
-                            selectInput("indexBlkchoiceWhat", "Replace what:",
+                            selectInput("sliderInput_BlankTab_rowsToReplace", "Replace what:",
                                         "", selected = ""),
-                            selectInput("blkInterpolationMethod", "Replacement method:",
+                            selectInput("sliderInput_BlankTab_replacementMethod", "Replacement method:",
                                         c("None" = "none", "Average blanks" = "mean",
                                           "Previous blank" = "prev", "Average in index" = "averageInBlankIndex")),
-                            selectInput("indexBlkchoiceIn", "Replace in:",
+                            selectInput("sliderInput_BlankTab_rowsToReplaceFrom", "Replace in:",
                                         "All", selected = "All"),
-                            actionButton("setBlkInterpolationMethod", "Set blank interpolation")),
+                            actionButton("actionButton_BlankTab_replace", "Set blank interpolation")),
                           mainPanel(
-                            div(style="display:inline-block",sliderInput("blkColSlider", label = h3("Column range"), min = 1, 
-                                                                         max = 100, value = c(1, 1))),
-                            DT::DTOutput("blkTable")
+                            DT::DTOutput("blankTab_table")
                           )
                         )
                ),
@@ -71,9 +69,9 @@ ICPMS_ui <- shinyUI({
                           sidebarPanel(
                             selectInput("selectDriftIndex", "Define drift index:", "", selected = ""),
                             actionButton("setAsDriftIndex", "Set drift index"),
-                            selectInput("e_drift", "Choose element:", "", selected = ""),
+                            selectInput("driftTab_selectInput_analyteName", "Choose element:", "", selected = ""),
                             actionButton("changeElementDisplayedForDrift", "Switch to element"),
-                            numericInput("e_ind_drift", "Element number", 1),
+                            numericInput("driftTab_numericInput_analyteNumber", "Element number", 1),
                             actionButton("setDriftCorrection", "Set ISTD correction"),
                             textOutput("warningDrifr"),
                             tags$script('
