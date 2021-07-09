@@ -78,7 +78,7 @@ ICPMS_server <- function(input, output, session) {
       driftIndexAfterFirstStandard <- getElementDriftIndex(elementFullName = elementFullName, stdDataFrame = extracted$standard, 
                                                            stdIdentificationColumn=parameters[["categoricalDataAndTime"]][ , "Level"], driftIndex = rowIndexInMain$drift)
       
-      deltaTimeWithFirstDriftAfterFirstStandardAsOrigin <- parameters[["categoricalDataAndTime"]][ , "Time"] - parameters[["categoricalDataAndTime"]][ , "Time"][driftIndexAfterFirstStandard][1]
+      deltaTimeWithFirstDriftAfterFirstStandardAsOrigin <- as.numeric(parameters[["categoricalDataAndTime"]][ , "Time"] - parameters[["categoricalDataAndTime"]][ , "Time"][driftIndexAfterFirstStandard][1])
       deltaTimeWithFirstDriftAfterFirstStandardAsOrigin[deltaTimeWithFirstDriftAfterFirstStandardAsOrigin < 0] <- 0
       
       driftSignalAndDeltaTime <- cbind(Signal=process$ratio_cor_b()[[1]][driftIndexAfterFirstStandard,elementIndex],

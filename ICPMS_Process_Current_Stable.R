@@ -8,9 +8,15 @@ library(shinyjs)
 library(stringr)
 library(rstudioapi) 
 
-# source('C:/Users/pierr/Desktop/IPGP/R/ICP-MS_process/ICPMS_ui.R')
-# source('C:/Users/pierr/Desktop/IPGP/R/ICP-MS_process/ICPMS_server.R')
-# source('C:/Users/pierr/Desktop/IPGP/R/ICP-MS_process/ICPMS_functions.R')
+# install.packages("shiny")
+# install.packages("shinyalert")
+# install.packages("plotly")
+# install.packages("DT")
+# install.packages("stringr")
+# install.packages("plotly")
+# install.packages("shinyjs")
+# install.packages("stringr")
+# install.packages("rstudioapi")
 
 setwd(dirname(getActiveDocumentContext()$path))  
 
