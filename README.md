@@ -2,7 +2,7 @@
 
 ## Description
 
-This is an R program that facilitates data reduction for ICP-MS analyses (currently for Agilent format files).
+This is an R Shiny application that facilitates data reduction for ICP-MS analyses (currently for Agilent format files).
 
 ## Installation
 
@@ -16,7 +16,7 @@ Go to [this page](https://www.rstudio.com/products/rstudio/download/#download) t
 
 ### Preparing the R scripts
 
-On [this page](https://github.com/PierreBu/R_ICPMS_Process/tree/master) (master branch, this is the stable version of the program) click on the green **Code** button and select **Download ZIP**. Extract the ZIP folder where you want to run the ICP-MS data reduction software. Keep all files together in the same folder.
+On [this page](https://github.com/PierreBu/R_ICPMS_Process/tree/master) (master branch, this is the stable version of the application) click on the green **Code** button and select **Download ZIP**. Extract the ZIP folder where you want to run the ICP-MS data reduction software. Keep all files together in the same folder.
 
 Open **ICPMS_Process_Current_Stable.R** with RStudio. On top of the R Script, there should be a warning symbol with a message stating that some packages are not installed. You can click on **Install** to install the required packages (this will take several minutes, an internet connexion is required).
 
@@ -24,7 +24,7 @@ If the message is not displayed, either the packages are already installed and y
 
 ## Run
 
-To run the program, open **ICPMS_Process_Current_Stable.R** with RStudio and click on the **Run App** button (next to a green "Play" icon) on top of the R Script. This will run the application with your default web browser.
+To run the application, open **ICPMS_Process_Current_Stable.R** with RStudio and click on the **Run App** button (next to a green "Play" icon) on top of the R Script. This will run the application with your default web browser.
 
 ## Tutorials
 
