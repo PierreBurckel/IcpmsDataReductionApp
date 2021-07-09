@@ -57,10 +57,16 @@ ICPMS_server <- function(input, output, session) {
     }
   })
   
-  process$ratio <- reactive({propagateUncertainty(a = list(signal=process$analyteCountsPerSecond(), RSD=process$analyteCountsPerSecondRelativeStandardDeviation()), b = process$internalStandardMatrixAdaptedToAnalytes(), operation="division")})
+  process$ratio <- reactive({
+    propagateUncertainty(a = list(signal=process$analyteCountsPerSecond(), RSD=process$analyteCountsPerSecondRelativeStandardDeviation()),
+                         b = process$internalStandardMatrixAdaptedToAnalytes(),
+                         operation="division")
+    })
   
   process$ratio_cor_b <- reactive({
-      propagateUncertainty(a=process$ratio(), b=process$blk_ratio, operation="substraction")
+      propagateUncertainty(a = process$ratio(),
+                           b = process$blk_ratio,
+                           operation="substraction")
   })
   
   process$driftFactorMatrix <- reactive({
@@ -121,12 +127,14 @@ ICPMS_server <- function(input, output, session) {
       
       elementFullName <- parameters$analyteNames[elementIndex]
       
-      calibrationSignalUncertaintyConcentration <- getCalibrationData(elementFullName = elementFullName, signal=process$ratio_cor_b(),
-                                                                      stdIdentificationColumn=parameters[["categoricalDataAndTime"]][ , "Level"], stdDataFrame = extracted$standard)
+      calibrationSignalUncertaintyConcentration <- getCalibrationData(isotopeName = elementFullName, signalMatrix = process$ratio_cor_b(),
+                                                                      standardIdentificationColumn = parameters[["categoricalDataAndTime"]][ , "Level"], standardDataMatrix = extracted$standard)
       
-      calibrationModel <- lm(Concentration ~ 0+Signal, data=as.data.frame(calibrationSignalUncertaintyConcentration))
+      if (!is.null(calibrationSignalUncertaintyConcentration)) {
+        calibrationModel <- lm(Concentration ~ 0+Signal, data=as.data.frame(calibrationSignalUncertaintyConcentration))
+      }
       
-      if (dim(summary(calibrationModel)$coefficients)[1] == 0) {
+      if (is.null(calibrationSignalUncertaintyConcentration) || dim(summary(calibrationModel)$coefficients)[1] == 0) {
         calibrationLinearRegressionSlope <- c(calibrationLinearRegressionSlope, NA)
         elementsWithCalibrationIssues <- c(elementsWithCalibrationIssues, elementFullName)
       }
@@ -235,7 +243,13 @@ ICPMS_server <- function(input, output, session) {
     extracted$main <- read.table(mainFileDatapath, skip = 2, header = FALSE, sep=';', stringsAsFactors=FALSE)
     colnames(extracted$main) <- extracted$firstRowOfMain
     
-    extracted$standard <- read.table(standardFileDatapath, header = TRUE, sep=';', stringsAsFactors=FALSE)
+    extracted$standard <- read.table(standardFileDatapath, header = FALSE, sep=';', stringsAsFactors=FALSE)
+    if (!identical(unique(extracted$standard[1, ]), extracted$standard[1, ])) {
+      shinyalert("Impossible to extract", "In the standard file, the standard labels in the first row are not unique", type = "error")
+      return(NULL)
+    }
+    colnames(extracted$standard) <- extracted$standard[1, ]
+    extracted$standard <- extracted$standard[-1, ]
     extracted$standard <- removeDuplicateLines(extracted$standard)
     row.names(extracted$standard) <- extracted$standard[ , 1]
     extracted$standard <- extracted$standard[ , -1]
@@ -262,7 +276,9 @@ ICPMS_server <- function(input, output, session) {
     if (!is.null(internalStandardFileDatapath)) 
     {
       extracted$internalStandard  <- read.table(internalStandardFileDatapath, header = TRUE, sep= ';', stringsAsFactors = FALSE)
-      process$blk_ratio <- propagateUncertainty(a = list(signal = process$analyteCountsPerSecond(), RSD = process$analyteCountsPerSecondRelativeStandardDeviation()), b = process$internalStandardMatrixAdaptedToAnalytes(), operation="division")
+      process$blk_ratio <- propagateUncertainty(a = list(signal = process$analyteCountsPerSecond(), RSD = process$analyteCountsPerSecondRelativeStandardDeviation()),
+                                                b = process$internalStandardMatrixAdaptedToAnalytes(),
+                                                operation="division")
     }
     else 
     {

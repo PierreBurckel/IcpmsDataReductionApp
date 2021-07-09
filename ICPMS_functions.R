@@ -70,45 +70,36 @@ getElementDriftIndex <- function(elementFullName, stdDataFrame, stdIdentificatio
   }
 }
 
-getCalibrationData <- function(elementFullName, signal, stdIdentificationColumn, stdDataFrame, truncate = FALSE, smpIndex = NULL) {
+getCalibrationData <- function(isotopeName, signalMatrix, standardIdentificationColumn, standardDataMatrix) {
   
-  #Extracts the element name from the element full name
-  eName <- getElementName(elementFullName, agilentElementNamePattern)
+  elementName <- getElementName(isotopeName, agilentElementNamePattern)
   
-  #Rises an error if the element name is not found in the standard dataframe
-  if (!(eName %in% row.names(stdDataFrame))) {
-    stop(paste(eName, " not found in the standard file. If not in the standards, create an empty line for ", eName, " in the file.", sep=""))
-  } 
-  else {}
-  
-  #stdConcentration contains the concentrations of the element eName in the standards
-  stdConcentration <- t(stdDataFrame[eName,])
-  #if the element eName has concentrations associated to it, calibrate
-  if (sum(stdConcentration, na.rm=TRUE) != 0)
-  {
-    #Discard non numeric values in stdConcentration
-    stdConcentration <- stdConcentration[!is.na(stdConcentration),1, drop = FALSE]
-    
-    #Searches for the standard names (row names in stdConcentration) that are associated with numeric values in
-    #the level column to create an index that will be used to find the signal associated to the standards
-    calibrationStdNumIndex <- sapply(paste("^", row.names(stdConcentration), "$", sep=""),
-                                     grep, make.names(stdIdentificationColumn))
-    
-    #Rises an error if one of the standard id is not found (if grep didn't find a standard name, return a 0 length integer)
-    if (!all(sapply(calibrationStdNumIndex,length) > 0)) {
-      stop(paste("For ", eName, ", no name match between standard file and standard identifiers in the sequence.", sep=""))
-    } 
-    else {} 
-    
-    eSignal <- signal[[1]][calibrationStdNumIndex, elementFullName]
-    eRSD <- signal[[2]][calibrationStdNumIndex, elementFullName]
-  }
-  else
-  {
-    return(NA)
+  if (!(elementName %in% row.names(standardDataMatrix))) {
+    return(NULL)
   }
   
-  return(cbind(Signal=eSignal, RSD=eRSD, Concentration=as.numeric(stdConcentration)))
+  standardNamesInStandardFile <- colnames(standardDataMatrix[elementName, ])
+  standardConcentrationInStandardFile <- standardDataMatrix[elementName, ]
+  
+  standardRowNumberInMain <- as.numeric(sapply(paste("^", standardNamesInStandardFile, "$", sep=""),
+                                   grep, standardIdentificationColumn))
+  
+  isInMainAndStandardFiles <- !is.na(standardRowNumberInMain) & !is.na(standardConcentrationInStandardFile)
+  
+  standardConcentrationInStandardFile <- standardConcentrationInStandardFile[isInMainAndStandardFiles]
+  standardRowNumberInMain <- standardRowNumberInMain[isInMainAndStandardFiles]
+  
+  if (length(standardRowNumberInMain) == 0 || length(standardConcentrationInStandardFile) == 0)
+  {
+    return(NULL)
+  }
+  else 
+  {
+    eSignal <- signalMatrix[[1]][standardRowNumberInMain, isotopeName]
+    eRSD <- signalMatrix[[2]][standardRowNumberInMain, isotopeName]
+  }
+  
+  return(cbind(Signal=eSignal, RSD=eRSD, Concentration=as.numeric(standardConcentrationInStandardFile)))
 }
 
 getElementName <- function(elementFullName, pattern) {
