@@ -28,7 +28,11 @@ To run the application, open **ICPMS_Process_Current_Stable.R** with RStudio and
 
 ## Tutorials
 
-A tutorial video is being recorded and the link will be uploaded to here soon.
+Here are 4 tutorial videos for processing data on the Agilent 7900 ICP-MS. Video n°4 covers the use of the R-Shiny application.
+- Part1, Opening and checking data (here(https://drive.google.com/file/d/1mFeMndzGmAtN5Qt_tsqvyM2BrRVbyo06/view?usp=sharing))
+- Part2, Data correction (here(https://drive.google.com/file/d/1mOb3AqzBAstOO8Fs1d2B7wsbLvItuS8a/view?usp=sharing))
+- Part3, Data processing (Excel) (here(https://drive.google.com/file/d/1YT1coEkk1zpPVjIeC4uTmfB8GYZMdzC7/view?usp=sharing))
+- Part4, Data processing (R) (here(https://drive.google.com/file/d/1-ycANNSknwSEfpGpWF8atFMBAEwdLh2z/view?usp=sharing))
 
 ## Questions
 
