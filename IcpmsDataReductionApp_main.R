@@ -20,9 +20,9 @@ library(rstudioapi)
 
 setwd(dirname(getActiveDocumentContext()$path))  
 
-source('ICPMS_ui.R')
-source('ICPMS_server.R')
-source('ICPMS_functions.R')
+source('IcpmsDataReductionApp_ui.R')
+source('IcpmsDataReductionApp_server.R')
+source('IcpmsDataReductionApp_functions.R')
 
 app <- shinyApp(ui = ICPMS_ui, server = ICPMS_server)
 
