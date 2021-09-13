@@ -1,4 +1,4 @@
-# R_ICPMS_Process
+# ICP-MS data reduction app
 
 ## Description
 
