@@ -18,7 +18,7 @@ Go to [this page](https://www.rstudio.com/products/rstudio/download/#download) t
 
 On [this page](https://github.com/PierreBu/R_ICPMS_Process/tree/master) (master branch, this is the stable version of the application) click on the green **Code** button and select **Download ZIP**. Extract the ZIP folder where you want to run the ICP-MS data reduction software. Keep all files together in the same folder.
 
-Open **ICPMS_Process_Current_Stable.R** with RStudio (open RStudio, go to **File**, **Open File** then navigate to **ICPMS_Process_Current_Stable.R**). On top of the R Script, there should be a warning symbol with a message stating that some packages are not installed (see image below). You can click on **Install** to install the required packages (this will take several minutes, an internet connexion is required).
+Open **IcpmsDataReductionApp_main.R** with RStudio (open RStudio, go to **File**, **Open File** then navigate to **IcpmsDataReductionApp_main.R**). On top of the R Script, there should be a warning symbol with a message stating that some packages are not installed (see image below). You can click on **Install** to install the required packages (this will take several minutes, an internet connexion is required).
 
 
 ![Rstudio screenshot](https://github.com/PierreBurckel/IcpmsDataReductionApp/blob/master/RStudioCaptureEcran_mod.png)
@@ -27,7 +27,7 @@ If the message is not displayed, either the packages are already installed and y
 
 ## Run
 
-To run the application, open **ICPMS_Process_Current_Stable.R** with RStudio and click on the **Run App** button (next to a green "Play" icon, see image above) on top of the R Script. This will run the application with your default web browser.
+To run the application, open **IcpmsDataReductionApp_main.R** with RStudio and click on the **Run App** button (next to a green "Play" icon, see image above) on top of the R Script. This will run the application with your default web browser.
 
 ## Tutorials
 
