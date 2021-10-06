@@ -60,7 +60,7 @@ getElementDriftIndex <- function(elementFullName, stdDataFrame, stdIdentificatio
   stdIndex <- which(!is.na(stdDataFrame[eName,]))
   
   if (length(stdIndex) != 0){
-    firstStandardNumIndex <- grep(colnames(stdDataFrame)[stdIndex[1]],make.names(stdIdentificationColumn))
+    firstStandardNumIndex <- which(make.names(colnames(stdDataFrame)[stdIndex[1]]) == make.names(stdIdentificationColumn))
     eDritftIndex <- driftIndex[driftIndex >= firstStandardNumIndex]
     return(eDritftIndex)
   }
