@@ -69,26 +69,68 @@ ICPMS_server <- function(input, output, session) {
                            operation="substraction")
   })
   
-  process$driftFactorMatrix <- reactive({
+  parameters$deltaTimeWithFirstDriftAfterFirstStandardAsOrigin <- reactive({
+    
+    listOfdeltaTimeWithFirstDriftAfterFirstStandardAsOrigin <- list()
+    
+    for (elementIndex in 1:parameters$analyteNumber){
+      
+      elementFullName <- parameters$analyteNames[elementIndex]
+      
+      driftIndexAfterFirstStandard <- getElementSpecificDriftIndex(elementFullName = elementFullName, stdDataFrame = extracted$standard, 
+                                                                   stdIdentificationColumn=parameters[["categoricalDataAndTime"]][ , "Level"], driftIndex = rowIndexInMain$drift)
+      
+      deltaTimeWithFirstDriftAfterFirstStandardAsOrigin <- as.numeric(parameters[["categoricalDataAndTime"]][ , "Time"] - parameters[["categoricalDataAndTime"]][ , "Time"][driftIndexAfterFirstStandard][1])
+      deltaTimeWithFirstDriftAfterFirstStandardAsOrigin[deltaTimeWithFirstDriftAfterFirstStandardAsOrigin < 0] <- 0
+      
+      listOfdeltaTimeWithFirstDriftAfterFirstStandardAsOrigin[[elementFullName]] <- deltaTimeWithFirstDriftAfterFirstStandardAsOrigin
+    }
+    
+    return(listOfdeltaTimeWithFirstDriftAfterFirstStandardAsOrigin)
+  })
+  
+  process$elementSpecificDriftModels <- reactive({
+    
+    listOfDriftModels <- list()
   
     for (elementIndex in 1:parameters$analyteNumber){
       
       elementFullName <- parameters$analyteNames[elementIndex]
       
-      driftIndexAfterFirstStandard <- getElementDriftIndex(elementFullName = elementFullName, stdDataFrame = extracted$standard, 
+      driftIndexAfterFirstStandard <- getElementSpecificDriftIndex(elementFullName = elementFullName, stdDataFrame = extracted$standard, 
                                                            stdIdentificationColumn=parameters[["categoricalDataAndTime"]][ , "Level"], driftIndex = rowIndexInMain$drift)
       
-      deltaTimeWithFirstDriftAfterFirstStandardAsOrigin <- as.numeric(parameters[["categoricalDataAndTime"]][ , "Time"] - parameters[["categoricalDataAndTime"]][ , "Time"][driftIndexAfterFirstStandard][1])
-      deltaTimeWithFirstDriftAfterFirstStandardAsOrigin[deltaTimeWithFirstDriftAfterFirstStandardAsOrigin < 0] <- 0
+      deltaTimeWithFirstDriftAfterFirstStandardAsOrigin <- parameters$deltaTimeWithFirstDriftAfterFirstStandardAsOrigin()[[elementFullName]]
       
       driftSignalAndDeltaTime <- cbind(Signal=process$ratio_cor_b()[[1]][driftIndexAfterFirstStandard,elementIndex],
                                        dt=deltaTimeWithFirstDriftAfterFirstStandardAsOrigin[driftIndexAfterFirstStandard])  
       
       if (all(is.na(process$ratio_cor_b()[[1]][driftIndexAfterFirstStandard,elementIndex]))){
-        driftPredict = rep(NA, parameters$sampleNumber)
+        driftModel = NA
       }
       else{
         driftModel <- lm(Signal ~ poly(dt, degree=2, raw=TRUE), data = as.data.frame(driftSignalAndDeltaTime))
+      }
+      
+      listOfDriftModels[[elementFullName]] <- driftModel
+    }
+    
+    return(listOfDriftModels)
+  })
+    
+  process$driftFactorMatrix <- reactive({
+      
+    for (elementIndex in 1:parameters$analyteNumber){
+        
+      elementFullName <- parameters$analyteNames[elementIndex]
+      
+      deltaTimeWithFirstDriftAfterFirstStandardAsOrigin <- parameters$deltaTimeWithFirstDriftAfterFirstStandardAsOrigin()[[elementFullName]]
+      
+      if (is.na(process$elementSpecificDriftModels()[[elementFullName]])){
+        driftPredict = rep(NA, parameters$sampleNumber)
+      }
+      else{
+        driftModel <- process$elementSpecificDriftModels()[[elementFullName]]
         driftPredict=predict(driftModel, newdata = data.frame(dt=deltaTimeWithFirstDriftAfterFirstStandardAsOrigin))
       }
       

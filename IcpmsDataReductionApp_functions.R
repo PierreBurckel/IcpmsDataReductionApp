@@ -46,18 +46,17 @@ getWeights <- function(calibrationData, fn) {
   }
 }
 
-getElementDriftIndex <- function(elementFullName, stdDataFrame, stdIdentificationColumn, driftIndex) {
-  
-  #Extracts the element name from the element full name
-  eName <- getElementName(elementFullName, agilentElementNamePattern)
+getElementSpecificDriftIndex <- function(elementFullName, stdDataFrame, stdIdentificationColumn, driftIndex) {
+
+  elementName <- getElementName(elementFullName, agilentElementNamePattern)
   
   #Rises an error if the element name is not found in the standard dataframe
-  if (!(eName %in% row.names(stdDataFrame))) {
-    stop(paste(eName, " not found in the standard file. If not in the standards, create an empty line for ", eName, " in the file.", sep=""))
+  if (!(elementName %in% row.names(stdDataFrame))) {
+    stop(paste(elementName, " not found in the standard file. If not in the standards, create an empty line for ", elementName, " in the file.", sep=""))
   } 
   else {}
   
-  stdIndex <- which(!is.na(stdDataFrame[eName,]))
+  stdIndex <- which(!is.na(stdDataFrame[elementName,]))
   
   if (length(stdIndex) != 0){
     firstStandardNumIndex <- which(make.names(colnames(stdDataFrame)[stdIndex[1]]) == make.names(stdIdentificationColumn))
