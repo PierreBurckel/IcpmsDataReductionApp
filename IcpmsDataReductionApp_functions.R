@@ -47,7 +47,7 @@ getWeights <- function(calibrationData, fn) {
 }
 
 getElementSpecificDriftIndex <- function(elementFullName, stdDataFrame, stdIdentificationColumn, driftIndex) {
-
+  
   elementName <- getElementName(elementFullName, agilentElementNamePattern)
   
   #Rises an error if the element name is not found in the standard dataframe
@@ -59,7 +59,10 @@ getElementSpecificDriftIndex <- function(elementFullName, stdDataFrame, stdIdent
   stdIndex <- which(!is.na(stdDataFrame[elementName,]))
   
   if (length(stdIndex) != 0){
-    firstStandardNumIndex <- which(make.names(colnames(stdDataFrame)[stdIndex[1]]) == make.names(stdIdentificationColumn))
+    standardIdColumnInData <- make.names(stdIdentificationColumn)
+    elementSpecificStandardIdHeaderInStandardFile <- make.names(colnames(stdDataFrame)[stdIndex])
+    isStandardBothInDataAndStandardFile <- standardIdColumnInData %in% elementSpecificStandardIdHeaderInStandardFile
+    firstStandardNumIndex <- min(which(isStandardBothInDataAndStandardFile))
     eDritftIndex <- driftIndex[driftIndex >= firstStandardNumIndex]
     return(eDritftIndex)
   }

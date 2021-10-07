@@ -69,24 +69,26 @@ ICPMS_server <- function(input, output, session) {
                            operation="substraction")
   })
   
-  parameters$deltaTimeWithFirstDriftAfterFirstStandardAsOrigin <- reactive({
+  parameters$deltaTime <- reactive({
+    deltaTime <- as.numeric(parameters[["categoricalDataAndTime"]][ , "Time"] - 
+                            parameters[["categoricalDataAndTime"]][1, "Time"])
+    return(deltaTime)
+  })
+  
+  parameters$listOfElementSpecificDriftIndex <- reactive({
     
-    listOfdeltaTimeWithFirstDriftAfterFirstStandardAsOrigin <- list()
+    req(parameters$analyteNames)
     
-    for (elementIndex in 1:parameters$analyteNumber){
-      
-      elementFullName <- parameters$analyteNames[elementIndex]
-      
-      driftIndexAfterFirstStandard <- getElementSpecificDriftIndex(elementFullName = elementFullName, stdDataFrame = extracted$standard, 
-                                                                   stdIdentificationColumn=parameters[["categoricalDataAndTime"]][ , "Level"], driftIndex = rowIndexInMain$drift)
-      
-      deltaTimeWithFirstDriftAfterFirstStandardAsOrigin <- as.numeric(parameters[["categoricalDataAndTime"]][ , "Time"] - parameters[["categoricalDataAndTime"]][ , "Time"][driftIndexAfterFirstStandard][1])
-      deltaTimeWithFirstDriftAfterFirstStandardAsOrigin[deltaTimeWithFirstDriftAfterFirstStandardAsOrigin < 0] <- 0
-      
-      listOfdeltaTimeWithFirstDriftAfterFirstStandardAsOrigin[[elementFullName]] <- deltaTimeWithFirstDriftAfterFirstStandardAsOrigin
+    listOfElementSpecificDriftIndex <- list()
+    
+    for (elementFullName in parameters$analyteNames) {
+      listOfElementSpecificDriftIndex[[elementFullName]] <- getElementSpecificDriftIndex(elementFullName = elementFullName,
+                                                                                         stdDataFrame = extracted$standard, 
+                                                                                         stdIdentificationColumn=parameters[["categoricalDataAndTime"]][ , "Level"],
+                                                                                         driftIndex = rowIndexInMain$drift)
     }
     
-    return(listOfdeltaTimeWithFirstDriftAfterFirstStandardAsOrigin)
+    return(listOfElementSpecificDriftIndex)
   })
   
   process$elementSpecificDriftModels <- reactive({
@@ -97,15 +99,13 @@ ICPMS_server <- function(input, output, session) {
       
       elementFullName <- parameters$analyteNames[elementIndex]
       
-      driftIndexAfterFirstStandard <- getElementSpecificDriftIndex(elementFullName = elementFullName, stdDataFrame = extracted$standard, 
-                                                           stdIdentificationColumn=parameters[["categoricalDataAndTime"]][ , "Level"], driftIndex = rowIndexInMain$drift)
+      elementSpecificDriftIndex <- parameters$listOfElementSpecificDriftIndex()[[elementFullName]]
       
-      deltaTimeWithFirstDriftAfterFirstStandardAsOrigin <- parameters$deltaTimeWithFirstDriftAfterFirstStandardAsOrigin()[[elementFullName]]
+      driftSignalAndDeltaTime <- cbind(Signal=process$ratio_cor_b()[[1]][elementSpecificDriftIndex,elementIndex],
+                                       dt=parameters$deltaTime()[elementSpecificDriftIndex])  
       
-      driftSignalAndDeltaTime <- cbind(Signal=process$ratio_cor_b()[[1]][driftIndexAfterFirstStandard,elementIndex],
-                                       dt=deltaTimeWithFirstDriftAfterFirstStandardAsOrigin[driftIndexAfterFirstStandard])  
-      
-      if (all(is.na(process$ratio_cor_b()[[1]][driftIndexAfterFirstStandard,elementIndex]))){
+      if (length(elementSpecificDriftIndex) < 3){
+        
         driftModel = NA
       }
       else{
@@ -119,19 +119,18 @@ ICPMS_server <- function(input, output, session) {
   })
     
   process$driftFactorMatrix <- reactive({
-      
+    
     for (elementIndex in 1:parameters$analyteNumber){
         
       elementFullName <- parameters$analyteNames[elementIndex]
+      elementSpecificDriftIndex <- parameters$listOfElementSpecificDriftIndex()[[elementFullName]]
       
-      deltaTimeWithFirstDriftAfterFirstStandardAsOrigin <- parameters$deltaTimeWithFirstDriftAfterFirstStandardAsOrigin()[[elementFullName]]
-      
-      if (is.na(process$elementSpecificDriftModels()[[elementFullName]])){
+      if (all(is.na(process$elementSpecificDriftModels()[[elementFullName]]))){
         driftPredict = rep(NA, parameters$sampleNumber)
       }
       else{
         driftModel <- process$elementSpecificDriftModels()[[elementFullName]]
-        driftPredict=predict(driftModel, newdata = data.frame(dt=deltaTimeWithFirstDriftAfterFirstStandardAsOrigin))
+        driftPredict=predict(driftModel, newdata = data.frame(dt=parameters$deltaTime()))
       }
       
       if (elementIndex == 1){
@@ -142,8 +141,9 @@ ICPMS_server <- function(input, output, session) {
       }
   
       if (parameters$driftCorrectedElements[elementIndex] == TRUE){
-        driftDataFrame[elementIndex] <- driftDataFrame[elementIndex] / summary(driftModel)$coefficients[1,1]
+        driftDataFrame[elementIndex] <- driftDataFrame[elementIndex] / driftDataFrame[min(elementSpecificDriftIndex), elementIndex]
         driftDataFrame[is.na(driftDataFrame[,elementIndex]), elementIndex] <- 1
+        driftDataFrame[1:min(elementSpecificDriftIndex) , elementIndex] <- 1
       } 
       else {
         driftDataFrame[elementIndex] <- rep(1, parameters$sampleNumber)
@@ -223,7 +223,7 @@ ICPMS_server <- function(input, output, session) {
   #Table rendering of current uploaded file
   output$uploadedFilePreviewTable <- renderTable({
     req(input$uploadedFile)
-    tablePreview = read.table(input$uploadedFile$datapath, sep =";", header = FALSE)
+    tablePreview = read.table(input$uploadedFile$datapath, sep =input$csvDelimitation, header = FALSE)
     rowNumber <- min(nrow(tablePreview), input$fileUpload_nrow) 
     columnNumber <- min(ncol(tablePreview), input$fileUpload_ncolumn) 
     tablePreview[1:rowNumber, 1:columnNumber]
@@ -250,9 +250,9 @@ ICPMS_server <- function(input, output, session) {
       
       req(isExtractionReady() & !is.null(!is.null(extracted$internalStandard)))
       
-      write.csv(createISTDtemplate((uploadedFile$main)$datapath),
-                file, sep=";", quote = FALSE,
-                row.names = FALSE, col.names = FALSE)
+      write.table(createISTDtemplate((uploadedFile$main)$datapath),
+                file, sep = input$csvDelimitation, quote = FALSE,
+                row.names = FALSE, col.names = TRUE)
       })
 
   
@@ -282,10 +282,10 @@ ICPMS_server <- function(input, output, session) {
       return(NULL)
     }
     
-    extracted$main <- read.table(mainFileDatapath, skip = 2, header = FALSE, sep=';', stringsAsFactors=FALSE)
+    extracted$main <- read.table(mainFileDatapath, skip = 2, header = FALSE, sep=input$csvDelimitation, stringsAsFactors=FALSE)
     colnames(extracted$main) <- extracted$firstRowOfMain
     
-    extracted$standard <- read.table(standardFileDatapath, header = FALSE, sep=';', stringsAsFactors=FALSE)
+    extracted$standard <- read.table(standardFileDatapath, header = FALSE, sep=input$csvDelimitation, stringsAsFactors=FALSE)
     if (!identical(unique(extracted$standard[1, ]), extracted$standard[1, ])) {
       shinyalert("Impossible to extract", "In the standard file, the standard labels in the first row are not unique", type = "error")
       return(NULL)
@@ -307,17 +307,16 @@ ICPMS_server <- function(input, output, session) {
                                                     extracted$main[ , which(extracted$secondRowOfMain == "Sample Name")],
                                                     extracted$main[ , which(extracted$secondRowOfMain == "Type")],
                                                     extracted$main[ , which(extracted$secondRowOfMain == "Level")],
-                                                    sampleTime - sampleTime[1],
                                                     stringsAsFactors = FALSE
     )
-    colnames(parameters[["categoricalDataAndTime"]]) <- c("Time", "Sample Name", "Type", "Level", "Delta Time")
+    colnames(parameters[["categoricalDataAndTime"]]) <- c("Time", "Sample Name", "Type", "Level")
     
     numericalColumns <- seq(from = max(which(extracted$firstRowOfMain == "Sample")) + 1, to = ncol(extracted$main))
     extracted$main[ , numericalColumns] <- sapply(extracted$main[ , numericalColumns], as.numeric)
     
     if (!is.null(internalStandardFileDatapath)) 
     {
-      extracted$internalStandard  <- read.table(internalStandardFileDatapath, header = TRUE, sep= ';', stringsAsFactors = FALSE)
+      extracted$internalStandard  <- read.table(internalStandardFileDatapath, header = TRUE, sep= input$csvDelimitation, stringsAsFactors = FALSE)
       process$blk_ratio <- propagateUncertainty(a = list(signal = process$analyteCountsPerSecond(), RSD = process$analyteCountsPerSecondRelativeStandardDeviation()),
                                                 b = process$internalStandardMatrixAdaptedToAnalytes(),
                                                 operation="division")
@@ -571,24 +570,43 @@ ICPMS_server <- function(input, output, session) {
   output$driftPlot <- renderPlot({
     if (is.null(process$ratio_cor_b()[[1]]) | is.null(rowIndexInMain$drift)){return()}
     
-    elementName = parameters$analyteNames[input$driftTab_numericInput_analyteNumber]
-    driftTime = parameters[["categoricalDataAndTime"]][ , "Delta Time"][rowIndexInMain$drift]
-    driftValue = process$ratio_cor_b()[[1]][rowIndexInMain$drift,input$driftTab_numericInput_analyteNumber]
-    plot(x=driftTime,y=driftValue,xlab = "Time (seconds)", ylab = elementName, pch=21, bg="lightblue")
-
-    if (parameters$driftCorrectedElements[input$driftTab_numericInput_analyteNumber] == TRUE){
+    elementFullName <- parameters$analyteNames[input$driftTab_numericInput_analyteNumber]
+    
+    driftTime <- parameters$deltaTime()[rowIndexInMain$drift]
+    driftValue <- process$ratio_cor_b()[[1]][rowIndexInMain$drift,input$driftTab_numericInput_analyteNumber]
+    driftRsd <- process$ratio_cor_b()[[2]][rowIndexInMain$drift,input$driftTab_numericInput_analyteNumber]
+    driftSd <- driftRsd/100 * driftValue
+    
+    elementSpecificDriftIndex <- parameters$listOfElementSpecificDriftIndex()[[elementFullName]]
+    timeOfDriftAfterFirstStandard <- parameters$deltaTime()[elementSpecificDriftIndex]
+    valueOfDriftAfterFirstStandard <- process$ratio_cor_b()[[1]][elementSpecificDriftIndex, input$driftTab_numericInput_analyteNumber]
+    
+    colors <- c("Drift values" = "lightblue", "Drift values after first standard" = "red")
+    
+    driftPlot <- ggplot() + xlab("Time") + ylab(elementFullName)
+    driftPlot <- driftPlot + 
+      geom_errorbar(data = data.frame(driftTime, driftValue, driftSd),
+                                      aes(driftTime, driftValue, ymin=driftValue - driftSd, ymax=driftValue + driftSd), width=.1) + 
+      geom_point(data = data.frame(driftTime, driftValue),
+                                   aes(driftTime, driftValue, color = "Drift values"), size = 10) + 
+      
+      geom_point(data = data.frame(timeOfDriftAfterFirstStandard, valueOfDriftAfterFirstStandard),
+                                   aes(timeOfDriftAfterFirstStandard, valueOfDriftAfterFirstStandard, color = "Drift values after first standard"), size = 6)
+    
+    if (parameters$driftCorrectedElements[input$driftTab_numericInput_analyteNumber] == TRUE && class(process$elementSpecificDriftModels()[[elementFullName]]) == "lm"){
       time_0 = driftTime[1]
       time_f = driftTime[length(driftTime)]
       timeInterval = seq(from=as.numeric(time_0), to=as.numeric(time_f), by=as.numeric((time_f - time_0)/100))
       
       dt = as.numeric(driftTime)
-      driftModel <- lm(driftValue ~ poly(dt, degree=2, raw=TRUE))
+      driftModel <- process$elementSpecificDriftModels()[[elementFullName]]
       
       driftPredict=predict(driftModel, newdata = data.frame(dt = timeInterval))
       
-      lines(x=timeInterval, y=driftPredict, col="red")
+      driftPlot <- driftPlot + geom_line(data = data.frame(timeInterval, driftPredict),
+                                         aes(timeInterval, driftPredict), color = "red")
     }
-    arrows(parameters[["categoricalDataAndTime"]][ , "Delta Time"][rowIndexInMain$drift], yminus(), parameters[["categoricalDataAndTime"]][ , "Delta Time"][rowIndexInMain$drift], yplus(), length=0.05, angle=90, code=3)
+    driftPlot + scale_color_manual(values = colors)
   })
   
   observeEvent(input$setDriftCorrection, {
@@ -668,7 +686,7 @@ ICPMS_server <- function(input, output, session) {
     filename =  paste('data_', input$viewConcentrationIndex, '_', Sys.Date(), '.csv', sep=''),
     content = function(file) 
     {
-      write.csv(downloadTabData(), file, sep=";", quote = FALSE, row.names = FALSE, col.names = FALSE)
+      write.table(downloadTabData(), file, sep=input$csvDelimitation, quote = FALSE, row.names = FALSE, col.names = TRUE)
     }
   )
 }

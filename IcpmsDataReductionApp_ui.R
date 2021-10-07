@@ -17,7 +17,10 @@ ICPMS_ui <- shinyUI({
                      downloadButton("downloadISTDTemplate", "Download ISTD template"),
                      actionButton("setAsInternalStandardFile", "Set as ISTD file"),
                      actionButton("extract", "Extract"),
-                     htmlOutput("extractionReadyText")),
+                     htmlOutput("extractionReadyText"),
+                     selectInput(inputId = "csvDelimitation", label = "Select csv field separator (the separator will be used during extraction,
+                                 you therefore need to use the same separator for all your files)",
+                                 choices = c(";", ","), selected = ";")),
                    mainPanel(
                      htmlOutput("mainFileAssignmentText"),
                      htmlOutput("standardFileAssignmentText"),
