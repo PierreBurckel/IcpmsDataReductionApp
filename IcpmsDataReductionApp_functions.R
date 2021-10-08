@@ -337,12 +337,12 @@ replaceValues <- function(sourceValues, colRange, replaceType, lineIndex, source
 ##Function to create the ISTD template based on raw datafile
 ##Returns a dataframe containing a column analyte with the analyte names
 ##and a column ISTD with the ISTD names
-createISTDtemplate <- function(dataFileName){
-
+createISTDtemplate <- function(dataFileName, sep){
+  
   #header_1 contains the first line of the file
-  header_1 <- scan(dataFileName, nlines = 1, what = character(),sep=';')
+  header_1 <- scan(dataFileName, nlines = 1, what = character(),sep = sep)
   #header_2 contains the second line of the file
-  header_2 <- scan(dataFileName, nlines = 1, what = character(),sep=';',skip=1)
+  header_2 <- scan(dataFileName, nlines = 1, what = character(),sep = sep, skip=1)
   
   #fills empty values in header_1 based on previous values
   header_1 <- fillEmptyStrings(header_1)
