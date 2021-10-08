@@ -250,7 +250,8 @@ ICPMS_server <- function(input, output, session) {
       
       req(isExtractionReady() & !is.null(!is.null(extracted$internalStandard)))
       
-      write.table(createISTDtemplate((uploadedFile$main)$datapath),
+      write.table(createISTDtemplate(dataFileName = (uploadedFile$main)$datapath,
+                                     sep = input$csvDelimitation),
                 file, sep = input$csvDelimitation, quote = FALSE,
                 row.names = FALSE, col.names = TRUE)
       })
@@ -269,10 +270,10 @@ ICPMS_server <- function(input, output, session) {
     standardFileDatapath = uploadedFile$standard$datapath
     internalStandardFileDatapath = uploadedFile$internalStandard$datapath
     
-    extracted$firstRowOfMain <- scan(mainFileDatapath, nlines = 1, what = character(),sep=';')
+    extracted$firstRowOfMain <- scan(mainFileDatapath, nlines = 1, what = character(),sep = input$csvDelimitation)
     extracted$firstRowOfMain <- fillEmptyStrings(extracted$firstRowOfMain)
     
-    extracted$secondRowOfMain <- scan(mainFileDatapath, nlines = 1, what = character(),sep=';', skip=1)
+    extracted$secondRowOfMain <- scan(mainFileDatapath, nlines = 1, what = character(),sep = input$csvDelimitation, skip=1)
     
     requiredStringsInFirstRowOfMain <- "Sample"
     requiredStringsInSecondRowOfMain <- c("Acq. Date-Time", "Sample Name", "Type", "Level", "CPS", "CPS RSD")
