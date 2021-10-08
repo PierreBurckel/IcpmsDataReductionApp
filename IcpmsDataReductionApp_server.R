@@ -83,8 +83,8 @@ ICPMS_server <- function(input, output, session) {
     
     for (elementFullName in parameters$analyteNames) {
       listOfElementSpecificDriftIndex[[elementFullName]] <- getElementSpecificDriftIndex(elementFullName = elementFullName,
-                                                                                         stdDataFrame = extracted$standard, 
-                                                                                         stdIdentificationColumn=parameters[["categoricalDataAndTime"]][ , "Level"],
+                                                                                         standardDataFrame = extracted$standard, 
+                                                                                         standardIdentificationColumn = parameters[["categoricalDataAndTime"]][ , "Level"],
                                                                                          driftIndex = rowIndexInMain$drift)
     }
     
@@ -169,8 +169,8 @@ ICPMS_server <- function(input, output, session) {
       
       elementFullName <- parameters$analyteNames[elementIndex]
       
-      calibrationSignalUncertaintyConcentration <- getCalibrationData(isotopeName = elementFullName, signalMatrix = process$ratio_cor_b(),
-                                                                      standardIdentificationColumn = parameters[["categoricalDataAndTime"]][ , "Level"], standardDataMatrix = extracted$standard)
+      calibrationSignalUncertaintyConcentration <- getCalibrationData(elementFullName = elementFullName, signalMatrix = process$ratio_cor_b(),
+                                                                      standardIdentificationColumn = parameters[["categoricalDataAndTime"]][ , "Level"], standardDataFrame = extracted$standard)
       
       if (!is.null(calibrationSignalUncertaintyConcentration)) {
         calibrationModel <- lm(Concentration ~ 0+Signal, data=as.data.frame(calibrationSignalUncertaintyConcentration))
@@ -282,19 +282,11 @@ ICPMS_server <- function(input, output, session) {
       return(NULL)
     }
     
-    extracted$main <- read.table(mainFileDatapath, skip = 2, header = FALSE, sep=input$csvDelimitation, stringsAsFactors=FALSE)
+    extracted$main <- read.table(mainFileDatapath, skip = 2, header = FALSE, sep = input$csvDelimitation, stringsAsFactors=FALSE)
     colnames(extracted$main) <- extracted$firstRowOfMain
     
-    extracted$standard <- read.table(standardFileDatapath, header = FALSE, sep=input$csvDelimitation, stringsAsFactors=FALSE)
-    if (!identical(unique(extracted$standard[1, ]), extracted$standard[1, ])) {
-      shinyalert("Impossible to extract", "In the standard file, the standard labels in the first row are not unique", type = "error")
-      return(NULL)
-    }
-    colnames(extracted$standard) <- extracted$standard[1, ]
-    extracted$standard <- extracted$standard[-1, ]
-    extracted$standard <- removeDuplicateLines(extracted$standard)
-    row.names(extracted$standard) <- extracted$standard[ , 1]
-    extracted$standard <- extracted$standard[ , -1]
+    extracted$standard <- createStandardDataFrameFromFile(dataPath = standardFileDatapath, sep = input$csvDelimitation)
+    if (is.null(extracted$standard)) return(NULL)
     
     parameters$sampleNumber <- nrow(extracted$main)
     parameters$analyteNames <- extracted$firstRowOfMain[extracted$secondRowOfMain == "CPS" & !grepl("ISTD", extracted$firstRowOfMain)]

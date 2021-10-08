@@ -34,6 +34,28 @@ agilentElementNamePattern <- "[ ]{2}[A-Z]{1}[a-z]*[ ]{2}"
 #   return(formatedMatrix)
 # }
 
+createStandardDataFrameFromFile <- function(dataPath, sep) {
+  
+  standardDataFrame <- read.table(dataPath, header = FALSE, sep = sep, stringsAsFactors=FALSE)
+  
+  if (!identical(unique(standardDataFrame[1, ]), standardDataFrame[1, ])) {
+    shinyalert("Impossible to extract", "In the standard file, the standard labels in the first row are not unique", type = "error")
+    return(NULL)
+  }
+  
+  if (!identical(unique(standardDataFrame[ ,1]), standardDataFrame[ ,1])) {
+    shinyalert("Impossible to extract", "In the standard file, the analyte names in the first column are not unique", type = "error")
+    return(NULL)
+  }
+  
+  colnames(standardDataFrame) <- standardDataFrame[1, ]
+  standardDataFrame <- standardDataFrame[-1, ]
+  row.names(standardDataFrame) <- standardDataFrame[ , 1]
+  standardDataFrame <- standardDataFrame[ , -1]
+  
+  return(standardDataFrame)
+}
+
 getWeights <- function(calibrationData, fn) {
   if (fn == "1/SD") {
     return(1/(calibrationData[,"RSD"]/100 *calibrationData[,"Signal"]))
@@ -46,42 +68,52 @@ getWeights <- function(calibrationData, fn) {
   }
 }
 
-getElementSpecificDriftIndex <- function(elementFullName, stdDataFrame, stdIdentificationColumn, driftIndex) {
+isAnalyteValidInStandardDataFrame <- function(elementFullName, standardDataFrame) {
   
-  elementName <- getElementName(elementFullName, agilentElementNamePattern)
-  
-  #Rises an error if the element name is not found in the standard dataframe
-  if (!(elementName %in% row.names(stdDataFrame))) {
-    stop(paste(elementName, " not found in the standard file. If not in the standards, create an empty line for ", elementName, " in the file.", sep=""))
-  } 
-  else {}
-  
-  stdIndex <- which(!is.na(stdDataFrame[elementName,]))
-  
-  if (length(stdIndex) != 0){
-    standardIdColumnInData <- make.names(stdIdentificationColumn)
-    elementSpecificStandardIdHeaderInStandardFile <- make.names(colnames(stdDataFrame)[stdIndex])
-    isStandardBothInDataAndStandardFile <- standardIdColumnInData %in% elementSpecificStandardIdHeaderInStandardFile
-    firstStandardNumIndex <- min(which(isStandardBothInDataAndStandardFile))
-    eDritftIndex <- driftIndex[driftIndex >= firstStandardNumIndex]
-    return(eDritftIndex)
+  if (!(elementFullName %in% row.names(standardDataFrame))) {
+    shinyalert("Issue with standard file",
+               paste0(elementFullName, " not found in the standard file. If not in the standards, create an empty line for ", elementFullName, " in the file."),
+               type = "error")
+    return(FALSE)
   }
   
-  else{
-    return(NA)
+  elementSpecificStandardIndex <- which(!is.na(standardDataFrame[elementFullName, ]))
+  
+  if (length(elementSpecificStandardIndex) == 0) {
+    shinyalert("Issue with standard file",
+               paste0("The standard file line for ",elementFullName, " should be of size > 0"),
+               type = "error")
+    return(FALSE)
   }
+  
+  return(TRUE)
 }
 
-getCalibrationData <- function(isotopeName, signalMatrix, standardIdentificationColumn, standardDataMatrix) {
+getElementSpecificDriftIndex <- function(elementFullName, standardDataFrame, standardIdentificationColumn, driftIndex) {
   
-  elementName <- getElementName(isotopeName, agilentElementNamePattern)
-  
-  if (!(elementName %in% row.names(standardDataMatrix))) {
+  if (isAnalyteValidInStandardDataFrame(elementFullName, standardDataFrame) == FALSE) {
     return(NULL)
   }
   
-  standardNamesInStandardFile <- colnames(standardDataMatrix[elementName, ])
-  standardConcentrationInStandardFile <- standardDataMatrix[elementName, ]
+  elementSpecificStandardIndex <- which(!is.na(standardDataFrame[elementFullName, ]))
+  
+  standardIdColumnInData <- make.names(standardIdentificationColumn)
+  elementSpecificStandardIdHeaderInStandardFile <- make.names(colnames(standardDataFrame)[elementSpecificStandardIndex])
+  isStandardBothInDataAndStandardFile <- standardIdColumnInData %in% elementSpecificStandardIdHeaderInStandardFile
+  firstStandardNumIndex <- min(which(isStandardBothInDataAndStandardFile))
+  elementSpecificDritftIndex <- driftIndex[driftIndex >= firstStandardNumIndex]
+    
+  return(elementSpecificDritftIndex)
+}
+
+getCalibrationData <- function(elementFullName, signalMatrix, standardIdentificationColumn, standardDataFrame) {
+  
+  if (!(elementFullName %in% row.names(standardDataFrame))) {
+    return(NULL)
+  }
+  
+  standardNamesInStandardFile <- colnames(standardDataFrame[elementFullName, ])
+  standardConcentrationInStandardFile <- standardDataFrame[elementFullName, ]
   
   standardRowNumberInMain <- as.numeric(sapply(paste("^", standardNamesInStandardFile, "$", sep=""),
                                    grep, standardIdentificationColumn))
@@ -97,8 +129,8 @@ getCalibrationData <- function(isotopeName, signalMatrix, standardIdentification
   }
   else 
   {
-    eSignal <- signalMatrix[[1]][standardRowNumberInMain, isotopeName]
-    eRSD <- signalMatrix[[2]][standardRowNumberInMain, isotopeName]
+    eSignal <- signalMatrix[[1]][standardRowNumberInMain, elementFullName]
+    eRSD <- signalMatrix[[2]][standardRowNumberInMain, elementFullName]
   }
   
   return(cbind(Signal=eSignal, RSD=eRSD, Concentration=as.numeric(standardConcentrationInStandardFile)))
@@ -376,16 +408,16 @@ extractData <- function(dataFileName, stdFileName){
   names(dat.raw) <- header_1
   
   #Import the standard data, we consider here that there are headers corresponding to the standard names
-  StdDataframe <- read.table(stdFileName, header = TRUE, sep=';', stringsAsFactors=FALSE)
+  standardDataFrame <- read.table(stdFileName, header = TRUE, sep=';', stringsAsFactors=FALSE)
   
   #Remove potential duplicates of element names in the standard dataframe
-  StdDataframe <- removeDuplicateLines(StdDataframe)
+  standardDataFrame <- removeDuplicateLines(standardDataFrame)
   
   #Assigns the first column of the std file to the row names then removes the first column
-  row.names(StdDataframe) <- StdDataframe[,1]
-  StdDataframe <- StdDataframe[,2:length(StdDataframe)]
+  row.names(standardDataFrame) <- standardDataFrame[,1]
+  standardDataFrame <- standardDataFrame[,2:length(standardDataFrame)]
   
-  return(list(raw=dat.raw, std=StdDataframe, header_1=header_1, header_2=header_2))
+  return(list(raw=dat.raw, std=standardDataFrame, header_1=header_1, header_2=header_2))
 }
   
   
