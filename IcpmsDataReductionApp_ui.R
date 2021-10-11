@@ -20,7 +20,8 @@ ICPMS_ui <- shinyUI({
                      htmlOutput("extractionReadyText"),
                      selectInput(inputId = "csvDelimitation", label = "Select csv field separator (the separator will be used during extraction,
                                  you therefore need to use the same separator for all your files)",
-                                 choices = c(";", ","), selected = ";")),
+                                 choices = c(";", ","), selected = ";"),
+                     textInput(inputId = "dateFormat", label = "Date format", value = "%d/%m/%Y %H:%M")),
                    mainPanel(
                      htmlOutput("mainFileAssignmentText"),
                      htmlOutput("standardFileAssignmentText"),
