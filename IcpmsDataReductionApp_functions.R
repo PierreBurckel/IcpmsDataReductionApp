@@ -3,6 +3,98 @@
 
 agilentElementNamePattern <- "[ ]{2}[A-Z]{1}[a-z]*[ ]{2}"
 
+createInterferenceParameters <- function(index, intereferedElement, interferingElement) {
+  
+  parameterClasses <- c(class(numeric)[1], class(intereferedElement)[1], class(interferingElement)[1])
+  expectedClasses <- c("numeric", "character", "character")
+  
+  if (!identical(parameterClasses, expectedClasses)) {
+    stop("The classes of the provided parameters are incorrect")
+  }
+  if (!identical(size(index), size(intereferedElement), size(interferingElement))) {
+    stop("The character vector sizes must be the same")
+  }
+  
+  instance <- list()
+  instance$index <- index
+  instance$intereferedElement <- intereferedElement
+  instance$interferingElement <- interferingElement
+  
+  class(instance) <- "interferenceParameters"
+  
+  return(instance)
+}
+
+createEstimationUncertaintyDataCouple <- function(metadata, estimatedData, uncertaintyData, uncertaintyType) {
+  
+  parameterClasses <- c(class(metadata)[1], class(estimatedData)[1], class(uncertaintyData)[1])
+  expectedClasses <- c("data.frame", "matrix", "matrix")
+  
+  if (!identical(parameterClasses, expectedClasses)) {
+    stop("The classes of the provided parameters are incorrect")
+  }
+  if (!identical(size(estimatedData), size(uncertaintyData))) {
+    stop("The sizes of the matrixes are not the same")
+  }
+  if (nrow(metadata) != nrow(estimatedData)) {
+    stop("The metadata and data matrixes number of rows are not the same")
+  }
+  if (!(uncertaintyType %in% c("rsd", "sd"))) {
+    stop("The uncertainty type must be rsd or sd")
+  }
+  
+  instance <- list()
+  instance$metadata <- metadata
+  instance$estimatedData <- estimatedData
+  instance$rsdData <- uncertaintyData
+  instance$sdData <- uncertaintyData
+  
+  if (uncertaintyType == "rsd") {
+    instance$sdData[is.numeric(uncertaintyData)] <- uncertaintyData[is.numeric(uncertaintyData)] / 100 * estimatedData[is.numeric(uncertaintyData)]
+    instance$sdData[!is.numeric(uncertaintyData)] <- 0
+  }
+  else if (uncertaintyType == "sd") {
+    instance$rsdData[estimatedData != 0] <- uncertaintyData[estimatedData != 0] / estimatedData[estimatedData != 0] * 100
+    instance$rsdData[estimatedData == 0] <- NA
+  }
+  
+  class(instance) <- "eudc"
+  
+  return(instance)
+}
+
+correctInterferences <- function(eudcToCorrect, interferenceParameters) {
+  correctedMetadata <- eudcToCorrect$metadata
+  if (length(interferenceParameters$index == 0)) {
+    stop("interference index of length < 1")
+  }
+  else if (length(interferenceParameters$index == 1)) {
+    interferenceRatioValue <- eudcToCorrect$estimatedData[interferenceParameters$index, interferenceParameters$intereferedElement] / eudcToCorrect$estimatedData[interferenceParameters$index, interferenceParameters$intereferingElement]
+    interferenceRatioSd <- sqrt((eudcToCorrect$rsdData[interferenceParameters$index, interferenceParameters$intereferedElement] / 100)^2 +
+                                 (eudcToCorrect$rsdData[interferenceParameters$index, interferenceParameters$intereferingElement] / 100)^2) * interferenceRatioValue
+  }
+  else {
+    interferenceRatioValues <- eudcToCorrect$estimatedData[interferenceParameters$index, interferenceParameters$intereferedElement] / eudcToCorrect$estimatedData[interferenceParameters$index, interferenceParameters$intereferingElement] %>%
+    interferenceRatioValue <- mean(interferenceRatioValues)
+    interferenceRatioSd <- sd(interferenceRatioValues)
+  }
+  interferenceValues <- interferenceRatioValue * eudcToCorrect$estimatedData[ , interferenceParameters$intereferingElement]
+  interferenceSd <- sqrt((interferenceRatioSd / interferenceRatioValue)^2 + (eudcToCorrect$rsdData[ , interferenceParameters$intereferingElement] / 100)^2) * interferenceValues
+  
+  interferenceCorrectedValues <- eudcToCorrect$estimatedData[ , interferenceParameters$intereferedElement] - interferenceValues
+  interferenceCorrectedSd <- sqrt(eudcToCorrect$sdData[ , interferenceParameters$intereferedElement]^2 + interferenceSd^2)
+  
+  correctedEstimatedData <- eudcToCorrect$estimatedData
+  correctedEstimatedData[ , interferenceParameters$intereferedElement] <- interferenceCorrectedValues
+  
+  correctedEstimatedData <- eudcToCorrect$estimatedData
+  
+  correctedUncertaintyData <- 
+  correctedUncertaintyType <- "sd"
+  correctedEudc <- createEstimationUncertaintyDataCouple()
+  return(correctedEudc)
+}
+
 # setMatrixFormat <- function(matrixToFormat, matrixToFormatColumnNames = NULL, columnsToAdd, columnsToAddColumnNames = NULL) {
 #   
 #   sampleNumber <- nrow(matrixToFormat)

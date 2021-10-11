@@ -45,16 +45,37 @@ ICPMS_server <- function(input, output, session) {
     process$relativeStandardDeviation()[ , parameters$internalStandardNames, drop=FALSE]
   })
   
+  process$analyteCountsPerSecondEudc <- reactive({
+    createEstimationUncertaintyDataCouple(metadata = parameters$categoricalDataAndTime,
+                                          estimatedData = process$analyteCountsPerSecond(),
+                                          uncertaintyData = process$analyteCountsPerSecondRelativeStandardDeviation(),
+                                          uncertaintyType = "rsd")
+  })
+  
+  process$internalStandardCountsPerSecondEudc <- reactive({
+    createEstimationUncertaintyDataCouple(metadata = parameters$categoricalDataAndTime,
+                                          estimatedData = process$internalStandardCountsPerSecond(),
+                                          uncertaintyData = process$internalStandardCountsPerSecondRelativeStandardDeviation(),
+                                          uncertaintyType = "rsd")
+  })
+  
   process$internalStandardMatrixAdaptedToAnalytes <- reactive({
     if (!is.null(extracted$internalStandard)) 
     {
       return(createInternalStandardMatrixAdaptedToAnalytes(extracted$internalStandard, list(signal=process$internalStandardCountsPerSecond(), RSD=process$internalStandardCountsPerSecondRelativeStandardDeviation())))
-    } 
+    }
     else
     {
       return(list(signal = matrix(1, nrow = parameters$sampleNumber, ncol = parameters$analyteNumber),
                   RSD = matrix(0, nrow = parameters$sampleNumber, ncol = parameters$analyteNumber)))
     }
+  })
+  
+  process$interferenceCorrectedCountsPerSecondEudc <- reactive({
+    for (interference in parameters$interferenceParametersList) {
+      correctInterferences(eudcToCorrect = process$analyteCountsPerSecondEudc(), interferenceParameters = interference)
+    }
+    return()
   })
   
   process$ratio <- reactive({
