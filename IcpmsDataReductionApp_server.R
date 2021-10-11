@@ -303,7 +303,12 @@ ICPMS_server <- function(input, output, session) {
     parameters$internalStandardNames <- extracted$firstRowOfMain[extracted$secondRowOfMain == "CPS" & grepl("ISTD", extracted$firstRowOfMain)]
     parameters$internalStandardNumber <- length(parameters$internalStandardNames)
 
-    sampleTime <- as.POSIXct(extracted$main[ , which(extracted$secondRowOfMain == "Acq. Date-Time")], format="%d/%m/%Y %H:%M")
+    sampleTime <- as.POSIXct(extracted$main[ , which(extracted$secondRowOfMain == "Acq. Date-Time")], format= input$dateFormat)
+    if(any(is.null(sampleTime))) {
+      shinyalert("Impossible to extract", "Error in date format, check format in csv file and in File upload and parameters tab", type = "error")
+      return(NULL)
+    }
+    
     parameters[["categoricalDataAndTime"]] <- data.frame(sampleTime,
                                                     extracted$main[ , which(extracted$secondRowOfMain == "Sample Name")],
                                                     extracted$main[ , which(extracted$secondRowOfMain == "Type")],
