@@ -576,8 +576,6 @@ ICPMS_server <- function(input, output, session) {
   output$driftPlot <- renderPlot({
     if (is.null(process$ratio_cor_b()[[1]]) | is.null(rowIndexInMain$drift)){return()}
     
-    browser()
-    
     elementFullName <- parameters$analyteNames[input$driftTab_numericInput_analyteNumber]
     
     driftTime <- parameters$deltaTime()[rowIndexInMain$drift]
