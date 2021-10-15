@@ -296,7 +296,7 @@ ICPMS_server <- function(input, output, session) {
     parameters$internalStandardNumber <- length(parameters$internalStandardNames)
 
     sampleTime <- as.POSIXct(extracted$main[ , which(extracted$secondRowOfMain == "Acq. Date-Time")], format= input$dateFormat)
-    if(any(is.null(sampleTime))) {
+    if(any(is.na(sampleTime))) {
       shinyalert("Impossible to extract", "Error in date format, check format in csv file and in File upload and parameters tab", type = "error")
       return(NULL)
     }
@@ -567,6 +567,8 @@ ICPMS_server <- function(input, output, session) {
   
   output$driftPlot <- renderPlot({
     if (is.null(process$ratio_cor_b()[[1]]) | is.null(rowIndexInMain$drift)){return()}
+    
+    browser()
     
     elementFullName <- parameters$analyteNames[input$driftTab_numericInput_analyteNumber]
     
