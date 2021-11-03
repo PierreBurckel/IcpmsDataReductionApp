@@ -8,6 +8,7 @@ library(shinyjs)
 library(stringr)
 library(rstudioapi)
 library(ggplot2)
+library(R6)
 
 # install.packages("shiny")
 # install.packages("shinyalert")
@@ -19,6 +20,7 @@ library(ggplot2)
 # install.packages("stringr")
 # install.packages("rstudioapi")
 # install.packages("ggplot2")
+# install.packages("R6")
 
 setwd(dirname(getActiveDocumentContext()$path))  
 

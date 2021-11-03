@@ -25,6 +25,33 @@ createInterferenceParameters <- function(index, intereferedElement, interferingE
   return(instance)
 }
 
+EstimationUncertaintyDataCouple <- R6Class("EstimationUncertaintyDataCouple",
+  public = list(
+   initialize = function(estimatedData, uncertaintyData, uncertaintyType) {
+     private$estimatedData <- estimatedData
+     if (uncertaintyType == "rsd") {
+       private$sdData <- matrix(0, nrow = nrow(uncertaintyData), ncol = ncol(uncertaintyData))
+       private$sdData[is.numeric(uncertaintyData)] <- uncertaintyData[is.numeric(uncertaintyData)] / 100 * estimatedData[is.numeric(uncertaintyData)]
+       instance$sdData[!is.numeric(uncertaintyData)] <- 0
+     }
+     else if (uncertaintyType == "sd") {
+       private$sdData <- uncertaintyData
+     }
+   },
+   getSd = function() {
+     return(private$sdData)
+   },
+  getRsd = function() {
+    rsdData <- private$sdData / private$estimatedData * 100
+    return(rsdData)
+  }),
+   private = list(
+     estimatedData = NULL,
+     sdData = NULL
+   )
+)
+                                             
+
 createEstimationUncertaintyDataCouple <- function(metadata, estimatedData, uncertaintyData, uncertaintyType) {
   
   parameterClasses <- c(class(metadata)[1], class(estimatedData)[1], class(uncertaintyData)[1])
