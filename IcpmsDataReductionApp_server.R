@@ -46,17 +46,15 @@ ICPMS_server <- function(input, output, session) {
   })
   
   process$analyteCountsPerSecondEudc <- reactive({
-    createEstimationUncertaintyDataCouple(metadata = parameters$categoricalDataAndTime,
-                                          estimatedData = process$analyteCountsPerSecond(),
-                                          uncertaintyData = process$analyteCountsPerSecondRelativeStandardDeviation(),
-                                          uncertaintyType = "rsd")
+    EstimationUncertaintyDataCouple$new(estimatedData = process$analyteCountsPerSecond(),
+                                        uncertaintyData = process$analyteCountsPerSecondRelativeStandardDeviation(),
+                                        uncertaintyType = "rsd")
   })
   
   process$internalStandardCountsPerSecondEudc <- reactive({
-    createEstimationUncertaintyDataCouple(metadata = parameters$categoricalDataAndTime,
-                                          estimatedData = process$internalStandardCountsPerSecond(),
-                                          uncertaintyData = process$internalStandardCountsPerSecondRelativeStandardDeviation(),
-                                          uncertaintyType = "rsd")
+    EstimationUncertaintyDataCouple$new(estimatedData = process$internalStandardCountsPerSecond(),
+                                        uncertaintyData = process$internalStandardCountsPerSecondRelativeStandardDeviation(),
+                                        uncertaintyType = "rsd")
   })
   
   process$internalStandardMatrixAdaptedToAnalytes <- reactive({
