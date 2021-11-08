@@ -58,14 +58,17 @@ ICPMS_server <- function(input, output, session) {
   })
   
   process$internalStandardMatrixAdaptedToAnalytes <- reactive({
-    if (!is.null(extracted$internalStandard)) 
+    if (!is.null(extracted$internalStandardToAnalyteAssignment)) 
     {
-      return(createInternalStandardMatrixAdaptedToAnalytes(extracted$internalStandard, list(signal=process$internalStandardCountsPerSecond(), RSD=process$internalStandardCountsPerSecondRelativeStandardDeviation())))
+      return(createInternalStandardMatrixAdaptedToAnalytes(internalStandardToAnalyteAssignmentDataframe = extracted$internalStandardToAnalyteAssignment,
+                                                           internalStandardCountsPerSecondEudc = internalStandardCountsPerSecondEudc,
+                                                           parameters = parameters))
     }
     else
     {
-      return(list(signal = matrix(1, nrow = parameters$sampleNumber, ncol = parameters$analyteNumber),
-                  RSD = matrix(0, nrow = parameters$sampleNumber, ncol = parameters$analyteNumber)))
+      return(EstimationUncertaintyDataCouple$new(estimatedData = matrix(1, nrow = parameters$sampleNumber, ncol = parameters$analyteNumber),
+                                                 uncertaintyData = matrix(0, nrow = parameters$sampleNumber, ncol = parameters$analyteNumber),
+                                                 uncertaintyType = "sd"))
     }
   })
   
@@ -267,7 +270,7 @@ ICPMS_server <- function(input, output, session) {
     filename = "ISTD_Template.csv",
     content = function(file) {
       
-      req(isExtractionReady() & !is.null(!is.null(extracted$internalStandard)))
+      req(isExtractionReady() & !is.null(!is.null(extracted$internalStandardToAnalyteAssignment)))
       
       write.table(createISTDtemplate(dataFileName = (uploadedFile$main)$datapath,
                                      sep = input$csvDelimitation),
@@ -333,7 +336,7 @@ ICPMS_server <- function(input, output, session) {
     
     if (!is.null(internalStandardFileDatapath)) 
     {
-      extracted$internalStandard  <- read.table(internalStandardFileDatapath, header = TRUE, sep= input$csvDelimitation, stringsAsFactors = FALSE)
+      extracted$internalStandardToAnalyteAssignment  <- read.table(internalStandardFileDatapath, header = TRUE, sep= input$csvDelimitation, stringsAsFactors = FALSE)
       process$blk_ratio <- propagateUncertainty(a = list(signal = process$analyteCountsPerSecond(), RSD = process$analyteCountsPerSecondRelativeStandardDeviation()),
                                                 b = process$internalStandardMatrixAdaptedToAnalytes(),
                                                 operation="division")

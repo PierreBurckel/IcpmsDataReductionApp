@@ -38,6 +38,9 @@ EstimationUncertaintyDataCouple <- R6Class("EstimationUncertaintyDataCouple",
        private$sdData <- uncertaintyData
      }
    },
+   getEstimation = function() {
+     return(private$estimatedData)
+   },
    getSd = function() {
      return(private$sdData)
    },
@@ -540,21 +543,24 @@ extractData <- function(dataFileName, stdFileName){
 }
   
   
-createInternalStandardMatrixAdaptedToAnalytes <- function(ISTD_file, ISTD){
+createInternalStandardMatrixAdaptedToAnalytes <- function(internalStandardToAnalyteAssignmentDataframe, internalStandardCountsPerSecondEudc, parameters){
   
-  if(is.null(ISTD_file) | is.null(ISTD)){return(1)}
+  analyteNames <- parameters$analyteNames
+  istdColumnPosition <- 2
   
-  ISTD.matrix <- list(signal = matrix(nrow = nrow(ISTD[["signal"]]), ncol = nrow(ISTD_file)),
-                      RSD = matrix(nrow = nrow(ISTD[["signal"]]), ncol = nrow(ISTD_file)))
+  estimationMatrix <- matrix(nrow = parameters$sampleNumber, ncol = parameters$analyteNumber)
+  uncertaintyMatrix <- matrix(nrow = parameters$sampleNumber, ncol = parameters$analyteNumber)
   
-  for (j in 1:nrow(ISTD_file)){
-    eISTD <- ISTD_file[j,2]
-    ISTD.matrix[["signal"]][ , j] <- ISTD[["signal"]][, eISTD]
-    ISTD.matrix[["RSD"]][ , j] <- ISTD[["RSD"]][, eISTD]
+  for (analyteIncrement in seq(1, parameters$analyteNumber)){
+    analyteSpecificIstd <- internalStandardToAnalyteAssignmentDataframe[analyteIncrement, istdColumnPosition]
+    estimationMatrix[ , analyteIncrement] <- internalStandardCountsPerSecondEudc$getEstimation()[ , analyteSpecificIstd]
+    uncertaintyMatrix[ , analyteIncrement] <- internalStandardCountsPerSecondEudc$getSd()[, analyteSpecificIstd]
   }
   
-  colnames(ISTD.matrix[["signal"]]) <- ISTD_file[ ,1]
-  colnames(ISTD.matrix[["RSD"]]) <- ISTD_file[ ,1]
+  colnames(estimationMatrix) <- analyteNames
+  colnames(uncertaintyMatrix) <- analyteNames
   
-  return(ISTD.matrix)
+  return(EstimationUncertaintyDataCouple$new(estimatedData = estimationMatrix,
+                                             uncertaintyData = uncertaintyMatrix,
+                                             uncertaintyType = "sd"))
 }
