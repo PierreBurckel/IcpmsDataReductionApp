@@ -61,7 +61,7 @@ ICPMS_server <- function(input, output, session) {
     if (!is.null(extracted$internalStandardToAnalyteAssignment)) 
     {
       return(createInternalStandardMatrixAdaptedToAnalytes(internalStandardToAnalyteAssignmentDataframe = extracted$internalStandardToAnalyteAssignment,
-                                                           internalStandardCountsPerSecondEudc = internalStandardCountsPerSecondEudc,
+                                                           internalStandardCountsPerSecondEudc = internalStandardCountsPerSecondEudc(),
                                                            parameters = parameters))
     }
     else
@@ -74,21 +74,17 @@ ICPMS_server <- function(input, output, session) {
   
   process$interferenceCorrectedCountsPerSecondEudc <- reactive({
     for (interference in parameters$interferenceParametersList) {
-      correctInterferences(eudcToCorrect = process$analyteCountsPerSecondEudc(), interferenceParameters = interference)
+      interferenceCorrectedCountsPerSecondEudc <- correctInterferences(eudcToCorrect = process$analyteCountsPerSecondEudc(), interferenceParameters = interference)
     }
-    return()
+    return(interferenceCorrectedCountsPerSecondEudc)
   })
   
   process$ratio <- reactive({
-    propagateUncertainty(a = list(signal=process$analyteCountsPerSecond(), RSD=process$analyteCountsPerSecondRelativeStandardDeviation()),
-                         b = process$internalStandardMatrixAdaptedToAnalytes(),
-                         operation="division")
+    process$analyteCountsPerSecondEudc()$divideBy(process$internalStandardMatrixAdaptedToAnalytes())
     })
   
   process$ratio_cor_b <- reactive({
-      propagateUncertainty(a = process$ratio(),
-                           b = process$blk_ratio,
-                           operation="substraction")
+    process$ratio()$subtract(process$blk_ratio)
   })
   
   parameters$deltaTime <- reactive({

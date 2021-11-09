@@ -32,11 +32,39 @@ EstimationUncertaintyDataCouple <- R6Class("EstimationUncertaintyDataCouple",
      if (uncertaintyType == "rsd") {
        private$sdData <- matrix(0, nrow = nrow(uncertaintyData), ncol = ncol(uncertaintyData))
        private$sdData[is.numeric(uncertaintyData)] <- uncertaintyData[is.numeric(uncertaintyData)] / 100 * estimatedData[is.numeric(uncertaintyData)]
-       instance$sdData[!is.numeric(uncertaintyData)] <- 0
+       private$sdData[!is.numeric(uncertaintyData)] <- 0
      }
      else if (uncertaintyType == "sd") {
        private$sdData <- uncertaintyData
      }
+   },
+   divideBy = function(otherEudc) {
+     estimate <- private$estimatedData / otherEudc$getEstimation()
+     uncertainty <- sqrt((self$getRsd()/100)^2 + (otherEudc$getRsd()/100)^2) * 100
+     return(EstimationUncertaintyDataCouple$new(estimatedData = estimate,
+            uncertaintyData = uncertainty,
+            uncertaintyType = "rsd"))
+   },
+   multiplyBy = function(otherEudc) {
+     estimate <- private$estimatedData * otherEudc$getEstimation()
+     uncertainty <- sqrt((self$getRsd()/100)^2 + (otherEudc$getRsd()/100)^2) * 100
+     return(EstimationUncertaintyDataCouple$new(estimatedData = estimate,
+                                                uncertaintyData = uncertainty,
+                                                uncertaintyType = "rsd"))
+   },
+   add = function(otherEudc) {
+     estimate <- private$estimatedData + otherEudc$getEstimation()
+     uncertainty <- sqrt(self$getSd()^2 + otherEudc$getSd()^2)
+     return(EstimationUncertaintyDataCouple$new(estimatedData = estimate,
+                                                uncertaintyData = uncertainty,
+                                                uncertaintyType = "sd"))
+   },
+   subtract = function(otherEudc) {
+     estimate <- private$estimatedData - otherEudc$getEstimation()
+     uncertainty <- sqrt(self$getSd()^2 + otherEudc$getSd()^2)
+     return(EstimationUncertaintyDataCouple$new(estimatedData = estimate,
+                                                uncertaintyData = uncertainty,
+                                                uncertaintyType = "sd"))
    },
    getEstimation = function() {
      return(private$estimatedData)
@@ -53,48 +81,9 @@ EstimationUncertaintyDataCouple <- R6Class("EstimationUncertaintyDataCouple",
      sdData = NULL
    )
 )
-                                             
-
-createEstimationUncertaintyDataCouple <- function(metadata, estimatedData, uncertaintyData, uncertaintyType) {
-  
-  parameterClasses <- c(class(metadata)[1], class(estimatedData)[1], class(uncertaintyData)[1])
-  expectedClasses <- c("data.frame", "matrix", "matrix")
-  
-  if (!identical(parameterClasses, expectedClasses)) {
-    stop("The classes of the provided parameters are incorrect")
-  }
-  if (!identical(size(estimatedData), size(uncertaintyData))) {
-    stop("The sizes of the matrixes are not the same")
-  }
-  if (nrow(metadata) != nrow(estimatedData)) {
-    stop("The metadata and data matrixes number of rows are not the same")
-  }
-  if (!(uncertaintyType %in% c("rsd", "sd"))) {
-    stop("The uncertainty type must be rsd or sd")
-  }
-  
-  instance <- list()
-  instance$metadata <- metadata
-  instance$estimatedData <- estimatedData
-  instance$rsdData <- uncertaintyData
-  instance$sdData <- uncertaintyData
-  
-  if (uncertaintyType == "rsd") {
-    instance$sdData[is.numeric(uncertaintyData)] <- uncertaintyData[is.numeric(uncertaintyData)] / 100 * estimatedData[is.numeric(uncertaintyData)]
-    instance$sdData[!is.numeric(uncertaintyData)] <- 0
-  }
-  else if (uncertaintyType == "sd") {
-    instance$rsdData[estimatedData != 0] <- uncertaintyData[estimatedData != 0] / estimatedData[estimatedData != 0] * 100
-    instance$rsdData[estimatedData == 0] <- NA
-  }
-  
-  class(instance) <- "eudc"
-  
-  return(instance)
-}
 
 correctInterferences <- function(eudcToCorrect, interferenceParameters) {
-  correctedMetadata <- eudcToCorrect$metadata
+  
   if (length(interferenceParameters$index == 0)) {
     stop("interference index of length < 1")
   }
@@ -122,6 +111,7 @@ correctInterferences <- function(eudcToCorrect, interferenceParameters) {
   correctedUncertaintyData <- 
   correctedUncertaintyType <- "sd"
   correctedEudc <- createEstimationUncertaintyDataCouple()
+  
   return(correctedEudc)
 }
 
