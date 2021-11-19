@@ -9,6 +9,7 @@ library(stringr)
 library(rstudioapi)
 library(ggplot2)
 library(R6)
+library(logging)
 
 # install.packages("shiny")
 # install.packages("shinyalert")
@@ -23,6 +24,9 @@ library(R6)
 # install.packages("R6")
 
 setwd(dirname(getActiveDocumentContext()$path))  
+
+options(shiny.error = function() { 
+  logging::logerror(sys.calls() %>% as.character %>% paste(collapse = ", ")) })
 
 source('IcpmsDataReductionApp_ui.R')
 source('IcpmsDataReductionApp_server.R')

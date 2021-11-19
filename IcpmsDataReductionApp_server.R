@@ -2,7 +2,16 @@
 C_LETTER_KEYCODE <- 67
 
 ICPMS_server <- function(input, output, session) {
-
+  
+  printLogJs <- function(x, ...) {
+    
+    logjs(x)
+    
+    T
+  }
+  
+  addHandler(printLogJs)
+  
 # Code to be executed at start --------------------------------------------
   
   shinyjs::disable(selector = '.navbar-nav a[data-value="Index creation"')
@@ -22,7 +31,10 @@ ICPMS_server <- function(input, output, session) {
 # Reactive expressions for data reduction ---------------------------------
   
   process$countsPerSecond <- reactive({
-    extracted$main[ , extracted$secondRowOfMain == "CPS", drop=FALSE]
+    countsPerSecond <- extracted$main[ , extracted$secondRowOfMain == "CPS", drop=FALSE]
+    numericalCountsPerSecond <- apply(countsPerSecond, c(1,2), is.numeric)
+    countsPerSecond[!numericalCountsPerSecond] <- NA
+    countsPerSecond
   })
   
   process$analyteCountsPerSecond <- reactive({
@@ -34,7 +46,10 @@ ICPMS_server <- function(input, output, session) {
   })
   
   process$relativeStandardDeviation <- reactive({
-    extracted$main[ , extracted$secondRowOfMain == "CPS RSD", drop=FALSE]
+    relativeStandardDeviation <- extracted$main[ , extracted$secondRowOfMain == "CPS RSD", drop=FALSE]
+    numericalRelativeStandardDeviation <- apply(relativeStandardDeviation, c(1,2), is.numeric)
+    relativeStandardDeviation[!numericalRelativeStandardDeviation] <- NA
+    relativeStandardDeviation
   })
   
   process$analyteCountsPerSecondRelativeStandardDeviation <- reactive({
@@ -46,27 +61,30 @@ ICPMS_server <- function(input, output, session) {
   })
   
   process$analyteCountsPerSecondEudc <- reactive({
-    EstimationUncertaintyDataCouple$new(estimatedData = process$analyteCountsPerSecond(),
+    EstimationUncertaintyDataCouple$new(elementFullNames = parameters$analyteNames,
+                                        estimatedData = process$analyteCountsPerSecond(),
                                         uncertaintyData = process$analyteCountsPerSecondRelativeStandardDeviation(),
                                         uncertaintyType = "rsd")
   })
   
   process$internalStandardCountsPerSecondEudc <- reactive({
-    EstimationUncertaintyDataCouple$new(estimatedData = process$internalStandardCountsPerSecond(),
+    EstimationUncertaintyDataCouple$new(elementFullNames = parameters$internalStandardNames,
+                                        estimatedData = process$internalStandardCountsPerSecond(),
                                         uncertaintyData = process$internalStandardCountsPerSecondRelativeStandardDeviation(),
                                         uncertaintyType = "rsd")
   })
   
-  process$internalStandardMatrixAdaptedToAnalytes <- reactive({
+  process$internalStandardEudcAdaptedToAnalytes <- reactive({
     if (!is.null(extracted$internalStandardToAnalyteAssignment)) 
     {
-      return(createInternalStandardMatrixAdaptedToAnalytes(internalStandardToAnalyteAssignmentDataframe = extracted$internalStandardToAnalyteAssignment,
-                                                           internalStandardCountsPerSecondEudc = internalStandardCountsPerSecondEudc(),
-                                                           parameters = parameters))
+      return(createinternalStandardEudcAdaptedToAnalytes(internalStandardToAnalyteAssignmentDataframe = extracted$internalStandardToAnalyteAssignment,
+                                                         internalStandardCountsPerSecondEudc = process$internalStandardCountsPerSecondEudc(),
+                                                         parameters = parameters))
     }
     else
     {
-      return(EstimationUncertaintyDataCouple$new(estimatedData = matrix(1, nrow = parameters$sampleNumber, ncol = parameters$analyteNumber),
+      return(EstimationUncertaintyDataCouple$new(elementFullNames = parameters$analyteNames,
+                                                 estimatedData = matrix(1, nrow = parameters$sampleNumber, ncol = parameters$analyteNumber),
                                                  uncertaintyData = matrix(0, nrow = parameters$sampleNumber, ncol = parameters$analyteNumber),
                                                  uncertaintyType = "sd"))
     }
@@ -79,12 +97,12 @@ ICPMS_server <- function(input, output, session) {
     return(interferenceCorrectedCountsPerSecondEudc)
   })
   
-  process$ratio <- reactive({
-    process$analyteCountsPerSecondEudc()$divideBy(process$internalStandardMatrixAdaptedToAnalytes())
+  process$analyteToIstdRatio <- reactive({
+    process$analyteCountsPerSecondEudc()$divideBy(process$internalStandardEudcAdaptedToAnalytes())
     })
   
-  process$ratio_cor_b <- reactive({
-    process$ratio()$subtract(process$blk_ratio)
+  process$analyteToIstdRatioBlankCorrected <- reactive({
+    process$analyteToIstdRatio()$subtract(process$analyteToIstdBlankRatio)
   })
   
   parameters$deltaTime <- reactive({
@@ -113,13 +131,13 @@ ICPMS_server <- function(input, output, session) {
     
     listOfDriftModels <- list()
   
-    for (elementIndex in 1:parameters$analyteNumber){
+    for (elementIndex in seq(parameters$analyteNumber)){
       
       elementFullName <- parameters$analyteNames[elementIndex]
       
       elementSpecificDriftIndex <- parameters$listOfElementSpecificDriftIndex()[[elementFullName]]
       
-      driftSignalAndDeltaTime <- cbind(Signal=process$ratio_cor_b()[[1]][elementSpecificDriftIndex,elementIndex],
+      driftSignalAndDeltaTime <- cbind(Signal=process$analyteToIstdRatioBlankCorrected()$getEstimation()[elementSpecificDriftIndex,elementIndex],
                                        dt=parameters$deltaTime()[elementSpecificDriftIndex])  
       
       if (length(elementSpecificDriftIndex) < 3){
@@ -136,8 +154,7 @@ ICPMS_server <- function(input, output, session) {
     return(listOfDriftModels)
   })
     
-  process$driftFactorMatrix <- reactive({
-    
+  process$driftFactorEudc <- reactive({
     for (elementIndex in 1:parameters$analyteNumber){
         
       elementFullName <- parameters$analyteNames[elementIndex]
@@ -167,15 +184,15 @@ ICPMS_server <- function(input, output, session) {
         driftDataFrame[elementIndex] <- rep(1, parameters$sampleNumber)
       }
     }
-    
-    return(list(signal = driftDataFrame, RSD = matrix(0, nrow = parameters$sampleNumber, ncol = parameters$analyteNumber)))
+    return(EstimationUncertaintyDataCouple$new(elementFullNames = parameters$analyteNames,
+                                               estimatedData = driftDataFrame,
+                                               uncertaintyData = matrix(0, nrow = parameters$sampleNumber, ncol = parameters$analyteNumber),
+                                               uncertaintyType = "sd"))
   })
   
-  process$driftAndBlankCorrectedMatrix <- reactive({
-    
-    signalDriftCorrectedRatio <- process$ratio_cor_b()[[1]] / process$driftFactorMatrix()[["signal"]]
-    signalDriftCorrectedRSD <- process$ratio_cor_b()[[2]]
-    return(list(signal = signalDriftCorrectedRatio, RSD = signalDriftCorrectedRSD))
+  process$driftAndBlankCorrectedEudc <- reactive({
+    driftAndBlankCorrectedEudc <- process$analyteToIstdRatioBlankCorrected()$divideBy(process$driftFactorEudc())
+    return(driftAndBlankCorrectedEudc)
   })
   
   process$calibrationCoefficientMatrix <- reactive({
@@ -187,7 +204,7 @@ ICPMS_server <- function(input, output, session) {
       
       elementFullName <- parameters$analyteNames[elementIndex]
       
-      calibrationSignalUncertaintyConcentration <- getCalibrationData(elementFullName = elementFullName, signalMatrix = process$ratio_cor_b(),
+      calibrationSignalUncertaintyConcentration <- getCalibrationData(elementFullName = elementFullName, signalMatrix = process$analyteToIstdRatioBlankCorrected(),
                                                                       standardIdentificationColumn = parameters[["categoricalDataAndTime"]][ , "Level"], standardDataFrame = extracted$standard)
       
       if (!is.null(calibrationSignalUncertaintyConcentration)) {
@@ -214,12 +231,13 @@ ICPMS_server <- function(input, output, session) {
   
   process$concentration <- reactive({
     
-    concentration <- t(t(process$driftAndBlankCorrectedMatrix()[["signal"]])*process$calibrationCoefficientMatrix())
-    concentration[concentration < 0] <- "<blk"
-    concentrationRSD <- process$driftAndBlankCorrectedMatrix()[["RSD"]]
-    concentrationRSD[concentration < 0] <- "N/A"
+    concentration <- t(t(process$driftAndBlankCorrectedEudc()$getEstimation())*process$calibrationCoefficientMatrix())
+    concentrationRSD <- process$driftAndBlankCorrectedEudc()$getRsd()
     
-    return(list(signal = concentration, RSD = concentrationRSD))
+    return(EstimationUncertaintyDataCouple$new(elementFullNames = parameters$analyteNames,
+                                               estimatedData = concentration,
+                                               uncertaintyData = concentrationRSD,
+                                               uncertaintyType = "rsd"))
   })
   
 # File import and viewing -------------------------------------------------
@@ -284,6 +302,7 @@ ICPMS_server <- function(input, output, session) {
     
     req(isExtractionReady())
     
+    
     mainFileDatapath = uploadedFile$main$datapath
     standardFileDatapath = uploadedFile$standard$datapath
     internalStandardFileDatapath = uploadedFile$internalStandard$datapath
@@ -333,13 +352,11 @@ ICPMS_server <- function(input, output, session) {
     if (!is.null(internalStandardFileDatapath)) 
     {
       extracted$internalStandardToAnalyteAssignment  <- read.table(internalStandardFileDatapath, header = TRUE, sep= input$csvDelimitation, stringsAsFactors = FALSE)
-      process$blk_ratio <- propagateUncertainty(a = list(signal = process$analyteCountsPerSecond(), RSD = process$analyteCountsPerSecondRelativeStandardDeviation()),
-                                                b = process$internalStandardMatrixAdaptedToAnalytes(),
-                                                operation="division")
+      process$analyteToIstdBlankRatio <- process$analyteCountsPerSecondEudc()$divideBy(process$internalStandardEudcAdaptedToAnalytes())
     }
     else 
     {
-      process$blk_ratio <- list(signal=process$analyteCountsPerSecond(), RSD = process$analyteCountsPerSecondRelativeStandardDeviation())
+      process$analyteToIstdBlankRatio <- process$analyteCountsPerSecondEudc()
     }
     
     rowIndexInMain$custom[["All"]] <- which(rep(x = TRUE, parameters$sampleNumber))
@@ -400,12 +417,12 @@ ICPMS_server <- function(input, output, session) {
       rowIndexInMain$index_rowsMatchingRegularExpression <- grep(searchWhat, headerRows)
     }
     
-    if (displayWhat == "ISTD" & !is.null(process$internalStandardCountsPerSecond())){
-      indexTable = cbind(headerRows[rowIndexInMain$index_rowsMatchingRegularExpression], process$internalStandardCountsPerSecond()[rowIndexInMain$index_rowsMatchingRegularExpression,])
+    if (displayWhat == "ISTD" & !is.null(process$internalStandardCountsPerSecondEudc()$getEstimation())){
+      indexTable = cbind(headerRows[rowIndexInMain$index_rowsMatchingRegularExpression], process$internalStandardCountsPerSecondEudc()$getEstimation()[rowIndexInMain$index_rowsMatchingRegularExpression,])
       colnames(indexTable) <- c(firstColumnName, parameters$internalStandardNames)
     }
-    else if (displayWhat == "analytes" & !is.null(process$analyteCountsPerSecond())){
-      indexTable = cbind(headerRows[rowIndexInMain$index_rowsMatchingRegularExpression], process$analyteCountsPerSecond()[rowIndexInMain$index_rowsMatchingRegularExpression,])
+    else if (displayWhat == "analytes" & !is.null(process$analyteCountsPerSecondEudc()$getEstimation())){
+      indexTable = cbind(headerRows[rowIndexInMain$index_rowsMatchingRegularExpression], process$analyteCountsPerSecondEudc()$getEstimation()[rowIndexInMain$index_rowsMatchingRegularExpression,])
       colnames(indexTable) <- c(firstColumnName, parameters$analyteNames)
     }
     else {return()}
@@ -469,7 +486,7 @@ ICPMS_server <- function(input, output, session) {
     replaceIndexWhat = rowIndexInMain$custom[[input$sliderInput_BlankTab_rowsToReplace]]
     replaceIndexIn = rowIndexInMain$custom[[input$sliderInput_BlankTab_rowsToReplaceFrom]]
     
-    replaceValues(process$ratio(), 1:parameters$analyteNumber, input$sliderInput_BlankTab_replacementMethod, replaceIndexWhat, replaceIndexIn)
+    replaceValues(process$analyteToIstdRatio(), 1:parameters$analyteNumber, input$sliderInput_BlankTab_replacementMethod, replaceIndexWhat, replaceIndexIn)
   })
   
   #Render ISTD table if all conditions are met
@@ -479,13 +496,13 @@ ICPMS_server <- function(input, output, session) {
     
     if (blank_processOrView == "view") 
     {
-      blankTab_table <- cbind(parameters[["categoricalDataAndTime"]][ , "Sample Name"], process$blk_ratio[[1]])
+      blankTab_table <- cbind(parameters[["categoricalDataAndTime"]][ , "Sample Name"], process$analyteToIstdBlankRatio$getEstimation())
       names(blankTab_table) <- c("Sample Name", names(blankTab_table)[2:length(blankTab_table)])
       blankTab_table <- format(blankTab_table, digits = 3, scientific=T)
     }
     if (blank_processOrView == "process") 
     {
-      blankTab_table <- cbind(parameters[["categoricalDataAndTime"]][ , "Sample Name"], liveReplaceBlkTable()[[1]])
+      blankTab_table <- cbind(parameters[["categoricalDataAndTime"]][ , "Sample Name"], liveReplaceBlkTable()$getEstimation())
       names(blankTab_table) <- c("Sample Name", names(blankTab_table)[2:length(blankTab_table)])
       blankTab_table <- format(blankTab_table, digits = 3, scientific=T)
     }
@@ -518,8 +535,15 @@ ICPMS_server <- function(input, output, session) {
     
     req(!is.null(liveReplaceBlkTable()) && !is.null(rowReplacementIndex))
     
-    process$blk_ratio[[1]][rowReplacementIndex, ] <- liveReplaceBlkTable()[[1]][rowReplacementIndex, , drop = FALSE]
-    process$blk_ratio[[2]][rowReplacementIndex, ] <- liveReplaceBlkTable()[[2]][rowReplacementIndex, , drop = FALSE]
+    blankRatioSignal <- process$analyteToIstdBlankRatio$getEstimation()
+    blankRatioRsd <- process$analyteToIstdBlankRatio$getRsd()
+    blankRatioSignal[rowReplacementIndex, ] <- liveReplaceBlkTable()$getEstimation()[rowReplacementIndex, , drop = FALSE]
+    blankRatioRsd[rowReplacementIndex, ] <- liveReplaceBlkTable()$getRsd()[rowReplacementIndex, , drop = FALSE]
+    
+    process$analyteToIstdBlankRatio <- EstimationUncertaintyDataCouple$new(elementFullNames = parameters$analyteNames,
+                                                                           estimatedData = blankRatioSignal,
+                                                                           uncertaintyData = blankRatioRsd,
+                                                                           uncertaintyType = "rsd")
   })
   
   observe({
@@ -544,8 +568,8 @@ ICPMS_server <- function(input, output, session) {
   })
   
   output$smpBlkCorTable <- DT::renderDT(datatable({
-    if (is.null(process$ratio_cor_b()[[1]]) | is.null(rowIndexInMain$drift) | !is.integer(input$driftTab_numericInput_analyteNumber)){return()}
-    driftSignal <- process$ratio_cor_b()[[1]]
+    if (is.null(process$analyteToIstdRatioBlankCorrected()$getEstimation()) | is.null(rowIndexInMain$drift) | !is.integer(input$driftTab_numericInput_analyteNumber)){return()}
+    driftSignal <- process$analyteToIstdRatioBlankCorrected()$getEstimation()
     if (input$driftTab_numericInput_analyteNumber < 5){
       lc <- 1
     }
@@ -580,22 +604,21 @@ ICPMS_server <- function(input, output, session) {
     updateSelectInput(session,"driftTab_selectInput_analyteName",selected=parameters$analyteNames[input$driftTab_numericInput_analyteNumber])
   })
   
-  yplus <- reactive({(process$ratio_cor_b()[[1]] + process$ratio_cor_b()[[2]]/100*process$ratio_cor_b()[[1]])[rowIndexInMain$drift, input$driftTab_numericInput_analyteNumber]})
-  yminus <- reactive({(process$ratio_cor_b()[[1]] - process$ratio_cor_b()[[2]]/100*process$ratio_cor_b()[[1]])[rowIndexInMain$drift, input$driftTab_numericInput_analyteNumber]})
+  yplus <- reactive({(process$analyteToIstdRatioBlankCorrected()$getEstimation() + process$analyteToIstdRatioBlankCorrected()$getSd())[rowIndexInMain$drift, input$driftTab_numericInput_analyteNumber]})
+  yminus <- reactive({(process$analyteToIstdRatioBlankCorrected()$getEstimation() - process$analyteToIstdRatioBlankCorrected()$getSd())[rowIndexInMain$drift, input$driftTab_numericInput_analyteNumber]})
   
   output$driftPlot <- renderPlot({
-    if (is.null(process$ratio_cor_b()[[1]]) | is.null(rowIndexInMain$drift)){return()}
+    if (is.null(process$analyteToIstdRatioBlankCorrected()$getEstimation()) | is.null(rowIndexInMain$drift)){return()}
     
     elementFullName <- parameters$analyteNames[input$driftTab_numericInput_analyteNumber]
     
     driftTime <- parameters$deltaTime()[rowIndexInMain$drift]
-    driftValue <- process$ratio_cor_b()[[1]][rowIndexInMain$drift,input$driftTab_numericInput_analyteNumber]
-    driftRsd <- process$ratio_cor_b()[[2]][rowIndexInMain$drift,input$driftTab_numericInput_analyteNumber]
-    driftSd <- driftRsd/100 * driftValue
+    driftValue <- process$analyteToIstdRatioBlankCorrected()$getEstimation()[rowIndexInMain$drift,input$driftTab_numericInput_analyteNumber]
+    driftSd <- process$analyteToIstdRatioBlankCorrected()$getSd()[rowIndexInMain$drift,input$driftTab_numericInput_analyteNumber]
     
     elementSpecificDriftIndex <- parameters$listOfElementSpecificDriftIndex()[[elementFullName]]
     timeOfDriftAfterFirstStandard <- parameters$deltaTime()[elementSpecificDriftIndex]
-    valueOfDriftAfterFirstStandard <- process$ratio_cor_b()[[1]][elementSpecificDriftIndex, input$driftTab_numericInput_analyteNumber]
+    valueOfDriftAfterFirstStandard <- process$analyteToIstdRatioBlankCorrected()$getEstimation()[elementSpecificDriftIndex, input$driftTab_numericInput_analyteNumber]
     
     colors <- c("Drift values" = "lightblue", "Drift values after first standard" = "red")
     
@@ -643,25 +666,31 @@ ICPMS_server <- function(input, output, session) {
     
     downloadTabDataSignal <- switch(input$dataReductionStateSelection,
                                     "Counts per second" = process$analyteCountsPerSecond(),
-                                    "Internal Standard matrix (adapted for analytes)" = process$internalStandardMatrixAdaptedToAnalytes()[["signal"]],
-                                    "Internal Standard ratio" = process$ratio()[["signal"]],
-                                    "Blank matrix" = process$blk_ratio[["signal"]],
-                                    "Blank corrected signal (CPS or ratio)" = process$ratio_cor_b()[["signal"]],
-                                    "Drift matrix" = process$driftFactorMatrix()[["signal"]],
-                                    "Drift corrected signal (CPS or ratio, blank corrected)" = process$driftAndBlankCorrectedMatrix()[["signal"]],
-                                    "Concentration" = process$concentration()[["signal"]]
+                                    "Internal Standard matrix (adapted for analytes)" = process$internalStandardEudcAdaptedToAnalytes()$getEstimation(),
+                                    "Internal Standard ratio" = process$analyteToIstdRatio()$getEstimation(),
+                                    "Blank matrix" = process$analyteToIstdBlankRatio$getEstimation(),
+                                    "Blank corrected signal (CPS or ratio)" = process$analyteToIstdRatioBlankCorrected()$getEstimation(),
+                                    "Drift matrix" = process$driftFactorEudc()$getEstimation(),
+                                    "Drift corrected signal (CPS or ratio, blank corrected)" = process$driftAndBlankCorrectedEudc()$getEstimation(),
+                                    "Concentration" = process$concentration()$getEstimation()
     )
+    
+    downloadTabDataSignal[downloadTabDataSignal < 0] <- "<blk"
+    downloadTabDataSignal[is.na(downloadTabDataSignal)] <- "N/A"
     
     downloadTabDataRsd <- switch(input$dataReductionStateSelection,
                                  "Counts per second" = process$analyteCountsPerSecondRelativeStandardDeviation(),
-                                 "Internal Standard matrix (adapted for analytes)" = process$internalStandardMatrixAdaptedToAnalytes()[["RSD"]],
-                                 "Internal Standard ratio" = process$ratio()[["RSD"]],
-                                 "Blank matrix" = process$blk_ratio[["RSD"]],
-                                 "Blank corrected signal (CPS or ratio)" = process$ratio_cor_b()[["RSD"]],
-                                 "Drift matrix" = process$driftFactorMatrix()[["RSD"]],
-                                 "Drift corrected signal (CPS or ratio, blank corrected)" = process$driftAndBlankCorrectedMatrix()[["RSD"]],
-                                 "Concentration" = process$concentration()[["RSD"]]
+                                 "Internal Standard matrix (adapted for analytes)" = process$internalStandardEudcAdaptedToAnalytes()$getRsd(),
+                                 "Internal Standard ratio" = process$analyteToIstdRatio()$getRsd(),
+                                 "Blank matrix" = process$analyteToIstdBlankRatio$getRsd(),
+                                 "Blank corrected signal (CPS or ratio)" = process$analyteToIstdRatioBlankCorrected()$getRsd(),
+                                 "Drift matrix" = process$driftFactorEudc()$getRsd(),
+                                 "Drift corrected signal (CPS or ratio, blank corrected)" = process$driftAndBlankCorrectedEudc()$getRsd(),
+                                 "Concentration" = process$concentration()$getRsd()
     )
+    
+    downloadTabDataRsd[downloadTabDataSignal < 0] <- "N/A"
+    downloadTabDataRsd[is.na(downloadTabDataRsd)] <- "N/A"
     
     colnames(downloadTabDataSignal) <- parameters[["analyteNames"]]
     colnames(downloadTabDataRsd) <- parameters[["analyteNames"]]

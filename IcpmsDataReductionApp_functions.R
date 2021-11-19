@@ -27,44 +27,54 @@ createInterferenceParameters <- function(index, intereferedElement, interferingE
 
 EstimationUncertaintyDataCouple <- R6Class("EstimationUncertaintyDataCouple",
   public = list(
-   initialize = function(estimatedData, uncertaintyData, uncertaintyType) {
+   initialize = function(elementFullNames, estimatedData, uncertaintyData, uncertaintyType) {
+     private$elementFullNames <- elementFullNames
      private$estimatedData <- estimatedData
      if (uncertaintyType == "rsd") {
-       private$sdData <- matrix(0, nrow = nrow(uncertaintyData), ncol = ncol(uncertaintyData))
-       private$sdData[is.numeric(uncertaintyData)] <- uncertaintyData[is.numeric(uncertaintyData)] / 100 * estimatedData[is.numeric(uncertaintyData)]
-       private$sdData[!is.numeric(uncertaintyData)] <- 0
+       private$sdData <- self$createEmptyMatrixOfEudcSize()
+       notApplicableUncertaintyData <- apply(uncertaintyData, c(1,2), is.na)
+       private$sdData[!notApplicableUncertaintyData] <- uncertaintyData[!notApplicableUncertaintyData] / 100 * estimatedData[!notApplicableUncertaintyData]
+       private$sdData[notApplicableUncertaintyData] <- 0
      }
      else if (uncertaintyType == "sd") {
        private$sdData <- uncertaintyData
      }
+     colnames(private$estimatedData) <- elementFullNames
+     colnames(private$sdData) <- elementFullNames
    },
    divideBy = function(otherEudc) {
      estimate <- private$estimatedData / otherEudc$getEstimation()
      uncertainty <- sqrt((self$getRsd()/100)^2 + (otherEudc$getRsd()/100)^2) * 100
-     return(EstimationUncertaintyDataCouple$new(estimatedData = estimate,
+     return(EstimationUncertaintyDataCouple$new(elementFullNames = private$elementFullNames, estimatedData = estimate,
             uncertaintyData = uncertainty,
             uncertaintyType = "rsd"))
    },
    multiplyBy = function(otherEudc) {
      estimate <- private$estimatedData * otherEudc$getEstimation()
      uncertainty <- sqrt((self$getRsd()/100)^2 + (otherEudc$getRsd()/100)^2) * 100
-     return(EstimationUncertaintyDataCouple$new(estimatedData = estimate,
+     return(EstimationUncertaintyDataCouple$new(elementFullNames = private$elementFullNames,
+                                                estimatedData = estimate,
                                                 uncertaintyData = uncertainty,
                                                 uncertaintyType = "rsd"))
    },
    add = function(otherEudc) {
      estimate <- private$estimatedData + otherEudc$getEstimation()
      uncertainty <- sqrt(self$getSd()^2 + otherEudc$getSd()^2)
-     return(EstimationUncertaintyDataCouple$new(estimatedData = estimate,
+     return(EstimationUncertaintyDataCouple$new(elementFullNames = private$elementFullNames,
+                                                estimatedData = estimate,
                                                 uncertaintyData = uncertainty,
                                                 uncertaintyType = "sd"))
    },
    subtract = function(otherEudc) {
      estimate <- private$estimatedData - otherEudc$getEstimation()
      uncertainty <- sqrt(self$getSd()^2 + otherEudc$getSd()^2)
-     return(EstimationUncertaintyDataCouple$new(estimatedData = estimate,
+     return(EstimationUncertaintyDataCouple$new(elementFullNames = private$elementFullNames,
+                                                estimatedData = estimate,
                                                 uncertaintyData = uncertainty,
                                                 uncertaintyType = "sd"))
+   },
+   getElementFullNames = function() {
+     return(private$elementFullNames)
    },
    getEstimation = function() {
      return(private$estimatedData)
@@ -73,10 +83,20 @@ EstimationUncertaintyDataCouple <- R6Class("EstimationUncertaintyDataCouple",
      return(private$sdData)
    },
   getRsd = function() {
-    rsdData <- private$sdData / private$estimatedData * 100
+    estimationEqualsToZero <- (private$estimatedData == 0)
+    rsdData <- self$createEmptyMatrixOfEudcSize()
+    rsdData[!estimationEqualsToZero] <- private$sdData[!estimationEqualsToZero] / private$estimatedData[!estimationEqualsToZero] * 100
+    rsdData[estimationEqualsToZero] <- NA
+    colnames(rsdData) <- private$elementFullNames
     return(rsdData)
+  },
+  createEmptyMatrixOfEudcSize = function() {
+    rowNumber = nrow(private$estimatedData)
+    columnNumber = ncol(private$estimatedData)
+    return(matrix(nrow = rowNumber, ncol = columnNumber))
   }),
    private = list(
+     elementFullNames = NULL,
      estimatedData = NULL,
      sdData = NULL
    )
@@ -241,8 +261,8 @@ getCalibrationData <- function(elementFullName, signalMatrix, standardIdentifica
   }
   else 
   {
-    eSignal <- signalMatrix[[1]][standardRowNumberInMain, elementFullName]
-    eRSD <- signalMatrix[[2]][standardRowNumberInMain, elementFullName]
+    eSignal <- signalMatrix$getEstimation()[standardRowNumberInMain, elementFullName]
+    eRSD <- signalMatrix$getSd()[standardRowNumberInMain, elementFullName]
   }
   
   return(cbind(Signal=eSignal, RSD=eRSD, Concentration=as.numeric(standardConcentrationInStandardFile)))
@@ -401,16 +421,18 @@ removeDuplicateLines <- function(df){
 ##col_range is the column range for line index replacement,
 ##replace_type is the replacement type (mean or previous value)
 replaceValues <- function(sourceValues, colRange, replaceType, lineIndex, sourceLineIndex){
-  
-  ICPsignal = sourceValues[["signal"]]
-  RSD = sourceValues[["RSD"]]
+  ICPsignal = sourceValues$getEstimation()
+  RSD = sourceValues$getRsd()
+  elementFullNames <- sourceValues$getElementFullNames()
   modifiedIcpSignal <- ICPsignal
   modifiedIcpRsd <- RSD
   
   #This condition is useful when the signal hasn't been extracted and the function is called -> returns null
   if(is.null(ICPsignal)| is.null(RSD)){return(NULL)}
   #This condition is useful in shiny tables to return the table signal and RSD when no replacements are required
-  if (replaceType == "none" | is.null(lineIndex) | is.null(colRange)) {return(list(ICPsignal,RSD))}
+  if (replaceType == "none" | is.null(lineIndex) | is.null(colRange)) {
+    return(sourceValues)
+    }
   #Stores the line number of the signal whether it is a dataframe (nrow) or a vector (length)
   if(is.integer(nrow(ICPsignal))){
     lineNb <- nrow(ICPsignal)
@@ -475,7 +497,10 @@ replaceValues <- function(sourceValues, colRange, replaceType, lineIndex, source
       }
     }
   }
-  return(list(signal=modifiedIcpSignal,RSD=modifiedIcpRsd))
+  return(EstimationUncertaintyDataCouple$new(elementFullNames = elementFullNames,
+                                             estimatedData = modifiedIcpSignal,
+                                             uncertaintyData = modifiedIcpRsd,
+                                             uncertaintyType = "rsd"))
 }
 
 ##Function to create the ISTD template based on raw datafile
@@ -533,7 +558,8 @@ extractData <- function(dataFileName, stdFileName){
 }
   
   
-createInternalStandardMatrixAdaptedToAnalytes <- function(internalStandardToAnalyteAssignmentDataframe, internalStandardCountsPerSecondEudc, parameters){
+createinternalStandardEudcAdaptedToAnalytes <- function(internalStandardToAnalyteAssignmentDataframe, internalStandardCountsPerSecondEudc, parameters){
+  
   
   analyteNames <- parameters$analyteNames
   istdColumnPosition <- 2
@@ -550,7 +576,8 @@ createInternalStandardMatrixAdaptedToAnalytes <- function(internalStandardToAnal
   colnames(estimationMatrix) <- analyteNames
   colnames(uncertaintyMatrix) <- analyteNames
   
-  return(EstimationUncertaintyDataCouple$new(estimatedData = estimationMatrix,
+  return(EstimationUncertaintyDataCouple$new(elementFullNames = parameters$analyteNames,
+                                             estimatedData = estimationMatrix,
                                              uncertaintyData = uncertaintyMatrix,
                                              uncertaintyType = "sd"))
 }
