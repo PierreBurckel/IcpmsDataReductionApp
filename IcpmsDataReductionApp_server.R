@@ -486,7 +486,7 @@ ICPMS_server <- function(input, output, session) {
     replaceIndexWhat = rowIndexInMain$custom[[input$sliderInput_BlankTab_rowsToReplace]]
     replaceIndexIn = rowIndexInMain$custom[[input$sliderInput_BlankTab_rowsToReplaceFrom]]
     
-    replaceValues(process$analyteToIstdRatio(), 1:parameters$analyteNumber, input$sliderInput_BlankTab_replacementMethod, replaceIndexWhat, replaceIndexIn)
+    replaceValues(process$analyteToIstdRatio(), input$sliderInput_BlankTab_replacementMethod, replaceIndexWhat, replaceIndexIn, parameters)
   })
   
   #Render ISTD table if all conditions are met
