@@ -34,7 +34,7 @@ ICPMS_server <- function(input, output, session) {
     countsPerSecond <- extracted$main[ , extracted$secondRowOfMain == "CPS", drop=FALSE]
     numericalCountsPerSecond <- apply(countsPerSecond, c(1,2), is.numeric)
     countsPerSecond[!numericalCountsPerSecond] <- NA
-    countsPerSecond
+    as.matrix(countsPerSecond)
   })
   
   process$analyteCountsPerSecond <- reactive({
@@ -49,7 +49,7 @@ ICPMS_server <- function(input, output, session) {
     relativeStandardDeviation <- extracted$main[ , extracted$secondRowOfMain == "CPS RSD", drop=FALSE]
     numericalRelativeStandardDeviation <- apply(relativeStandardDeviation, c(1,2), is.numeric)
     relativeStandardDeviation[!numericalRelativeStandardDeviation] <- NA
-    relativeStandardDeviation
+    as.matrix(relativeStandardDeviation)
   })
   
   process$analyteCountsPerSecondRelativeStandardDeviation <- reactive({
@@ -155,7 +155,7 @@ ICPMS_server <- function(input, output, session) {
   })
     
   process$driftFactorEudc <- reactive({
-    for (elementIndex in 1:parameters$analyteNumber){
+    for (elementIndex in seq(parameters$analyteNumber)){
         
       elementFullName <- parameters$analyteNames[elementIndex]
       elementSpecificDriftIndex <- parameters$listOfElementSpecificDriftIndex()[[elementFullName]]
@@ -169,23 +169,23 @@ ICPMS_server <- function(input, output, session) {
       }
       
       if (elementIndex == 1){
-        driftDataFrame <- data.frame(driftPredict)
+        driftMatrix <- as.matrix(driftPredict)
       }
       else{
-        driftDataFrame[elementIndex] <- driftPredict
+        driftMatrix <- cbind(driftMatrix, driftPredict)
       }
   
       if (parameters$driftCorrectedElements[elementIndex] == TRUE){
-        driftDataFrame[elementIndex] <- driftDataFrame[elementIndex] / driftDataFrame[min(elementSpecificDriftIndex), elementIndex]
-        driftDataFrame[is.na(driftDataFrame[,elementIndex]), elementIndex] <- 1
-        driftDataFrame[1:min(elementSpecificDriftIndex) , elementIndex] <- 1
+        driftMatrix[ , elementIndex] <- driftMatrix[ , elementIndex] / driftMatrix[min(elementSpecificDriftIndex), elementIndex]
+        driftMatrix[is.na(driftMatrix[ , elementIndex]), elementIndex] <- 1
+        driftMatrix[seq(min(elementSpecificDriftIndex)), elementIndex] <- 1
       } 
       else {
-        driftDataFrame[elementIndex] <- rep(1, parameters$sampleNumber)
+        driftMatrix[ , elementIndex] <- rep(1, parameters$sampleNumber)
       }
     }
     return(EstimationUncertaintyDataCouple$new(elementFullNames = parameters$analyteNames,
-                                               estimatedData = driftDataFrame,
+                                               estimatedData = driftMatrix,
                                                uncertaintyData = matrix(0, nrow = parameters$sampleNumber, ncol = parameters$analyteNumber),
                                                uncertaintyType = "sd"))
   })
