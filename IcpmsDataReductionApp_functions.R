@@ -3,6 +3,157 @@
 
 agilentElementNamePattern <- "[ ]{2}[A-Z]{1}[a-z]*[ ]{2}"
 
+createInterferenceParameters <- function(index, intereferedElement, interferingElement) {
+  
+  parameterClasses <- c(class(numeric)[1], class(intereferedElement)[1], class(interferingElement)[1])
+  expectedClasses <- c("numeric", "character", "character")
+  
+  if (!identical(parameterClasses, expectedClasses)) {
+    stop("The classes of the provided parameters are incorrect")
+  }
+  if (!identical(size(index), size(intereferedElement), size(interferingElement))) {
+    stop("The character vector sizes must be the same")
+  }
+  
+  instance <- list()
+  instance$index <- index
+  instance$intereferedElement <- intereferedElement
+  instance$interferingElement <- interferingElement
+  
+  class(instance) <- "interferenceParameters"
+  
+  return(instance)
+}
+
+EstimationUncertaintyDataCouple <- R6Class("EstimationUncertaintyDataCouple",
+  public = list(
+   initialize = function(elementFullNames, estimatedData, uncertaintyData, uncertaintyType) {
+     if (!is.matrix(estimatedData) | !is.matrix(uncertaintyData)) {
+       stop("estimation and uncertainty data must be matrixes")
+     }
+     if (length(elementFullNames) != ncol(estimatedData) | length(elementFullNames) != ncol(uncertaintyData)) {
+       stop("incompatible element name number and column number in estimation and/or uncertainty")
+     }
+     if (nrow(estimatedData) != nrow(uncertaintyData)) {
+       stop("incompatible sample number between estimation and uncertainty")
+     }
+     private$elementFullNames <- elementFullNames
+     private$estimatedData <- estimatedData
+     if (uncertaintyType == "rsd") {
+       private$sdData <- self$createEmptyMatrixOfEudcSize()
+       notApplicableUncertaintyData <- apply(uncertaintyData, c(1,2), is.na)
+       notApplicableEstimatedData <- apply(estimatedData, c(1,2), is.na)
+       private$sdData[!notApplicableUncertaintyData] <- uncertaintyData[!notApplicableUncertaintyData] / 100 * estimatedData[!notApplicableUncertaintyData]
+       private$sdData[notApplicableUncertaintyData & !notApplicableEstimatedData] <- 0
+       private$sdData[notApplicableEstimatedData] <- NA
+     }
+     else if (uncertaintyType == "sd") {
+       private$sdData <- uncertaintyData
+     }
+     colnames(private$estimatedData) <- elementFullNames
+     colnames(private$sdData) <- elementFullNames
+   },
+   divideBy = function(otherEudc) {
+     estimate <- private$estimatedData / otherEudc$getEstimation()
+     uncertainty <- sqrt((self$getRsd()/100)^2 + (otherEudc$getRsd()/100)^2) * 100
+     return(EstimationUncertaintyDataCouple$new(elementFullNames = private$elementFullNames, estimatedData = estimate,
+            uncertaintyData = uncertainty,
+            uncertaintyType = "rsd"))
+   },
+   multiplyBy = function(otherEudc) {
+     estimate <- private$estimatedData * otherEudc$getEstimation()
+     uncertainty <- sqrt((self$getRsd()/100)^2 + (otherEudc$getRsd()/100)^2) * 100
+     return(EstimationUncertaintyDataCouple$new(elementFullNames = private$elementFullNames,
+                                                estimatedData = estimate,
+                                                uncertaintyData = uncertainty,
+                                                uncertaintyType = "rsd"))
+   },
+   add = function(otherEudc) {
+     estimate <- private$estimatedData + otherEudc$getEstimation()
+     uncertainty <- sqrt(self$getSd()^2 + otherEudc$getSd()^2)
+     return(EstimationUncertaintyDataCouple$new(elementFullNames = private$elementFullNames,
+                                                estimatedData = estimate,
+                                                uncertaintyData = uncertainty,
+                                                uncertaintyType = "sd"))
+   },
+   subtract = function(otherEudc) {
+     estimate <- private$estimatedData - otherEudc$getEstimation()
+     uncertainty <- sqrt(self$getSd()^2 + otherEudc$getSd()^2)
+     return(EstimationUncertaintyDataCouple$new(elementFullNames = private$elementFullNames,
+                                                estimatedData = estimate,
+                                                uncertaintyData = uncertainty,
+                                                uncertaintyType = "sd"))
+   },
+   getElementFullNames = function() {
+     return(private$elementFullNames)
+   },
+   getElementNumber = function() {
+     return(length(private$elementFullNames))
+   },
+   getSampleNumber = function() {
+     return(nrow(private$estimatedData))
+   },
+   getEstimation = function() {
+     return(private$estimatedData)
+   },
+   getSd = function() {
+     return(private$sdData)
+   },
+  getRsd = function() {
+    notApplicableData <- apply(private$estimatedData, c(1,2), is.na)
+    applicableEstimationEqualsToZero <- (private$estimatedData[!notApplicableData] == 0)
+    rsdData <- self$createEmptyMatrixOfEudcSize()
+    rsdData[!notApplicableData][!applicableEstimationEqualsToZero] <- private$sdData[!notApplicableData][!applicableEstimationEqualsToZero] / private$estimatedData[!notApplicableData][!applicableEstimationEqualsToZero] * 100
+    rsdData[!notApplicableData][applicableEstimationEqualsToZero] <- NA
+    rsdData[notApplicableData] <- NA
+    colnames(rsdData) <- private$elementFullNames
+    return(rsdData)
+  },
+  createEmptyMatrixOfEudcSize = function() {
+    rowNumber = nrow(private$estimatedData)
+    columnNumber = ncol(private$estimatedData)
+    return(matrix(nrow = rowNumber, ncol = columnNumber))
+  }),
+   private = list(
+     elementFullNames = NULL,
+     estimatedData = NULL,
+     sdData = NULL
+   )
+)
+
+correctInterferences <- function(eudcToCorrect, interferenceParameters) {
+  
+  if (length(interferenceParameters$index == 0)) {
+    stop("interference index of length < 1")
+  }
+  else if (length(interferenceParameters$index == 1)) {
+    interferenceRatioValue <- eudcToCorrect$estimatedData[interferenceParameters$index, interferenceParameters$intereferedElement] / eudcToCorrect$estimatedData[interferenceParameters$index, interferenceParameters$intereferingElement]
+    interferenceRatioSd <- sqrt((eudcToCorrect$rsdData[interferenceParameters$index, interferenceParameters$intereferedElement] / 100)^2 +
+                                 (eudcToCorrect$rsdData[interferenceParameters$index, interferenceParameters$intereferingElement] / 100)^2) * interferenceRatioValue
+  }
+  else {
+    interferenceRatioValues <- eudcToCorrect$estimatedData[interferenceParameters$index, interferenceParameters$intereferedElement] / eudcToCorrect$estimatedData[interferenceParameters$index, interferenceParameters$intereferingElement] %>%
+    interferenceRatioValue <- mean(interferenceRatioValues)
+    interferenceRatioSd <- sd(interferenceRatioValues)
+  }
+  interferenceValues <- interferenceRatioValue * eudcToCorrect$estimatedData[ , interferenceParameters$intereferingElement]
+  interferenceSd <- sqrt((interferenceRatioSd / interferenceRatioValue)^2 + (eudcToCorrect$rsdData[ , interferenceParameters$intereferingElement] / 100)^2) * interferenceValues
+  
+  interferenceCorrectedValues <- eudcToCorrect$estimatedData[ , interferenceParameters$intereferedElement] - interferenceValues
+  interferenceCorrectedSd <- sqrt(eudcToCorrect$sdData[ , interferenceParameters$intereferedElement]^2 + interferenceSd^2)
+  
+  correctedEstimatedData <- eudcToCorrect$estimatedData
+  correctedEstimatedData[ , interferenceParameters$intereferedElement] <- interferenceCorrectedValues
+  
+  correctedEstimatedData <- eudcToCorrect$estimatedData
+  
+  correctedUncertaintyData <- 
+  correctedUncertaintyType <- "sd"
+  correctedEudc <- createEstimationUncertaintyDataCouple()
+  
+  return(correctedEudc)
+}
+
 # setMatrixFormat <- function(matrixToFormat, matrixToFormatColumnNames = NULL, columnsToAdd, columnsToAddColumnNames = NULL) {
 #   
 #   sampleNumber <- nrow(matrixToFormat)
@@ -129,8 +280,8 @@ getCalibrationData <- function(elementFullName, signalMatrix, standardIdentifica
   }
   else 
   {
-    eSignal <- signalMatrix[[1]][standardRowNumberInMain, elementFullName]
-    eRSD <- signalMatrix[[2]][standardRowNumberInMain, elementFullName]
+    eSignal <- signalMatrix$getEstimation()[standardRowNumberInMain, elementFullName]
+    eRSD <- signalMatrix$getSd()[standardRowNumberInMain, elementFullName]
   }
   
   return(cbind(Signal=eSignal, RSD=eRSD, Concentration=as.numeric(standardConcentrationInStandardFile)))
@@ -281,89 +432,99 @@ removeDuplicateLines <- function(df){
   
   return(df)
 }
-##Function that replaces all values in lineIndex
-##Values are replaced by new values, based on the sourceLineIndex index
-##If the sourceLineIndex are set to NULL, the lines that are not in the lineIndex (i.e. !lineIndex) are used as source
-##The new values can be the mean and SD of previous and following sourceLineIndex or the value and SD of the previous sourceLine
-##ICPsignal and RSD are the dataframe containing the signal and RSD of the signal 
-##col_range is the column range for line index replacement,
-##replace_type is the replacement type (mean or previous value)
-replaceValues <- function(sourceValues, colRange, replaceType, lineIndex, sourceLineIndex){
+
+replaceValues <- function(eudcToModify, howToReplace, linesToBeReplaced, linesUsedForReplacement, parameters){
   
-  ICPsignal = sourceValues[["signal"]]
-  RSD = sourceValues[["RSD"]]
-  modifiedIcpSignal <- ICPsignal
-  modifiedIcpRsd <- RSD
+  signalEstimation = eudcToModify$getEstimation()
+  signalRelativeStandardDeviation = eudcToModify$getRsd()
+  elementFullNames <- eudcToModify$getElementFullNames()
+  modifiedEstimation <- signalEstimation
+  modifiedRelativeStandardDeviation <- signalRelativeStandardDeviation
   
-  #This condition is useful when the signal hasn't been extracted and the function is called -> returns null
-  if(is.null(ICPsignal)| is.null(RSD)){return(NULL)}
   #This condition is useful in shiny tables to return the table signal and RSD when no replacements are required
-  if (replaceType == "none" | is.null(lineIndex) | is.null(colRange)) {return(list(ICPsignal,RSD))}
-  #Stores the line number of the signal whether it is a dataframe (nrow) or a vector (length)
-  if(is.integer(nrow(ICPsignal))){
-    lineNb <- nrow(ICPsignal)
-  } else {
-    lineNb <- length(ICPsignal)
+  if (howToReplace == "none" | is.null(linesToBeReplaced)) {
+    return(eudcToModify)
   }
-  #The function requires a logical index. If the index is non-logical (i.e. numeric) it is converted to a logical index
-  if (!is.logical(lineIndex)) {
-    lineIndex <- convertToLogical(lineIndex, lineNb)
+  
+  lineNumber <- eudcToModify$getSampleNumber()
+  
+  # Forces logical index
+  if (!is.logical(linesToBeReplaced)) {
+    linesToBeReplaced <- convertToLogical(linesToBeReplaced, lineNumber)
   }
-  #The function accepts a NULL sourceLineIndex. The sourceLineIndex variable takes the opposite value of the logical lineIndex (!lineIndex)
-  if (is.null(sourceLineIndex)){
-    sourceLineIndex <- !lineIndex
+  # The function accepts a NULL sourceLineIndex. The sourceLineIndex variable takes the opposite value of the logical lineIndex (!lineIndex)
+  if (is.null(linesUsedForReplacement)){
+    linesUsedForReplacement <- !linesToBeReplaced
   }
-  #As for lineIndex, if sourceLineIndex is numerical it needs to be converted to a logical index
-  else if (!is.logical(sourceLineIndex)) {
-    sourceLineIndex <- convertToLogical(sourceLineIndex, lineNb)
+  # Forces logical index
+  else if (!is.logical(linesUsedForReplacement)) {
+    linesUsedForReplacement <- convertToLogical(linesUsedForReplacement, lineNumber)
   }
-  #If the source line index is the "all" index, converts the index to the inverse of the lineIndex
-  if (all(sourceLineIndex == rep(TRUE, rep=lineNb))){
-    sourceLineIndex <- !lineIndex
+  # If linesUsedForReplacement is the "all" index, converts linesUsedForReplacement to the inverse of the linesToBeReplaced
+  if (identical(linesUsedForReplacement, rep(TRUE, rep = lineNumber))) {
+    linesUsedForReplacement <- !linesToBeReplaced
   }
 
-  #Now that we are sure that lineIndex and sourceLineIndex are logical, we create their numerical equivalent
-  nLineIndex <- which(lineIndex)
-  nSourceLineIndex <- which(sourceLineIndex)
-  #Apply modifications only on colRange columns
-  for (j in colRange){
-    #Apply modifications only on lines in the lineIndex
-    for (nLine in nLineIndex){
-      #Replaces the values in the signal and RSD matrix based on replacement type
-      prevLine <- getClosestInIndex(nLine, nSourceLineIndex, "prev")
-      prevValue <- ICPsignal[prevLine,j]
-      prevValueRSD <- RSD[prevLine,j]
+  numericalLinesToBeReplaced <- which(linesToBeReplaced)
+  numericalLinesUsedForReplacement <- which(linesUsedForReplacement)
+  
+  for (elementFullName in elementFullNames){
+    
+    for (lineToReplace in numericalLinesToBeReplaced){
+      
+      previousLine <- getClosestInIndex(lineToReplace, numericalLinesUsedForReplacement, "prev")
+      previousEstimation <- signalEstimation[previousLine, elementFullName]
+      previousRelativeStandardDeviation <- signalRelativeStandardDeviation[previousLine, elementFullName]
 
-      if (replaceType == "mean"){
-        nextLine <- getClosestInIndex(nLine, nSourceLineIndex, "next")
-        nextValue <- ICPsignal[nextLine,j]
-        modifiedIcpSignal[nLine,j] <- mean(c(prevValue,nextValue))
-        modifiedIcpRsd[nLine,j] <- calculateRSD(c(prevValue,nextValue))
-      } 
-      else if (replaceType == "prev"){
-        modifiedIcpSignal[nLine,j] <- prevValue
-        modifiedIcpRsd[nLine,j] <- prevValueRSD
-      }
-      else if (replaceType == "averageInBlankIndex"){
-        if (length(nSourceLineIndex) > 1) {
-          modifiedIcpSignal[nLine,j] <- mean(ICPsignal[nSourceLineIndex, j])
-          modifiedIcpRsd[nLine,j] <- sd(ICPsignal[nSourceLineIndex, j]) / ICPsignal[nLine,j] * 100
+      if (howToReplace == "mean"){
+        
+        nextLine <- getClosestInIndex(lineToReplace, numericalLinesUsedForReplacement, "next")
+        nextEstimation <- signalEstimation[nextLine, elementFullName]
+        
+        if (is.na(previousEstimation) | is.na(nextEstimation) | is.na(modifiedEstimation[lineToReplace, elementFullName])) {
+          modifiedEstimation[lineToReplace, elementFullName] <- NA
         }
-        else if (length(nSourceLineIndex) == 1) 
+        else {
+          modifiedEstimation[lineToReplace, elementFullName] <- mean(c(previousEstimation, nextEstimation))
+          modifiedRelativeStandardDeviation[lineToReplace,elementFullName] <- calculateRSD(c(previousEstimation, nextEstimation))
+        }
+        
+      } 
+      else if (howToReplace == "prev"){
+        
+        if (is.na(previousEstimation) | is.na(modifiedEstimation[lineToReplace,elementFullName])) {
+          modifiedEstimation[lineToReplace, elementFullName] <- NA
+        }
+        else {
+          modifiedEstimation[lineToReplace, elementFullName] <- previousEstimation
+          modifiedRelativeStandardDeviation[lineToReplace, elementFullName] <- previousRelativeStandardDeviation
+        }
+        
+      }
+      else if (howToReplace == "averageInBlankIndex"){
+        
+        if (length(numericalLinesUsedForReplacement) > 1) {
+          modifiedEstimation[lineToReplace, elementFullName] <- mean(signalEstimation[numericalLinesUsedForReplacement, elementFullName])
+          modifiedRelativeStandardDeviation[lineToReplace,elementFullName] <- sd(signalEstimation[numericalLinesUsedForReplacement, elementFullName]) / signalEstimation[lineToReplace, elementFullName] * 100
+        }
+        else if (length(numericalLinesUsedForReplacement) == 1) 
         {
-          modifiedIcpSignal[nLine,j] <- ICPsignal[nSourceLineIndex, j]
-          modifiedIcpRsd[nLine,j] <- RSD[nSourceLineIndex, j]
+          modifiedEstimation[lineToReplace,elementFullName] <- signalEstimation[numericalLinesUsedForReplacement, elementFullName]
+          modifiedRelativeStandardDeviation[lineToReplace,elementFullName] <- signalRelativeStandardDeviation[numericalLinesUsedForReplacement, elementFullName]
         }
         else 
         {
-          modifiedIcpSignal[nLine,j] <- NA
-          modifiedIcpRsd[nLine,j] <- NA
-          
+          modifiedEstimation[lineToReplace, elementFullName] <- NA
+          modifiedRelativeStandardDeviation[lineToReplace, elementFullName] <- NA
         }
+        
       }
     }
   }
-  return(list(signal=modifiedIcpSignal,RSD=modifiedIcpRsd))
+  return(EstimationUncertaintyDataCouple$new(elementFullNames = elementFullNames,
+                                             estimatedData = modifiedEstimation,
+                                             uncertaintyData = modifiedRelativeStandardDeviation,
+                                             uncertaintyType = "rsd"))
 }
 
 ##Function to create the ISTD template based on raw datafile
@@ -421,21 +582,26 @@ extractData <- function(dataFileName, stdFileName){
 }
   
   
-createInternalStandardMatrixAdaptedToAnalytes <- function(ISTD_file, ISTD){
+createinternalStandardEudcAdaptedToAnalytes <- function(internalStandardToAnalyteAssignmentDataframe, internalStandardCountsPerSecondEudc, parameters){
   
-  if(is.null(ISTD_file) | is.null(ISTD)){return(1)}
   
-  ISTD.matrix <- list(signal = matrix(nrow = nrow(ISTD[["signal"]]), ncol = nrow(ISTD_file)),
-                      RSD = matrix(nrow = nrow(ISTD[["signal"]]), ncol = nrow(ISTD_file)))
+  analyteNames <- parameters$analyteNames
+  istdColumnPosition <- 2
   
-  for (j in 1:nrow(ISTD_file)){
-    eISTD <- ISTD_file[j,2]
-    ISTD.matrix[["signal"]][ , j] <- ISTD[["signal"]][, eISTD]
-    ISTD.matrix[["RSD"]][ , j] <- ISTD[["RSD"]][, eISTD]
+  estimationMatrix <- matrix(nrow = parameters$sampleNumber, ncol = parameters$analyteNumber)
+  uncertaintyMatrix <- matrix(nrow = parameters$sampleNumber, ncol = parameters$analyteNumber)
+  
+  for (analyteIncrement in seq(1, parameters$analyteNumber)){
+    analyteSpecificIstd <- internalStandardToAnalyteAssignmentDataframe[analyteIncrement, istdColumnPosition]
+    estimationMatrix[ , analyteIncrement] <- internalStandardCountsPerSecondEudc$getEstimation()[ , analyteSpecificIstd]
+    uncertaintyMatrix[ , analyteIncrement] <- internalStandardCountsPerSecondEudc$getSd()[, analyteSpecificIstd]
   }
   
-  colnames(ISTD.matrix[["signal"]]) <- ISTD_file[ ,1]
-  colnames(ISTD.matrix[["RSD"]]) <- ISTD_file[ ,1]
+  colnames(estimationMatrix) <- analyteNames
+  colnames(uncertaintyMatrix) <- analyteNames
   
-  return(ISTD.matrix)
+  return(EstimationUncertaintyDataCouple$new(elementFullNames = parameters$analyteNames,
+                                             estimatedData = estimationMatrix,
+                                             uncertaintyData = uncertaintyMatrix,
+                                             uncertaintyType = "sd"))
 }
