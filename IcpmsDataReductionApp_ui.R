@@ -49,6 +49,21 @@ ICPMS_ui <- shinyUI({
                         )
                ),
                
+               tabPanel("Interference correction",
+                        sidebarLayout(
+                          sidebarPanel(
+                            selectInput("sliderInput_InterferenceTab_indexForCorrectionFactorCalculation", "Compute correction factor from:",
+                                        "", selected = ""),
+                            selectInput("sliderInput_InterferenceTab_interferingElement", "Select interfering element:",
+                                        "", selected = ""),
+                            selectInput("sliderInput_InterferenceTab_interferedElement", "Select interfered element:",
+                                        "", selected = ""),
+          
+                            actionButton("actionButton_InterferenceTab_applyCorrection", "Apply correction")),
+                          mainPanel()
+                        )
+               ),
+               
                tabPanel("Blank verification/processing",
                         sidebarLayout(
                           sidebarPanel(
@@ -103,7 +118,9 @@ ICPMS_ui <- shinyUI({
                             selectInput("viewConcentrationIndex", "View index:",
                                         "All", selected = "All"),
                             selectInput("dataReductionStateSelection", "Select the type of data to download:",
-                                        c("Counts per second", "Internal Standard matrix (adapted for analytes)",
+                                        c("Counts per second",
+                                          "Interference counts per second", "Interference corrected counts per second",
+                                          "Internal Standard matrix (adapted for analytes)",
                                           "Internal Standard ratio", "Blank matrix", "Blank corrected signal (CPS or ratio)",
                                           "Drift matrix", "Drift corrected signal (CPS or ratio, blank corrected)", "Concentration"),
                                         selected = "Concentration"),

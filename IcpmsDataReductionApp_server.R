@@ -90,15 +90,19 @@ ICPMS_server <- function(input, output, session) {
     }
   })
   
-  process$interferenceCorrectedCountsPerSecondEudc <- reactive({
-    for (interference in parameters$interferenceParametersList) {
-      interferenceCorrectedCountsPerSecondEudc <- correctInterferences(eudcToCorrect = process$analyteCountsPerSecondEudc(), interferenceParameters = interference)
-    }
-    return(interferenceCorrectedCountsPerSecondEudc)
+  # process$interferenceCorrectedCountsPerSecondEudc <- reactive({
+  #   for (interference in parameters$interferenceParametersList) {
+  #     interferenceCorrectedCountsPerSecondEudc <- correctInterferences(eudcToCorrect = process$analyteCountsPerSecondEudc(), interferenceParameters = interference)
+  #   }
+  #   return(interferenceCorrectedCountsPerSecondEudc)
+  # })
+  
+  process$interferenceCorrectedCountsPerSecond <- reactive({
+    process$analyteCountsPerSecondEudc()$subtract(process$interferenceCountsPerSeconds)
   })
   
   process$analyteToIstdRatio <- reactive({
-    process$analyteCountsPerSecondEudc()$divideBy(process$internalStandardEudcAdaptedToAnalytes())
+    process$interferenceCorrectedCountsPerSecond()$divideBy(process$internalStandardEudcAdaptedToAnalytes())
     })
   
   process$analyteToIstdRatioBlankCorrected <- reactive({
@@ -349,15 +353,25 @@ ICPMS_server <- function(input, output, session) {
     numericalColumns <- seq(from = max(which(extracted$firstRowOfMain == "Sample")) + 1, to = ncol(extracted$main))
     extracted$main[ , numericalColumns] <- sapply(extracted$main[ , numericalColumns], as.numeric)
     
-    if (!is.null(internalStandardFileDatapath)) 
-    {
-      extracted$internalStandardToAnalyteAssignment  <- read.table(internalStandardFileDatapath, header = TRUE, sep= input$csvDelimitation, stringsAsFactors = FALSE)
-      process$analyteToIstdBlankRatio <- process$analyteCountsPerSecondEudc()$divideBy(process$internalStandardEudcAdaptedToAnalytes())
-    }
-    else 
-    {
-      process$analyteToIstdBlankRatio <- process$analyteCountsPerSecondEudc()
-    }
+    process$interferenceCountsPerSeconds <- EstimationUncertaintyDataCouple$new(elementFullNames = parameters$analyteNames,
+                                                                                    estimatedData = matrix(0, ncol = parameters$analyteNumber, nrow = parameters$sampleNumber),
+                                                                                    uncertaintyData = matrix(0, ncol = parameters$analyteNumber, nrow = parameters$sampleNumber),
+                                                                                    uncertaintyType = "sd")
+    
+    process$analyteToIstdBlankRatio <- EstimationUncertaintyDataCouple$new(elementFullNames = parameters$analyteNames,
+                                                                                    estimatedData = matrix(0, ncol = parameters$analyteNumber, nrow = parameters$sampleNumber),
+                                                                                    uncertaintyData = matrix(0, ncol = parameters$analyteNumber, nrow = parameters$sampleNumber),
+                                                                                    uncertaintyType = "sd")
+    
+    # if (!is.null(internalStandardFileDatapath)) 
+    # {
+    #   extracted$internalStandardToAnalyteAssignment  <- read.table(internalStandardFileDatapath, header = TRUE, sep= input$csvDelimitation, stringsAsFactors = FALSE)
+    #   process$analyteToIstdBlankRatio <- process$analyteCountsPerSecondEudc()$divideBy(process$internalStandardEudcAdaptedToAnalytes())
+    # }
+    # else 
+    # {
+    #   process$analyteToIstdBlankRatio <- process$analyteCountsPerSecondEudc()
+    # }
     
     rowIndexInMain$custom[["All"]] <- which(rep(x = TRUE, parameters$sampleNumber))
     parameters$driftCorrectedElements <- rep(FALSE, parameters$analyteNumber)
@@ -473,12 +487,51 @@ ICPMS_server <- function(input, output, session) {
   
   observeEvent(rowIndexInMain$custom, {
     if (is.null(rowIndexInMain$custom)){return()}
+    updateSelectInput(session,"sliderInput_InterferenceTab_indexForCorrectionFactorCalculation", label  = "Compute correction factor from:", choices=names(rowIndexInMain$custom),names(rowIndexInMain$custom)[1])
     updateSelectInput(session,"sliderInput_BlankTab_rowsToReplace", label  = "Replace what:", choices=names(rowIndexInMain$custom),names(rowIndexInMain$custom)[1])
     updateSelectInput(session,"sliderInput_BlankTab_rowsToReplaceFrom", label  = "Replace in:", choices=names(rowIndexInMain$custom),names(rowIndexInMain$custom)[1])
     updateSelectInput(session,"selectDriftIndex", label  = "Define drift index:", choices=names(rowIndexInMain$custom),names(rowIndexInMain$custom)[1])
     updateSelectInput(session,"viewConcentrationIndex", label  = "View index:", choices=c("All", names(rowIndexInMain$custom)),"All")
   })
 
+
+# Interference correction -------------------------------------------------
+
+  observeEvent(input$actionButton_InterferenceTab_applyCorrection, {
+    
+    browser()
+    
+    interferenceSignal <- process$interferenceCountsPerSeconds$getEstimation()
+    interferenceRsd <- process$interferenceCountsPerSeconds$getRsd()
+    analyteSignal <- process$analyteCountsPerSecondEudc()$getEstimation()
+    analyteRsd <- process$analyteCountsPerSecondEudc()$getRsd()
+    
+    indexForCorrectionFactorCalculation <- rowIndexInMain$custom[[input$sliderInput_InterferenceTab_indexForCorrectionFactorCalculation]]
+    interferedElement <- input$sliderInput_InterferenceTab_interferedElement
+    interferingElement <- input$sliderInput_InterferenceTab_interferingElement
+    
+    if (length(indexForCorrectionFactorCalculation) > 1) {
+      estimatedCorrectionFactors <- analyteSignal[indexForCorrectionFactorCalculation, interferedElement] / analyteSignal[indexForCorrectionFactorCalculation, interferingElement]
+      correctionFactorValue <- mean(estimatedCorrectionFactors)
+      correctionFactorRsd <- sd(estimatedCorrectionFactors) / correctionFactorValue * 100
+    }
+    else {
+      correctionFactorValue <- analyteSignal[indexForCorrectionFactorCalculation, interferedElement] / analyteSignal[indexForCorrectionFactorCalculation, interferingElement]
+      correctionFactorRsd <- sqrt((analyteRsd[indexForCorrectionFactorCalculation, interferedElement]/100)^2 +
+                                  (analyteRsd[indexForCorrectionFactorCalculation, interferingElement]/100)^2) * 100
+    }
+    
+    interferenceSignal[ , interferedElement] <- analyteSignal[ , interferingElement] * correctionFactorValue
+    interferenceRsd[ , interferedElement] <- sqrt((analyteRsd[ , interferingElement]/100)^2 + (correctionFactorRsd/100)^2) * 100
+    
+    newInterferenceEudc <- EstimationUncertaintyDataCouple$new(elementFullNames = parameters$analyteNames,
+                                                           estimatedData = interferenceSignal,
+                                                           uncertaintyData = interferenceRsd,
+                                                           uncertaintyType = "rsd")
+    
+    process$interferenceCountsPerSeconds <- process$interferenceCountsPerSeconds$add(newInterferenceEudc)
+  })  
+  
 # Blank verif/process -----------------------------------------------------
 
   liveReplaceBlkTable <- reactive({
@@ -590,6 +643,8 @@ ICPMS_server <- function(input, output, session) {
   
   observeEvent(parameters$analyteNames, {
     if (is.null(parameters$analyteNames)){return()}
+    updateSelectInput(session,"sliderInput_InterferenceTab_interferingElement",choices=parameters$analyteNames,selected=parameters$analyteNames[1])
+    updateSelectInput(session,"sliderInput_InterferenceTab_interferedElement",choices=parameters$analyteNames,selected=parameters$analyteNames[1])
     updateSelectInput(session,"driftTab_selectInput_analyteName",choices=parameters$analyteNames,selected=parameters$analyteNames[1])
     updateNumericInput(session,"driftTab_numericInput_analyteNumber", "Element number", 1, min = 1, max = length(parameters$analyteNames))
   })
@@ -666,6 +721,8 @@ ICPMS_server <- function(input, output, session) {
     
     downloadTabDataSignal <- switch(input$dataReductionStateSelection,
                                     "Counts per second" = process$analyteCountsPerSecond(),
+                                    "Interference counts per second" = process$interferenceCountsPerSeconds$getEstimation(),
+                                    "Interference corrected counts per second" = process$interferenceCorrectedCountsPerSecond()$getEstimation(),
                                     "Internal Standard matrix (adapted for analytes)" = process$internalStandardEudcAdaptedToAnalytes()$getEstimation(),
                                     "Internal Standard ratio" = process$analyteToIstdRatio()$getEstimation(),
                                     "Blank matrix" = process$analyteToIstdBlankRatio$getEstimation(),
@@ -680,6 +737,8 @@ ICPMS_server <- function(input, output, session) {
     
     downloadTabDataRsd <- switch(input$dataReductionStateSelection,
                                  "Counts per second" = process$analyteCountsPerSecondRelativeStandardDeviation(),
+                                 "Interference counts per second" = process$interferenceCountsPerSeconds$getRsd(),
+                                 "Interference corrected counts per second" = process$interferenceCorrectedCountsPerSecond()$getRsd(),
                                  "Internal Standard matrix (adapted for analytes)" = process$internalStandardEudcAdaptedToAnalytes()$getRsd(),
                                  "Internal Standard ratio" = process$analyteToIstdRatio()$getRsd(),
                                  "Blank matrix" = process$analyteToIstdBlankRatio$getRsd(),
