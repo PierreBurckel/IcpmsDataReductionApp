@@ -545,8 +545,14 @@ createISTDtemplate <- function(dataFileName, sep){
   ISTDindex <- (header_2 == "CPS") & (grepl("ISTD", header_1))
   
   analyteColumn <- header_1[analyteIndex]
-  ISTD <- header_1[ISTDindex]
-  ISTDColumn <- c(ISTD, rep(NA, times=length(analyteColumn) - length(ISTD)))
+  ISTDColumn <- header_1[ISTDindex]
+  
+  if (length(analyteColumn) > length(ISTDColumn)) {
+    ISTDColumn <- c(ISTDColumn, rep(NA, times=length(analyteColumn) - length(ISTDColumn)))
+  }
+  else if (length(analyteColumn) < length(ISTDColumn)) {
+    analyteColumn <- c(analyteColumn, rep(NA, times=length(ISTDColumn) - length(analyteColumn)))
+  }
 
   return(data.frame(analyte=analyteColumn, ISTD=ISTDColumn))
 }
