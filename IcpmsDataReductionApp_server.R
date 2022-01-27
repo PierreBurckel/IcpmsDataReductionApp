@@ -331,10 +331,10 @@ ICPMS_server <- function(input, output, session) {
     parameters$analyteNumber <- length(parameters$analyteNames)
     parameters$internalStandardNames <- extracted$firstRowOfMain[extracted$secondRowOfMain == "CPS" & grepl("ISTD", extracted$firstRowOfMain)]
     parameters$internalStandardNumber <- length(parameters$internalStandardNames)
-
+    
     sampleTime <- as.POSIXct(extracted$main[ , which(extracted$secondRowOfMain == "Acq. Date-Time")], format= input$dateFormat)
     if(any(is.na(sampleTime))) {
-      shinyalert("Impossible to extract", "Error in date format, check format in csv file and in File upload and parameters tab", type = "error")
+      shinyalert("Impossible to extract", paste0("Error, non-valid (NA) dates at sample number(s) ", paste(which(is.na(sampleTime)), collapse = ", "),  ". Check format in csv file and in File upload and parameters tab"), type = "error")
       return(NULL)
     }
     
