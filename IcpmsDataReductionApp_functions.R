@@ -3,27 +3,63 @@
 
 agilentElementNamePattern <- "[ ]{2}[A-Z]{1}[a-z]*[ ]{2}"
 
-createInterferenceParameters <- function(index, intereferedElement, interferingElement) {
+# createInterferenceParameters <- function(index, intereferedElement, interferingElement) {
+#   
+#   parameterClasses <- c(class(numeric)[1], class(intereferedElement)[1], class(interferingElement)[1])
+#   expectedClasses <- c("numeric", "character", "character")
+#   
+#   if (!identical(parameterClasses, expectedClasses)) {
+#     stop("The classes of the provided parameters are incorrect")
+#   }
+#   if (!identical(size(index), size(intereferedElement), size(interferingElement))) {
+#     stop("The character vector sizes must be the same")
+#   }
+#   
+#   instance <- list()
+#   instance$index <- index
+#   instance$intereferedElement <- intereferedElement
+#   instance$interferingElement <- interferingElement
+#   
+#   class(instance) <- "interferenceParameters"
+#   
+#   return(instance)
+# }
+
+`[.EstimationUncertaintyDataCouple'` = function(x){
   
-  parameterClasses <- c(class(numeric)[1], class(intereferedElement)[1], class(interferingElement)[1])
-  expectedClasses <- c("numeric", "character", "character")
-  
-  if (!identical(parameterClasses, expectedClasses)) {
-    stop("The classes of the provided parameters are incorrect")
-  }
-  if (!identical(size(index), size(intereferedElement), size(interferingElement))) {
-    stop("The character vector sizes must be the same")
-  }
-  
-  instance <- list()
-  instance$index <- index
-  instance$intereferedElement <- intereferedElement
-  instance$interferingElement <- interferingElement
-  
-  class(instance) <- "interferenceParameters"
-  
-  return(instance)
 }
+
+applyModifierToEudc <- function(modifierList, eudcToBeModified) {
+  modifiedEudc <- eudcToBeModified
+  for (dataModifier in modifierList) {
+    modifiedEudc$replaceLines(dataModifier$getLinesToBeReplaced()) <- replaceValues(eudcToBeModified, dataModifier$getReplacementMethod(), dataModifier$getLinesToBeReplaced(), dataModifier$getLinesUsedForReplacement())[dataModifier$getLinesToBeReplaced()]
+  }
+  return(modifiedEudc)
+}
+
+DataModifier <- R6Class("DataModifier",
+                        public = list(
+                          initialize = function(linesToBeReplaced, linesUsedForReplacement, howToReplace) {
+                            private$linesToBeReplaced <- linesToBeReplaced
+                            private$linesUsedForReplacement <- linesUsedForReplacement
+                            private$howToReplace <- howToReplace
+                          },
+                          getLinesToBeReplaced = function() {
+                            return(private$linesToBeReplaced)
+                          },
+                          getLinesUsedForReplacement = function() {
+                            return(private$linesUsedForReplacement)
+                          },
+                          getReplacementMethod = function() {
+                            return(private$howToReplace)
+                          }
+                        ),
+                        private = list(
+                          linesToBeReplaced = NULL,
+                          linesUsedForReplacement = NULL,
+                          howToReplace = NULL
+                        )
+)
 
 EstimationUncertaintyDataCouple <- R6Class("EstimationUncertaintyDataCouple",
   public = list(
@@ -113,6 +149,9 @@ EstimationUncertaintyDataCouple <- R6Class("EstimationUncertaintyDataCouple",
     rowNumber = nrow(private$estimatedData)
     columnNumber = ncol(private$estimatedData)
     return(matrix(nrow = rowNumber, ncol = columnNumber))
+  },
+  replaceLines = function(linesToReplace) {
+    
   }),
    private = list(
      elementFullNames = NULL,
@@ -433,7 +472,7 @@ removeDuplicateLines <- function(df){
   return(df)
 }
 
-replaceValues <- function(eudcToModify, howToReplace, linesToBeReplaced, linesUsedForReplacement, parameters){
+replaceValues <- function(eudcToModify, howToReplace, linesToBeReplaced, linesUsedForReplacement){
   
   signalEstimation = eudcToModify$getEstimation()
   signalRelativeStandardDeviation = eudcToModify$getRsd()

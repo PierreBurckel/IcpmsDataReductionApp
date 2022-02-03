@@ -25,6 +25,7 @@ ICPMS_server <- function(input, output, session) {
   extracted <- reactiveValues()
   rowIndexInMain <- reactiveValues()
   process <- reactiveValues()
+  modifiers <- reactiveValues(blank = list())
   parameters <- reactiveValues()
   applicationState <- reactiveValues(isExtractionSuccessful = FALSE)
 
@@ -534,13 +535,20 @@ ICPMS_server <- function(input, output, session) {
   
 # Blank verif/process -----------------------------------------------------
 
-  liveReplaceBlkTable <- reactive({
-    
-    replaceIndexWhat = rowIndexInMain$custom[[input$sliderInput_BlankTab_rowsToReplace]]
-    replaceIndexIn = rowIndexInMain$custom[[input$sliderInput_BlankTab_rowsToReplaceFrom]]
-    
-    replaceValues(process$analyteToIstdRatio(), input$sliderInput_BlankTab_replacementMethod, replaceIndexWhat, replaceIndexIn, parameters)
+  activeBlankModifier <- reactive({
+    list(DataModifier$new(rowIndexInMain$custom[[input$sliderInput_BlankTab_rowsToReplace]],
+                     rowIndexInMain$custom[[input$sliderInput_BlankTab_rowsToReplaceFrom]],
+                     input$sliderInput_BlankTab_replacementMethod))
   })
+  # liveReplaceBlkTable <- reactive({
+  #   
+  #   process$analyteToIstdRatio()$applyModifications(activeBlankModifier())
+  #   
+  #   # replaceIndexWhat = rowIndexInMain$custom[[input$sliderInput_BlankTab_rowsToReplace]]
+  #   # replaceIndexIn = rowIndexInMain$custom[[input$sliderInput_BlankTab_rowsToReplaceFrom]]
+  #   # 
+  #   # replaceValues(process$analyteToIstdRatio(), input$sliderInput_BlankTab_replacementMethod, replaceIndexWhat, replaceIndexIn, parameters)
+  # })
   
   #Render ISTD table if all conditions are met
   output$blankTab_table <- DT::renderDT(datatable({
@@ -549,13 +557,15 @@ ICPMS_server <- function(input, output, session) {
     
     if (blank_processOrView == "view") 
     {
-      blankTab_table <- cbind(parameters[["categoricalDataAndTime"]][ , "Sample Name"], process$analyteToIstdBlankRatio$getEstimation())
+      modifiedAnalyteToIstdRatio <- applyModifierToEudc(modifiers$blank, process$analyteToIstdRatio())
+      blankTab_table <- cbind(parameters[["categoricalDataAndTime"]][ , "Sample Name"], modifiedAnalyteToIstdRatio$getEstimation())
       names(blankTab_table) <- c("Sample Name", names(blankTab_table)[2:length(blankTab_table)])
       blankTab_table <- format(blankTab_table, digits = 3, scientific=T)
     }
     if (blank_processOrView == "process") 
     {
-      blankTab_table <- cbind(parameters[["categoricalDataAndTime"]][ , "Sample Name"], liveReplaceBlkTable()$getEstimation())
+      activelyModifiedAnalyteToIstdRatio <- applyModifierToEudc(activeBlankModifier(), process$analyteToIstdRatio())
+      blankTab_table <- cbind(parameters[["categoricalDataAndTime"]][ , "Sample Name"], activelyModifiedAnalyteToIstdRatio$getEstimation())
       names(blankTab_table) <- c("Sample Name", names(blankTab_table)[2:length(blankTab_table)])
       blankTab_table <- format(blankTab_table, digits = 3, scientific=T)
     }
@@ -583,20 +593,22 @@ ICPMS_server <- function(input, output, session) {
   
   #Assigns the current state of the ISTD table to the ISTD variable that will be used for calculations
   observeEvent(input$actionButton_BlankTab_replace, {
+    blankModifierNumber <- length(modifiers$blank)
+    modifiers$blank[blankModifierNumber + 1] <- activeBlankModifier()
     
-    rowReplacementIndex = rowIndexInMain$custom[[input$sliderInput_BlankTab_rowsToReplace]]
-    
-    req(!is.null(liveReplaceBlkTable()) && !is.null(rowReplacementIndex))
-    
-    blankRatioSignal <- process$analyteToIstdBlankRatio$getEstimation()
-    blankRatioRsd <- process$analyteToIstdBlankRatio$getRsd()
-    blankRatioSignal[rowReplacementIndex, ] <- liveReplaceBlkTable()$getEstimation()[rowReplacementIndex, , drop = FALSE]
-    blankRatioRsd[rowReplacementIndex, ] <- liveReplaceBlkTable()$getRsd()[rowReplacementIndex, , drop = FALSE]
-    
-    process$analyteToIstdBlankRatio <- EstimationUncertaintyDataCouple$new(elementFullNames = parameters$analyteNames,
-                                                                           estimatedData = blankRatioSignal,
-                                                                           uncertaintyData = blankRatioRsd,
-                                                                           uncertaintyType = "rsd")
+    # rowReplacementIndex = rowIndexInMain$custom[[input$sliderInput_BlankTab_rowsToReplace]]
+    # 
+    # req(!is.null(liveReplaceBlkTable()) && !is.null(rowReplacementIndex))
+    # 
+    # blankRatioSignal <- process$analyteToIstdBlankRatio$getEstimation()
+    # blankRatioRsd <- process$analyteToIstdBlankRatio$getRsd()
+    # blankRatioSignal[rowReplacementIndex, ] <- liveReplaceBlkTable()$getEstimation()[rowReplacementIndex, , drop = FALSE]
+    # blankRatioRsd[rowReplacementIndex, ] <- liveReplaceBlkTable()$getRsd()[rowReplacementIndex, , drop = FALSE]
+    # 
+    # process$analyteToIstdBlankRatio <- EstimationUncertaintyDataCouple$new(elementFullNames = parameters$analyteNames,
+    #                                                                        estimatedData = blankRatioSignal,
+    #                                                                        uncertaintyData = blankRatioRsd,
+    #                                                                        uncertaintyType = "rsd")
   })
   
   observe({
