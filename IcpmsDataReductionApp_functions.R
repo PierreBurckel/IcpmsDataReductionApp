@@ -25,8 +25,30 @@ agilentElementNamePattern <- "[ ]{2}[A-Z]{1}[a-z]*[ ]{2}"
 #   return(instance)
 # }
 
-`[.EstimationUncertaintyDataCouple'` = function(x){
+`[.EstimationUncertaintyDataCouple` = function(x, i, j, ...) {
   
+  fullEstimation <- x$getEstimation()
+  fullSd <- x$getSd()
+  fullElementsNames <- x$getElementFullNames()
+  
+  subsetEstimation <- fullEstimation[i, j, drop = FALSE]
+  subsetSd <- fullSd[i, j, drop = FALSE]
+  subsetElementsNames <- fullElementsNames[j]
+  
+  EstimationUncertaintyDataCouple$new(subsetElementsNames, subsetEstimation, subsetSd, "sd")
+}
+
+`[<-.EstimationUncertaintyDataCouple` = function(x, i, j, ..., value) {
+  
+  fullEstimation <- x$getEstimation()
+  fullSd <- x$getSd()
+  fullElementsNames <- x$getElementFullNames()
+  
+  fullEstimation[i, j] <- value$getEstimation()
+  fullSd[i, j] <- value$getSd()
+  fullElementsNames[j] <- value$getElementFullNames()
+  
+  EstimationUncertaintyDataCouple$new(fullElementsNames, fullEstimation, fullEstimation, "sd")
 }
 
 applyModifierToEudc <- function(modifierList, eudcToBeModified) {
