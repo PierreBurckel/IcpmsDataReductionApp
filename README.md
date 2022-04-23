@@ -37,6 +37,12 @@ Here are 4 tutorial videos for processing data on the Agilent 7900 ICP-MS. Video
 - Part3, [Data processing (Excel)](https://drive.google.com/file/d/1YT1coEkk1zpPVjIeC4uTmfB8GYZMdzC7/view?usp=sharing)
 - Part4, [Data processing (R)](https://drive.google.com/file/d/1-ycANNSknwSEfpGpWF8atFMBAEwdLh2z/view?usp=sharing)
 
+**Attention, some information from the videos are not up to date anymore, please refer to the Patch information section for more information**
+
+## Patch information
+
+- In the current release, the name of the analytes in the standard file should be unique and refer exactly to the names in the data file. For instance, if lithium 7 was measured in no gas mode, its name will be " 7  Li  [ No Gas ] " in the data file and it should be also " 7  Li  [ No Gas ] " in the standard file, not just "Li" anymore.
+
 ## Questions
 
 If you have issues running the application, please send me an e-mail with a copy of the error message displayed in the console. For any questions, my e-mail address is burckel@ipgp.fr 
