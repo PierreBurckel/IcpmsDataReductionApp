@@ -78,6 +78,7 @@ ICPMS_ui <- shinyUI({
                                         "All", selected = "All"),
                             actionButton("actionButton_BlankTab_replace", "Set blank interpolation")),
                           mainPanel(
+                            checkboxInput("enableBlankCorrection", "Enable blank correction", value = TRUE),
                             DT::DTOutput("blankTab_table")
                           )
                         )

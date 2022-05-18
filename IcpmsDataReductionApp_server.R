@@ -103,11 +103,27 @@ ICPMS_server <- function(input, output, session) {
   })
   
   process$analyteToIstdRatio <- reactive({
+    browser()
     process$interferenceCorrectedCountsPerSecond()$divideBy(process$internalStandardEudcAdaptedToAnalytes())
     })
   
+  process$analyteToIstdBlankRatio <- reactive({
+    if (input$enableBlankCorrection == TRUE)
+    {
+      applyModifierToEudc(modifiers$blank, process$analyteToIstdRatio())
+    }
+    else
+    {
+      EstimationUncertaintyDataCouple$new(elementFullNames = parameters$analyteNames,
+                                          estimatedData = matrix(0, ncol = parameters$analyteNumber, nrow = parameters$sampleNumber),
+                                          uncertaintyData = matrix(0, ncol = parameters$analyteNumber, nrow = parameters$sampleNumber),
+                                          uncertaintyType = "sd")
+    }
+  })
+  
   process$analyteToIstdRatioBlankCorrected <- reactive({
-    process$analyteToIstdRatio()$subtract(process$analyteToIstdBlankRatio)
+    browser()
+    process$analyteToIstdRatio()$subtract(process$analyteToIstdBlankRatio())
   })
   
   parameters$deltaTime <- reactive({
@@ -359,11 +375,6 @@ ICPMS_server <- function(input, output, session) {
                                                                                     uncertaintyData = matrix(0, ncol = parameters$analyteNumber, nrow = parameters$sampleNumber),
                                                                                     uncertaintyType = "sd")
     
-    process$analyteToIstdBlankRatio <- EstimationUncertaintyDataCouple$new(elementFullNames = parameters$analyteNames,
-                                                                                    estimatedData = matrix(0, ncol = parameters$analyteNumber, nrow = parameters$sampleNumber),
-                                                                                    uncertaintyData = matrix(0, ncol = parameters$analyteNumber, nrow = parameters$sampleNumber),
-                                                                                    uncertaintyType = "sd")
-    
     # if (!is.null(internalStandardFileDatapath)) 
     # {
     #   extracted$internalStandardToAnalyteAssignment  <- read.table(internalStandardFileDatapath, header = TRUE, sep= input$csvDelimitation, stringsAsFactors = FALSE)
@@ -557,7 +568,7 @@ ICPMS_server <- function(input, output, session) {
     
     if (blank_processOrView == "view") 
     {
-      modifiedAnalyteToIstdRatio <- applyModifierToEudc(modifiers$blank, process$analyteToIstdRatio())
+      modifiedAnalyteToIstdRatio <- process$analyteToIstdBlankRatio()
       blankTab_table <- cbind(parameters[["categoricalDataAndTime"]][ , "Sample Name"], modifiedAnalyteToIstdRatio$getEstimation())
       names(blankTab_table) <- c("Sample Name", names(blankTab_table)[2:length(blankTab_table)])
       blankTab_table <- format(blankTab_table, digits = 3, scientific=T)
@@ -737,7 +748,7 @@ ICPMS_server <- function(input, output, session) {
                                     "Interference corrected counts per second" = process$interferenceCorrectedCountsPerSecond()$getEstimation(),
                                     "Internal Standard matrix (adapted for analytes)" = process$internalStandardEudcAdaptedToAnalytes()$getEstimation(),
                                     "Internal Standard ratio" = process$analyteToIstdRatio()$getEstimation(),
-                                    "Blank matrix" = process$analyteToIstdBlankRatio$getEstimation(),
+                                    "Blank matrix" = process$analyteToIstdBlankRatio()$getEstimation(),
                                     "Blank corrected signal (CPS or ratio)" = process$analyteToIstdRatioBlankCorrected()$getEstimation(),
                                     "Drift matrix" = process$driftFactorEudc()$getEstimation(),
                                     "Drift corrected signal (CPS or ratio, blank corrected)" = process$driftAndBlankCorrectedEudc()$getEstimation(),
@@ -753,7 +764,7 @@ ICPMS_server <- function(input, output, session) {
                                  "Interference corrected counts per second" = process$interferenceCorrectedCountsPerSecond()$getRsd(),
                                  "Internal Standard matrix (adapted for analytes)" = process$internalStandardEudcAdaptedToAnalytes()$getRsd(),
                                  "Internal Standard ratio" = process$analyteToIstdRatio()$getRsd(),
-                                 "Blank matrix" = process$analyteToIstdBlankRatio$getRsd(),
+                                 "Blank matrix" = process$analyteToIstdBlankRatio()$getRsd(),
                                  "Blank corrected signal (CPS or ratio)" = process$analyteToIstdRatioBlankCorrected()$getRsd(),
                                  "Drift matrix" = process$driftFactorEudc()$getRsd(),
                                  "Drift corrected signal (CPS or ratio, blank corrected)" = process$driftAndBlankCorrectedEudc()$getRsd(),
