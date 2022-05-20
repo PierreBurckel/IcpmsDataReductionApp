@@ -54,7 +54,7 @@ agilentElementNamePattern <- "[ ]{2}[A-Z]{1}[a-z]*[ ]{2}"
 #   EstimationUncertaintyDataCouple$new(fullElementsNames, fullEstimation, fullEstimation, "sd")
 # }
 
-applyModifierToEudc <- function(modifierList, eudcToBeModified) {
+applyModifierToEudc <- function(eudcToBeModified, modifierList) {
   modifiedEudc <- eudcToBeModified
   for (dataModifier in modifierList) {
     modifiedEudc[dataModifier$getLinesToBeReplaced()] <- replaceValues(eudcToBeModified, dataModifier$getReplacementMethod(), dataModifier$getLinesToBeReplaced(), dataModifier$getLinesUsedForReplacement())[dataModifier$getLinesToBeReplaced()]
@@ -64,9 +64,13 @@ applyModifierToEudc <- function(modifierList, eudcToBeModified) {
 
 DataModifier <- R6Class("DataModifier",
                         public = list(
-                          initialize = function(linesToBeReplaced, linesUsedForReplacement, howToReplace) {
+                          initialize = function(linesToBeReplaced, columnsToBeReplaced,
+                                                linesUsedForReplacement, columnsUsedForReplacement,
+                                                howToReplace) {
                             private$linesToBeReplaced <- linesToBeReplaced
+                            private$columnsToBeReplaced <- columnsToBeReplaced
                             private$linesUsedForReplacement <- linesUsedForReplacement
+                            private$columnsUsedForReplacement <- columnsUsedForReplacement
                             private$howToReplace <- howToReplace
                           },
                           getLinesToBeReplaced = function() {
@@ -81,7 +85,9 @@ DataModifier <- R6Class("DataModifier",
                         ),
                         private = list(
                           linesToBeReplaced = NULL,
+                          columnsToBeReplaced = NULL,
                           linesUsedForReplacement = NULL,
+                          columnsUsedForReplacement = NULL,
                           howToReplace = NULL
                         )
 )
@@ -99,6 +105,7 @@ EstimationUncertaintyDataCouple <- R6Class("EstimationUncertaintyDataCouple",
        stop("incompatible sample number between estimation and uncertainty")
      }
      private$elementFullNames <- elementFullNames
+     names(private$elementFullNames) <- elementFullNames
      private$estimatedData <- estimatedData
      if (uncertaintyType == "rsd") {
        private$sdData <- self$createEmptyMatrixOfEudcSize()
@@ -138,7 +145,6 @@ EstimationUncertaintyDataCouple <- R6Class("EstimationUncertaintyDataCouple",
                                                 uncertaintyType = "sd"))
    },
    subtract = function(otherEudc) {
-     browser()
      estimate <- private$estimatedData - otherEudc$getEstimation()
      uncertainty <- sqrt(self$getSd()^2 + otherEudc$getSd()^2)
      return(EstimationUncertaintyDataCouple$new(elementFullNames = private$elementFullNames,
@@ -179,16 +185,21 @@ EstimationUncertaintyDataCouple <- R6Class("EstimationUncertaintyDataCouple",
   replaceLines = function(linesToReplace) {
     
   },
-  `[` = function(idx) {
-    EstimationUncertaintyDataCouple$new(elementFullNames = private$elementFullNames,
-                                        estimatedData = private$estimatedData[idx,],
-                                        uncertaintyData = private$sdData[idx,],
+  `[` = function(i, j) {
+    EstimationUncertaintyDataCouple$new(elementFullNames = private$elementFullNames[j],
+                                        estimatedData = private$estimatedData[i, j, drop = FALSE],
+                                        uncertaintyData = private$sdData[i, j, drop = FALSE],
                                         uncertaintyType = "sd")
   },
-  `[<-` = function(idx, value) {
-    private$estimatedData[idx,] <- value$getEstimation()
-    private$sdData[idx,] <- value$getSd()
-    invisible(self)
+  `[<-` = function(i, j, value) {
+    estimatedData <- private$estimatedData
+    sdData <- private$sdData
+    estimatedData[i,j] <- value$getEstimation()
+    sdData[i,j] <- value$getSd()
+    EstimationUncertaintyDataCouple$new(elementFullNames = private$elementFullNames,
+                                        estimatedData = estimatedData,
+                                        uncertaintyData = sdData,
+                                        uncertaintyType = "sd")
   }),
    private = list(
      elementFullNames = NULL,

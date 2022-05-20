@@ -103,14 +103,13 @@ ICPMS_server <- function(input, output, session) {
   })
   
   process$analyteToIstdRatio <- reactive({
-    browser()
     process$interferenceCorrectedCountsPerSecond()$divideBy(process$internalStandardEudcAdaptedToAnalytes())
     })
   
   process$analyteToIstdBlankRatio <- reactive({
     if (input$enableBlankCorrection == TRUE)
     {
-      applyModifierToEudc(modifiers$blank, process$analyteToIstdRatio())
+      process$analyteToIstdRatio() %>% applyModifierToEudc(modifiers$blank)
     }
     else
     {
@@ -122,7 +121,6 @@ ICPMS_server <- function(input, output, session) {
   })
   
   process$analyteToIstdRatioBlankCorrected <- reactive({
-    browser()
     process$analyteToIstdRatio()$subtract(process$analyteToIstdBlankRatio())
   })
   
@@ -511,8 +509,6 @@ ICPMS_server <- function(input, output, session) {
 
   observeEvent(input$actionButton_InterferenceTab_applyCorrection, {
     
-    browser()
-    
     interferenceSignal <- process$interferenceCountsPerSeconds$getEstimation()
     interferenceRsd <- process$interferenceCountsPerSeconds$getRsd()
     analyteSignal <- process$analyteCountsPerSecondEudc()$getEstimation()
@@ -547,9 +543,11 @@ ICPMS_server <- function(input, output, session) {
 # Blank verif/process -----------------------------------------------------
 
   activeBlankModifier <- reactive({
-    list(DataModifier$new(rowIndexInMain$custom[[input$sliderInput_BlankTab_rowsToReplace]],
-                     rowIndexInMain$custom[[input$sliderInput_BlankTab_rowsToReplaceFrom]],
-                     input$sliderInput_BlankTab_replacementMethod))
+    list(DataModifier$new(linesToBeReplaced = rowIndexInMain$custom[[input$sliderInput_BlankTab_rowsToReplace]], 
+                          columnsToBeReplaced = 1:parameters$analyteNumber,
+                          linesUsedForReplacement = rowIndexInMain$custom[[input$sliderInput_BlankTab_rowsToReplaceFrom]],
+                          columnsUsedForReplacement = 1:parameters$analyteNumber,
+                          howToReplace = input$sliderInput_BlankTab_replacementMethod))
   })
   # liveReplaceBlkTable <- reactive({
   #   
@@ -575,7 +573,7 @@ ICPMS_server <- function(input, output, session) {
     }
     if (blank_processOrView == "process") 
     {
-      activelyModifiedAnalyteToIstdRatio <- applyModifierToEudc(activeBlankModifier(), process$analyteToIstdRatio())
+      activelyModifiedAnalyteToIstdRatio <- process$analyteToIstdRatio() %>% applyModifierToEudc(activeBlankModifier())
       blankTab_table <- cbind(parameters[["categoricalDataAndTime"]][ , "Sample Name"], activelyModifiedAnalyteToIstdRatio$getEstimation())
       names(blankTab_table) <- c("Sample Name", names(blankTab_table)[2:length(blankTab_table)])
       blankTab_table <- format(blankTab_table, digits = 3, scientific=T)
