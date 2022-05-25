@@ -18,14 +18,28 @@ library(logging)
 # install.packages("R6")
 # install.packages("logging")
 
+moduleName <- "fileUpload"
+
 setwd(dirname(getActiveDocumentContext()$path))  
+
+source('IcpmsDataReductionApp_functions.R')
+source('IcpmsDataReductionApp_global.R')
+source(paste0('IcpmsDataReductionApp_', moduleName, '.R'))
 
 options(shiny.error = function() { 
   logging::logerror(sys.calls() %>% as.character %>% paste(collapse = ", ")) })
 
-source('IcpmsDataReductionApp_ui.R')
-source('IcpmsDataReductionApp_server.R')
-source('IcpmsDataReductionApp_functions.R')
+ICPMS_ui <- shinyUI({
+  fluidPage(
+    useShinyalert(),
+    shinyjs::useShinyjs(),
+    do.call(paste0(moduleName, "_ui"), list())
+  )
+})
+
+ICPMS_server <- function(input, output, session) {
+  do.call(paste0(moduleName, "_server"), list(input = input, output = output, session = session))
+}
 
 app <- shinyApp(ui = ICPMS_ui, server = ICPMS_server)
 

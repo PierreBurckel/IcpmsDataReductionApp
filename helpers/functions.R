@@ -61,36 +61,94 @@ applyModifierToEudc <- function(eudcToBeModified, modifierList) {
   }
   return(modifiedEudc)
 }
+# 
+# DataModifier <- R6Class("DataModifier",
+#                         public = list(
+#                           initialize = function(modificationMethod, modificationArguments) {
+#                             private$modificationMethod <- modificationMethod
+#                             private$modificationArguments <- modificationArguments
+#                           },
+#                           apply = function(eudcToBeModified) {
+#                             modifierFunction <- private$getModificationFunction(private$modificationMethod)
+#                             modifiedEudc <- do.call(modifierFunction, eudcToBeModified, private$modificationArguments)
+#                             return(modifiedEudc)
+#                           }
+#                         ),
+#                         private = list(
+#                           modificationMethod = NULL,
+#                           modificationArguments = NULL,
+#                           
+#                           getModificationFunction <- function(modificationMethod) {
+#                             
+#                             if (!(modificationMethod %in% c("previous", "average"))) {
+#                               stop(paste0("Modification method -", modificationMethod, "-non existent"))
+#                             }
+#                             
+#                             if (modificationMethod == "previous") {
+#                               modificationFunction <- function(eudcToModify, linesToBeReplaced, linesUsedForReplacement) {
+#                                 modifiedEudc <- eudcToModify
+#                                 for (lineToReplace in linesToBeReplaced)
+#                                 {
+#                                   previousLine <- getClosestInIndex(lineToReplace, numericalLinesUsedForReplacement, "prev")
+#                                   modifiedEudc[lineToReplace] <- eudcToModify[previousLine]
+#                                 }
+#                                 return(modifiedEudc)
+#                               }
+#                             }
+#                             
+#                             if (modificationMethod == "average") {
+#                               modificationFunction <- function(eudcToModify, linesToBeReplaced, linesUsedForReplacement) {
+#                                 modifiedEudc <- eudcToModify
+#                                 for (lineToReplace in linesToBeReplaced)
+#                                 {
+#                                   previousLine <- getClosestInIndex(lineToReplace, numericalLinesUsedForReplacement, "prev")
+#                                   nextLine <- getClosestInIndex(lineToReplace, numericalLinesUsedForReplacement, "next")
+#                                   modifiedEudc[lineToReplace] <- mean(eudcToModify[previousLine], eudcToModify[nextLine])
+#                                 }
+#                                 return(modifiedEudc)
+#                               }
+#                             }
+#                             
+#                             if (modificationMethod == "averageInBlankIndex") {
+#                               modificationFunction <- function(eudcToModify, linesToBeReplaced, linesUsedForReplacement) {
+#                                 modifiedEudc <- eudcToModify
+#                                 modifiedEudc[linesToBeReplaced] <- mean(eudcToModify[linesUsedForReplacement])
+#                                 return(modifiedEudc)
+#                               }
+#                             }
+#                           }
+#                         )
+# )
 
-DataModifier <- R6Class("DataModifier",
-                        public = list(
-                          initialize = function(linesToBeReplaced, columnsToBeReplaced,
-                                                linesUsedForReplacement, columnsUsedForReplacement,
-                                                howToReplace) {
-                            private$linesToBeReplaced <- linesToBeReplaced
-                            private$columnsToBeReplaced <- columnsToBeReplaced
-                            private$linesUsedForReplacement <- linesUsedForReplacement
-                            private$columnsUsedForReplacement <- columnsUsedForReplacement
-                            private$howToReplace <- howToReplace
-                          },
-                          getLinesToBeReplaced = function() {
-                            return(private$linesToBeReplaced)
-                          },
-                          getLinesUsedForReplacement = function() {
-                            return(private$linesUsedForReplacement)
-                          },
-                          getReplacementMethod = function() {
-                            return(private$howToReplace)
-                          }
-                        ),
-                        private = list(
-                          linesToBeReplaced = NULL,
-                          columnsToBeReplaced = NULL,
-                          linesUsedForReplacement = NULL,
-                          columnsUsedForReplacement = NULL,
-                          howToReplace = NULL
-                        )
-)
+# DataModifier <- R6Class("DataModifier",
+#                         public = list(
+#                           initialize = function(linesToBeReplaced, columnsToBeReplaced,
+#                                                 linesUsedForReplacement, columnsUsedForReplacement,
+#                                                 howToReplace) {
+#                             private$linesToBeReplaced <- linesToBeReplaced
+#                             private$columnsToBeReplaced <- columnsToBeReplaced
+#                             private$linesUsedForReplacement <- linesUsedForReplacement
+#                             private$columnsUsedForReplacement <- columnsUsedForReplacement
+#                             private$howToReplace <- howToReplace
+#                           },
+#                           getLinesToBeReplaced = function() {
+#                             return(private$linesToBeReplaced)
+#                           },
+#                           getLinesUsedForReplacement = function() {
+#                             return(private$linesUsedForReplacement)
+#                           },
+#                           getReplacementMethod = function() {
+#                             return(private$howToReplace)
+#                           }
+#                         ),
+#                         private = list(
+#                           linesToBeReplaced = NULL,
+#                           columnsToBeReplaced = NULL,
+#                           linesUsedForReplacement = NULL,
+#                           columnsUsedForReplacement = NULL,
+#                           howToReplace = NULL
+#                         )
+# )
 
 EstimationUncertaintyDataCouple <- R6Class("EstimationUncertaintyDataCouple",
   public = list(

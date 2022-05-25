@@ -1,5 +1,5 @@
 
-C_LETTER_KEYCODE <- 67
+# C_LETTER_KEYCODE <- 67
 
 ICPMS_server <- function(input, output, session) {
   
@@ -14,20 +14,21 @@ ICPMS_server <- function(input, output, session) {
   
 # Code to be executed at start --------------------------------------------
   
-  shinyjs::disable(selector = '.navbar-nav a[data-value="Index creation"')
-  shinyjs::disable(selector = '.navbar-nav a[data-value="Blank verification/processing"')
-  shinyjs::disable(selector = '.navbar-nav a[data-value="Drift verification/processing"')
-  shinyjs::disable(selector = '.navbar-nav a[data-value="Process"')
+  # shinyjs::disable(selector = '.navbar-nav a[data-value="Index creation"')
+  # shinyjs::disable(selector = '.navbar-nav a[data-value="Blank verification/processing"')
+  # shinyjs::disable(selector = '.navbar-nav a[data-value="Drift verification/processing"')
+  # shinyjs::disable(selector = '.navbar-nav a[data-value="Process"')
 
 # Declaration of reactive values ------------------------------------------
-  
-  uploadedFile <- reactiveValues()
-  extracted <- reactiveValues()
-  rowIndexInMain <- reactiveValues()
-  process <- reactiveValues()
-  modifiers <- reactiveValues(blank = list())
-  parameters <- reactiveValues()
-  applicationState <- reactiveValues(isExtractionSuccessful = FALSE)
+  # 
+  # uploadedFile <- reactiveValues()
+  # extracted <- reactiveValues()
+  # rowIndexInMain <- reactiveValues()
+  # process <- reactiveValues()
+  # modifiers <- reactiveValues(blank = list(),
+  #                             interference = list())
+  # parameters <- reactiveValues()
+  # applicationState <- reactiveValues(isExtractionSuccessful = FALSE)
 
 # Reactive expressions for data reduction ---------------------------------
   
@@ -97,6 +98,44 @@ ICPMS_server <- function(input, output, session) {
   #   }
   #   return(interferenceCorrectedCountsPerSecondEudc)
   # })
+  
+  process$interferenceCountsPerSeconds <- reactive({
+    interferenceEudc <- EstimationUncertaintyDataCouple$new(elementFullNames = parameters$analyteNames,
+                                                            estimatedData = matrix(0, ncol = parameters$analyteNumber, nrow = parameters$sampleNumber),
+                                                            uncertaintyData = matrix(0, ncol = parameters$analyteNumber, nrow = parameters$sampleNumber),
+                                                            uncertaintyType = "sd")
+      for(modifier in modifiers$interference) {
+        interferenceEudc %>% 
+          applyModifierToEudc(modifier)
+      }
+      #   interferenceSignal <- process$interferenceCountsPerSeconds()$getEstimation()
+      #   interferenceRsd <- process$interferenceCountsPerSeconds()$getRsd()
+      #   analyteSignal <- process$analyteCountsPerSecondEudc()$getEstimation()
+      #   analyteRsd <- process$analyteCountsPerSecondEudc()$getRsd()
+      #   
+      #   indexForCorrectionFactorCalculation <- rowIndexInMain$custom[[input$sliderInput_InterferenceTab_indexForCorrectionFactorCalculation]]
+      #   interferedElement <- input$sliderInput_InterferenceTab_interferedElement
+      #   interferingElement <- input$sliderInput_InterferenceTab_interferingElement
+      #   
+      #   if (length(indexForCorrectionFactorCalculation) > 1) {
+      #     estimatedCorrectionFactors <- analyteSignal[indexForCorrectionFactorCalculation, interferedElement] / analyteSignal[indexForCorrectionFactorCalculation, interferingElement]
+      #     correctionFactorValue <- mean(estimatedCorrectionFactors)
+      #     correctionFactorRsd <- sd(estimatedCorrectionFactors) / correctionFactorValue * 100
+      #   }
+      #   else {
+      #     correctionFactorValue <- analyteSignal[indexForCorrectionFactorCalculation, interferedElement] / analyteSignal[indexForCorrectionFactorCalculation, interferingElement]
+      #     correctionFactorRsd <- sqrt((analyteRsd[indexForCorrectionFactorCalculation, interferedElement]/100)^2 +
+      #                                 (analyteRsd[indexForCorrectionFactorCalculation, interferingElement]/100)^2) * 100
+      #   }
+      #   
+      #   interferenceSignal[ , interferedElement] <- analyteSignal[ , interferingElement] * correctionFactorValue
+      #   interferenceRsd[ , interferedElement] <- sqrt((analyteRsd[ , interferingElement]/100)^2 + (correctionFactorRsd/100)^2) * 100
+      #   
+      #   newInterferenceEudc <- EstimationUncertaintyDataCouple$new(elementFullNames = parameters$analyteNames,
+      #                                                          estimatedData = interferenceSignal,
+      #                                                          uncertaintyData = interferenceRsd,
+      #                                                          uncertaintyType = "rsd")
+  })
   
   process$interferenceCorrectedCountsPerSecond <- reactive({
     process$analyteCountsPerSecondEudc()$subtract(process$interferenceCountsPerSeconds)
@@ -259,155 +298,152 @@ ICPMS_server <- function(input, output, session) {
                                                uncertaintyType = "rsd"))
   })
   
-# File import and viewing -------------------------------------------------
+  fileUpload_server(input, output, session)
   
-  #Text display of imported file
-  output$mainFileAssignmentText <- renderText({
-    mainFile = uploadedFile$main
-    createColoredTextForBooleanViewing(!is.null(mainFile), stateText = "Raw file name: ", invalidStateText = "Unassigned", validStateText = mainFile$name)
-  })
-  output$standardFileAssignmentText <- renderText({
-    standardFile = uploadedFile$standard
-    createColoredTextForBooleanViewing(!is.null(standardFile), stateText = "Standard file name: ", invalidStateText = "Unassigned", validStateText = standardFile$name)
-  })
-  output$internalStandardFileAssignmentText <- renderText({
-    internalStandardFile = uploadedFile$internalStandard
-    createColoredTextForBooleanViewing(!is.null(internalStandardFile), stateText = "ISTD file name: ", invalidStateText = "Unassigned", validStateText = internalStandardFile$name)
-  })
-  
-  #Table rendering of current uploaded file
-  output$uploadedFilePreviewTable <- renderTable({
-    req(input$uploadedFile)
-    tablePreview = read.table(input$uploadedFile$datapath, sep =input$csvDelimitation, header = FALSE)
-    rowNumber <- min(nrow(tablePreview), input$fileUpload_nrow) 
-    columnNumber <- min(ncol(tablePreview), input$fileUpload_ncolumn) 
-    tablePreview[1:rowNumber, 1:columnNumber]
-  })
-  
-  #Buttons to set raw, std and ISTD files
-  observeEvent(input$setAsMainFile, {
-    req(input$uploadedFile)
-    uploadedFile$main <- input$uploadedFile
-  })
-  observeEvent(input$setAsStandardFile, {
-    req(input$uploadedFile)
-    uploadedFile$standard <- input$uploadedFile
-  })
-  observeEvent(input$setAsInternalStandardFile, {
-    req(input$uploadedFile)
-    uploadedFile$internalStandard <- input$uploadedFile
-  })
-  
-  #Button to download the list of analyte and ISTD
-  output$downloadISTDTemplate <- downloadHandler(
-    filename = "ISTD_Template.csv",
-    content = function(file) {
-      
-      req(isExtractionReady() & !is.null(!is.null(extracted$internalStandardToAnalyteAssignment)))
-      
-      write.table(createISTDtemplate(dataFileName = (uploadedFile$main)$datapath,
-                                     sep = input$csvDelimitation),
-                file, sep = input$csvDelimitation, quote = FALSE,
-                row.names = FALSE, col.names = TRUE)
-      })
-
-  
-  isExtractionReady <- reactive({
-    !is.null(uploadedFile$main) & !is.null(uploadedFile$standard)
-    })
-  
-  #Button to extract important information and signal of the dataframe
-  observeEvent(input$extract, {
-    
-    req(isExtractionReady())
-    
-    
-    mainFileDatapath = uploadedFile$main$datapath
-    standardFileDatapath = uploadedFile$standard$datapath
-    internalStandardFileDatapath = uploadedFile$internalStandard$datapath
-    
-    extracted$firstRowOfMain <- scan(mainFileDatapath, nlines = 1, what = character(),sep = input$csvDelimitation)
-    extracted$firstRowOfMain <- fillEmptyStrings(extracted$firstRowOfMain)
-    
-    extracted$secondRowOfMain <- scan(mainFileDatapath, nlines = 1, what = character(),sep = input$csvDelimitation, skip=1)
-    
-    requiredStringsInFirstRowOfMain <- "Sample"
-    requiredStringsInSecondRowOfMain <- c("Acq. Date-Time", "Sample Name", "Type", "Level", "CPS", "CPS RSD")
-    
-    if (!all(requiredStringsInFirstRowOfMain %in% extracted$firstRowOfMain) || !all(requiredStringsInSecondRowOfMain %in% extracted$secondRowOfMain)) {
-      shinyalert("Impossible to extract", paste("Missing either the Sample column in the first row of the main file, or  one of the following columns in the second row: ", paste(requiredStringsInSecondRowOfMain, collapse = ', '), sep = " "), type = "error")
-      return(NULL)
-    }
-    
-    extracted$main <- read.table(mainFileDatapath, skip = 2, header = FALSE, sep = input$csvDelimitation, stringsAsFactors=FALSE)
-    colnames(extracted$main) <- extracted$firstRowOfMain
-    
-    extracted$standard <- createStandardDataFrameFromFile(dataPath = standardFileDatapath, sep = input$csvDelimitation)
-    if (is.null(extracted$standard)) return(NULL)
-    
-    parameters$sampleNumber <- nrow(extracted$main)
-    parameters$analyteNames <- extracted$firstRowOfMain[extracted$secondRowOfMain == "CPS" & !grepl("ISTD", extracted$firstRowOfMain)]
-    parameters$analyteNumber <- length(parameters$analyteNames)
-    parameters$internalStandardNames <- extracted$firstRowOfMain[extracted$secondRowOfMain == "CPS" & grepl("ISTD", extracted$firstRowOfMain)]
-    parameters$internalStandardNumber <- length(parameters$internalStandardNames)
-    
-    sampleTime <- as.POSIXct(extracted$main[ , which(extracted$secondRowOfMain == "Acq. Date-Time")], format= input$dateFormat)
-    if(any(is.na(sampleTime))) {
-      shinyalert("Impossible to extract", paste0("Error, non-valid (NA) dates at sample number(s) ", paste(which(is.na(sampleTime)), collapse = ", "),  ". Check format in csv file and in File upload and parameters tab"), type = "error")
-      return(NULL)
-    }
-    
-    parameters[["categoricalDataAndTime"]] <- data.frame(sampleTime,
-                                                    extracted$main[ , which(extracted$secondRowOfMain == "Sample Name")],
-                                                    extracted$main[ , which(extracted$secondRowOfMain == "Type")],
-                                                    extracted$main[ , which(extracted$secondRowOfMain == "Level")],
-                                                    stringsAsFactors = FALSE
-    )
-    colnames(parameters[["categoricalDataAndTime"]]) <- c("Time", "Sample Name", "Type", "Level")
-    
-    numericalColumns <- seq(from = max(which(extracted$firstRowOfMain == "Sample")) + 1, to = ncol(extracted$main))
-    extracted$main[ , numericalColumns] <- sapply(extracted$main[ , numericalColumns], as.numeric)
-    
-    process$interferenceCountsPerSeconds <- EstimationUncertaintyDataCouple$new(elementFullNames = parameters$analyteNames,
-                                                                                    estimatedData = matrix(0, ncol = parameters$analyteNumber, nrow = parameters$sampleNumber),
-                                                                                    uncertaintyData = matrix(0, ncol = parameters$analyteNumber, nrow = parameters$sampleNumber),
-                                                                                    uncertaintyType = "sd")
-    
-    # if (!is.null(internalStandardFileDatapath)) 
-    # {
-    #   extracted$internalStandardToAnalyteAssignment  <- read.table(internalStandardFileDatapath, header = TRUE, sep= input$csvDelimitation, stringsAsFactors = FALSE)
-    #   process$analyteToIstdBlankRatio <- process$analyteCountsPerSecondEudc()$divideBy(process$internalStandardEudcAdaptedToAnalytes())
-    # }
-    # else 
-    # {
-    #   process$analyteToIstdBlankRatio <- process$analyteCountsPerSecondEudc()
-    # }
-    
-    rowIndexInMain$custom[["All"]] <- which(rep(x = TRUE, parameters$sampleNumber))
-    parameters$driftCorrectedElements <- rep(FALSE, parameters$analyteNumber)
-    
-    applicationState$isExtractionSuccessful <- TRUE
-  })
-  
-  observeEvent(applicationState$isExtractionSuccessful, {
-    if (applicationState$isExtractionSuccessful == TRUE) {
-      shinyjs::enable(selector = '.navbar-nav a[data-value="Index creation"')
-      shinyjs::enable(selector = '.navbar-nav a[data-value="Blank verification/processing"')
-      shinyjs::enable(selector = '.navbar-nav a[data-value="Drift verification/processing"')
-      shinyjs::enable(selector = '.navbar-nav a[data-value="Process"')
-    }
-    else if (applicationState$isExtractionSuccessful == FALSE) {
-      shinyjs::disable(selector = '.navbar-nav a[data-value="Index creation"')
-      shinyjs::disable(selector = '.navbar-nav a[data-value="Blank verification/processing"')
-      shinyjs::disable(selector = '.navbar-nav a[data-value="Drift verification/processing"')
-      shinyjs::disable(selector = '.navbar-nav a[data-value="Process"')
-    }
-  })
-  
-  #Here we render warnings texts to help the user
-  output$extractionReadyText <- renderText({
-    createColoredTextForBooleanViewing(isExtractionReady(), stateText = "Data extraction ", invalidStateText = "impossible", validStateText = "ready")
-  })
+# # File import and viewing -------------------------------------------------
+#   
+#   #Text display of imported file
+#   output$mainFileAssignmentText <- renderText({
+#     mainFile = uploadedFile$main
+#     createColoredTextForBooleanViewing(!is.null(mainFile), stateText = "Raw file name: ", invalidStateText = "Unassigned", validStateText = mainFile$name)
+#   })
+#   output$standardFileAssignmentText <- renderText({
+#     standardFile = uploadedFile$standard
+#     createColoredTextForBooleanViewing(!is.null(standardFile), stateText = "Standard file name: ", invalidStateText = "Unassigned", validStateText = standardFile$name)
+#   })
+#   output$internalStandardFileAssignmentText <- renderText({
+#     internalStandardFile = uploadedFile$internalStandard
+#     createColoredTextForBooleanViewing(!is.null(internalStandardFile), stateText = "ISTD file name: ", invalidStateText = "Unassigned", validStateText = internalStandardFile$name)
+#   })
+#   
+#   #Table rendering of current uploaded file
+#   output$uploadedFilePreviewTable <- renderTable({
+#     req(input$uploadedFile)
+#     tablePreview = read.table(input$uploadedFile$datapath, sep =input$csvDelimitation, header = FALSE)
+#     rowNumber <- min(nrow(tablePreview), input$fileUpload_nrow) 
+#     columnNumber <- min(ncol(tablePreview), input$fileUpload_ncolumn) 
+#     tablePreview[1:rowNumber, 1:columnNumber]
+#   })
+#   
+#   #Buttons to set raw, std and ISTD files
+#   observeEvent(input$setAsMainFile, {
+#     req(input$uploadedFile)
+#     uploadedFile$main <- input$uploadedFile
+#   })
+#   observeEvent(input$setAsStandardFile, {
+#     req(input$uploadedFile)
+#     uploadedFile$standard <- input$uploadedFile
+#   })
+#   observeEvent(input$setAsInternalStandardFile, {
+#     req(input$uploadedFile)
+#     uploadedFile$internalStandard <- input$uploadedFile
+#   })
+#   
+#   #Button to download the list of analyte and ISTD
+#   output$downloadISTDTemplate <- downloadHandler(
+#     filename = "ISTD_Template.csv",
+#     content = function(file) {
+#       
+#       req(isExtractionReady() & !is.null(!is.null(extracted$internalStandardToAnalyteAssignment)))
+#       
+#       write.table(createISTDtemplate(dataFileName = (uploadedFile$main)$datapath,
+#                                      sep = input$csvDelimitation),
+#                 file, sep = input$csvDelimitation, quote = FALSE,
+#                 row.names = FALSE, col.names = TRUE)
+#       })
+# 
+#   
+#   isExtractionReady <- reactive({
+#     !is.null(uploadedFile$main) & !is.null(uploadedFile$standard)
+#     })
+#   
+#   #Button to extract important information and signal of the dataframe
+#   observeEvent(input$extract, {
+#     
+#     req(isExtractionReady())
+#     
+#     
+#     mainFileDatapath = uploadedFile$main$datapath
+#     standardFileDatapath = uploadedFile$standard$datapath
+#     internalStandardFileDatapath = uploadedFile$internalStandard$datapath
+#     
+#     extracted$firstRowOfMain <- scan(mainFileDatapath, nlines = 1, what = character(),sep = input$csvDelimitation)
+#     extracted$firstRowOfMain <- fillEmptyStrings(extracted$firstRowOfMain)
+#     
+#     extracted$secondRowOfMain <- scan(mainFileDatapath, nlines = 1, what = character(),sep = input$csvDelimitation, skip=1)
+#     
+#     requiredStringsInFirstRowOfMain <- "Sample"
+#     requiredStringsInSecondRowOfMain <- c("Acq. Date-Time", "Sample Name", "Type", "Level", "CPS", "CPS RSD")
+#     
+#     if (!all(requiredStringsInFirstRowOfMain %in% extracted$firstRowOfMain) || !all(requiredStringsInSecondRowOfMain %in% extracted$secondRowOfMain)) {
+#       shinyalert("Impossible to extract", paste("Missing either the Sample column in the first row of the main file, or  one of the following columns in the second row: ", paste(requiredStringsInSecondRowOfMain, collapse = ', '), sep = " "), type = "error")
+#       return(NULL)
+#     }
+#     
+#     extracted$main <- read.table(mainFileDatapath, skip = 2, header = FALSE, sep = input$csvDelimitation, stringsAsFactors=FALSE)
+#     colnames(extracted$main) <- extracted$firstRowOfMain
+#     
+#     extracted$standard <- createStandardDataFrameFromFile(dataPath = standardFileDatapath, sep = input$csvDelimitation)
+#     if (is.null(extracted$standard)) return(NULL)
+#     
+#     parameters$sampleNumber <- nrow(extracted$main)
+#     parameters$analyteNames <- extracted$firstRowOfMain[extracted$secondRowOfMain == "CPS" & !grepl("ISTD", extracted$firstRowOfMain)]
+#     parameters$analyteNumber <- length(parameters$analyteNames)
+#     parameters$internalStandardNames <- extracted$firstRowOfMain[extracted$secondRowOfMain == "CPS" & grepl("ISTD", extracted$firstRowOfMain)]
+#     parameters$internalStandardNumber <- length(parameters$internalStandardNames)
+#     
+#     sampleTime <- as.POSIXct(extracted$main[ , which(extracted$secondRowOfMain == "Acq. Date-Time")], format= input$dateFormat)
+#     if(any(is.na(sampleTime))) {
+#       shinyalert("Impossible to extract", paste0("Error, non-valid (NA) dates at sample number(s) ", paste(which(is.na(sampleTime)), collapse = ", "),  ". Check format in csv file and in File upload and parameters tab"), type = "error")
+#       return(NULL)
+#     }
+#     
+#     parameters[["categoricalDataAndTime"]] <- data.frame(sampleTime,
+#                                                     extracted$main[ , which(extracted$secondRowOfMain == "Sample Name")],
+#                                                     extracted$main[ , which(extracted$secondRowOfMain == "Type")],
+#                                                     extracted$main[ , which(extracted$secondRowOfMain == "Level")],
+#                                                     stringsAsFactors = FALSE
+#     )
+#     colnames(parameters[["categoricalDataAndTime"]]) <- c("Time", "Sample Name", "Type", "Level")
+#     
+#     numericalColumns <- seq(from = max(which(extracted$firstRowOfMain == "Sample")) + 1, to = ncol(extracted$main))
+#     extracted$main[ , numericalColumns] <- sapply(extracted$main[ , numericalColumns], as.numeric)
+#     
+#     # if (!is.null(internalStandardFileDatapath)) 
+#     # {
+#     #   extracted$internalStandardToAnalyteAssignment  <- read.table(internalStandardFileDatapath, header = TRUE, sep= input$csvDelimitation, stringsAsFactors = FALSE)
+#     #   process$analyteToIstdBlankRatio <- process$analyteCountsPerSecondEudc()$divideBy(process$internalStandardEudcAdaptedToAnalytes())
+#     # }
+#     # else 
+#     # {
+#     #   process$analyteToIstdBlankRatio <- process$analyteCountsPerSecondEudc()
+#     # }
+#     
+#     rowIndexInMain$custom[["All"]] <- which(rep(x = TRUE, parameters$sampleNumber))
+#     parameters$driftCorrectedElements <- rep(FALSE, parameters$analyteNumber)
+#     
+#     applicationState$isExtractionSuccessful <- TRUE
+#   })
+#   
+#   observeEvent(applicationState$isExtractionSuccessful, {
+#     if (applicationState$isExtractionSuccessful == TRUE) {
+#       shinyjs::enable(selector = '.navbar-nav a[data-value="Index creation"')
+#       shinyjs::enable(selector = '.navbar-nav a[data-value="Blank verification/processing"')
+#       shinyjs::enable(selector = '.navbar-nav a[data-value="Drift verification/processing"')
+#       shinyjs::enable(selector = '.navbar-nav a[data-value="Process"')
+#     }
+#     else if (applicationState$isExtractionSuccessful == FALSE) {
+#       shinyjs::disable(selector = '.navbar-nav a[data-value="Index creation"')
+#       shinyjs::disable(selector = '.navbar-nav a[data-value="Blank verification/processing"')
+#       shinyjs::disable(selector = '.navbar-nav a[data-value="Drift verification/processing"')
+#       shinyjs::disable(selector = '.navbar-nav a[data-value="Process"')
+#     }
+#   })
+#   
+#   #Here we render warnings texts to help the user
+#   output$extractionReadyText <- renderText({
+#     createColoredTextForBooleanViewing(isExtractionReady(), stateText = "Data extraction ", invalidStateText = "impossible", validStateText = "ready")
+#   })
   
 # Index creation ----------------------------------------------------------
 
@@ -507,38 +543,47 @@ ICPMS_server <- function(input, output, session) {
 
 # Interference correction -------------------------------------------------
 
+  
+  
+  activeInterferenceModifier <- ({})
+  
   observeEvent(input$actionButton_InterferenceTab_applyCorrection, {
+    interferenceModifierNumber <- length(modifiers$interference)
+    modifiers$interference[interferenceModifierNumber + 1] <- activeInterferenceModifier()
+  })
+  
+  # observeEvent(input$actionButton_InterferenceTab_applyCorrection, {
+  #   
+  #   interferenceSignal <- process$interferenceCountsPerSeconds()$getEstimation()
+  #   interferenceRsd <- process$interferenceCountsPerSeconds()$getRsd()
+  #   analyteSignal <- process$analyteCountsPerSecondEudc()$getEstimation()
+  #   analyteRsd <- process$analyteCountsPerSecondEudc()$getRsd()
+  #   
+  #   indexForCorrectionFactorCalculation <- rowIndexInMain$custom[[input$sliderInput_InterferenceTab_indexForCorrectionFactorCalculation]]
+  #   interferedElement <- input$sliderInput_InterferenceTab_interferedElement
+  #   interferingElement <- input$sliderInput_InterferenceTab_interferingElement
+  #   
+  #   if (length(indexForCorrectionFactorCalculation) > 1) {
+  #     estimatedCorrectionFactors <- analyteSignal[indexForCorrectionFactorCalculation, interferedElement] / analyteSignal[indexForCorrectionFactorCalculation, interferingElement]
+  #     correctionFactorValue <- mean(estimatedCorrectionFactors)
+  #     correctionFactorRsd <- sd(estimatedCorrectionFactors) / correctionFactorValue * 100
+  #   }
+  #   else {
+  #     correctionFactorValue <- analyteSignal[indexForCorrectionFactorCalculation, interferedElement] / analyteSignal[indexForCorrectionFactorCalculation, interferingElement]
+  #     correctionFactorRsd <- sqrt((analyteRsd[indexForCorrectionFactorCalculation, interferedElement]/100)^2 +
+  #                                 (analyteRsd[indexForCorrectionFactorCalculation, interferingElement]/100)^2) * 100
+  #   }
+  #   
+  #   interferenceSignal[ , interferedElement] <- analyteSignal[ , interferingElement] * correctionFactorValue
+  #   interferenceRsd[ , interferedElement] <- sqrt((analyteRsd[ , interferingElement]/100)^2 + (correctionFactorRsd/100)^2) * 100
+  #   
+  #   newInterferenceEudc <- EstimationUncertaintyDataCouple$new(elementFullNames = parameters$analyteNames,
+  #                                                          estimatedData = interferenceSignal,
+  #                                                          uncertaintyData = interferenceRsd,
+  #                                                          uncertaintyType = "rsd")
     
-    interferenceSignal <- process$interferenceCountsPerSeconds$getEstimation()
-    interferenceRsd <- process$interferenceCountsPerSeconds$getRsd()
-    analyteSignal <- process$analyteCountsPerSecondEudc()$getEstimation()
-    analyteRsd <- process$analyteCountsPerSecondEudc()$getRsd()
-    
-    indexForCorrectionFactorCalculation <- rowIndexInMain$custom[[input$sliderInput_InterferenceTab_indexForCorrectionFactorCalculation]]
-    interferedElement <- input$sliderInput_InterferenceTab_interferedElement
-    interferingElement <- input$sliderInput_InterferenceTab_interferingElement
-    
-    if (length(indexForCorrectionFactorCalculation) > 1) {
-      estimatedCorrectionFactors <- analyteSignal[indexForCorrectionFactorCalculation, interferedElement] / analyteSignal[indexForCorrectionFactorCalculation, interferingElement]
-      correctionFactorValue <- mean(estimatedCorrectionFactors)
-      correctionFactorRsd <- sd(estimatedCorrectionFactors) / correctionFactorValue * 100
-    }
-    else {
-      correctionFactorValue <- analyteSignal[indexForCorrectionFactorCalculation, interferedElement] / analyteSignal[indexForCorrectionFactorCalculation, interferingElement]
-      correctionFactorRsd <- sqrt((analyteRsd[indexForCorrectionFactorCalculation, interferedElement]/100)^2 +
-                                  (analyteRsd[indexForCorrectionFactorCalculation, interferingElement]/100)^2) * 100
-    }
-    
-    interferenceSignal[ , interferedElement] <- analyteSignal[ , interferingElement] * correctionFactorValue
-    interferenceRsd[ , interferedElement] <- sqrt((analyteRsd[ , interferingElement]/100)^2 + (correctionFactorRsd/100)^2) * 100
-    
-    newInterferenceEudc <- EstimationUncertaintyDataCouple$new(elementFullNames = parameters$analyteNames,
-                                                           estimatedData = interferenceSignal,
-                                                           uncertaintyData = interferenceRsd,
-                                                           uncertaintyType = "rsd")
-    
-    process$interferenceCountsPerSeconds <- process$interferenceCountsPerSeconds$add(newInterferenceEudc)
-  })  
+  #  process$interferenceCountsPerSeconds <- process$interferenceCountsPerSeconds$add(newInterferenceEudc)
+  # })  
   
 # Blank verif/process -----------------------------------------------------
 
