@@ -9,57 +9,39 @@ blankProcessing_ui <- function(id) {
               selectInput(ns("sliderInput_BlankTab_rowsToReplace"), "Replace what:",
                           "", selected = ""),
               selectInput(ns("sliderInput_BlankTab_replacementMethod"), "Replacement method:",
-                          c("None" = "none", "Average blanks" = "mean",
-                            "Previous blank" = "prev", "Average in index" = "averageInBlankIndex")),
+                          c("None" = "none", "Average blanks" = "average",
+                            "Previous blank" = "previous", "Average in index" = "averageInBlankIndex")),
               selectInput(ns("sliderInput_BlankTab_rowsToReplaceFrom"), "Replace in:",
                           "All", selected = "All"),
               actionButton(ns("actionButton_BlankTab_replace"), "Set blank interpolation")),
             mainPanel(
-              checkboxInput(ns("enableBlankCorrection"), "Enable blank correction", value = TRUE),
               DT::DTOutput(ns("blankTab_table"))
             )
           )
   )
 }
 
-blankProcessing_server <- function(id, fileUpload, indexCreation) {
+blankProcessing_server <- function(id, fileUpload, reactiveExpressions, indexCreation) {
   moduleServer(
     id = id,
     module = function(input, output, session) {
       
+      blankModifiers <- reactiveVal()
       
-      process = fileUpload$process
+      process = reactiveExpressions$process
       parameters = fileUpload$parameters
-      customIndex <- indexCreation
-      
-      process$analyteToIstdRatio <- reactive({
-        process$analyteCountsPerSecondEudc()$divideBy(process$internalStandardEudcAdaptedToAnalytes())
-      })
-      
-      process$analyteToIstdBlankRatio <- reactive({
-        if (input$enableBlankCorrection == TRUE)
-        {
-          process$analyteToIstdRatio() %>% applyModifierToEudc(modifiers$blank)
-        }
-        else
-        {
-          EstimationUncertaintyDataCouple$new(elementFullNames = parameters$analyteNames,
-                                              estimatedData = matrix(0, ncol = parameters$analyteNumber, nrow = parameters$sampleNumber),
-                                              uncertaintyData = matrix(0, ncol = parameters$analyteNumber, nrow = parameters$sampleNumber),
-                                              uncertaintyType = "sd")
-        }
-      })
-      
-      process$analyteToIstdRatioBlankCorrected <- reactive({
-        process$analyteToIstdRatio()$subtract(process$analyteToIstdBlankRatio())
-      })
+      customIndex <- reactive({indexCreation$custom})
       
       activeBlankModifier <- reactive({
-        list(DataModifier$new(linesToBeReplaced = customIndex()[[input$sliderInput_BlankTab_rowsToReplace]], 
-                              columnsToBeReplaced = 1:parameters$analyteNumber,
-                              linesUsedForReplacement = customIndex()[[input$sliderInput_BlankTab_rowsToReplaceFrom]],
-                              columnsUsedForReplacement = 1:parameters$analyteNumber,
-                              howToReplace = input$sliderInput_BlankTab_replacementMethod))
+        list(DataModifier$new(modificationMethod = input$sliderInput_BlankTab_replacementMethod,
+                              modificationArguments = list(
+                                linesToBeReplaced = customIndex()[[input$sliderInput_BlankTab_rowsToReplace]],
+                                columnsToBeReplaced = 1:parameters$analyteNumber,
+                                linesUsedForReplacement = customIndex()[[input$sliderInput_BlankTab_rowsToReplaceFrom]],
+                                columnsUsedForReplacement = 1:parameters$analyteNumber
+                                )
+                              )
+        )
       })
       # liveReplaceBlkTable <- reactive({
       #   
@@ -73,6 +55,7 @@ blankProcessing_server <- function(id, fileUpload, indexCreation) {
       
       #Render ISTD table if all conditions are met
       output$blankTab_table <- DT::renderDT(datatable({
+        
         
         blank_processOrView = input$sliderInput_BlankTab_processOrView
         
@@ -114,8 +97,7 @@ blankProcessing_server <- function(id, fileUpload, indexCreation) {
       
       #Assigns the current state of the ISTD table to the ISTD variable that will be used for calculations
       observeEvent(input$actionButton_BlankTab_replace, {
-        blankModifierNumber <- length(modifiers$blank)
-        modifiers$blank[blankModifierNumber + 1] <- activeBlankModifier()
+        blankModifiers(c(blankModifiers(), activeBlankModifier()))
         
         # rowReplacementIndex = customIndex()[[input$sliderInput_BlankTab_rowsToReplace]]
         # 
@@ -150,6 +132,8 @@ blankProcessing_server <- function(id, fileUpload, indexCreation) {
         updateSelectInput(session,"sliderInput_BlankTab_rowsToReplace", label  = "Replace what:", choices=names(customIndex()),names(customIndex())[1])
         updateSelectInput(session,"sliderInput_BlankTab_rowsToReplaceFrom", label  = "Replace in:", choices=names(customIndex()),names(customIndex())[1])
       })
+      
+      return(list(blankModifiers = blankModifiers))
     }
   )
 }

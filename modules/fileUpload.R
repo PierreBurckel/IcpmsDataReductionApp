@@ -32,7 +32,6 @@ fileUpload_server <- function(id) {
   moduleServer(
     id = id,
     module = function(input, output, session) {
-      
       uploadedFile <- reactiveValues()
       
       extracted <- reactiveValues()
@@ -40,64 +39,26 @@ fileUpload_server <- function(id) {
       parameters <- reactiveValues()
       applicationState <- reactiveValues(isExtractionSuccessful = FALSE)
       
-      process$countsPerSecond <- reactive({
-        countsPerSecond <- extracted$main[ , extracted$secondRowOfMain == "CPS", drop=FALSE]
-        numericalCountsPerSecond <- apply(countsPerSecond, c(1,2), is.numeric)
-        countsPerSecond[!numericalCountsPerSecond] <- NA
-        as.matrix(countsPerSecond)
+      parameters$deltaTime <- reactive({
+        deltaTime <- as.numeric(parameters[["categoricalDataAndTime"]][ , "Time"] - 
+                                  parameters[["categoricalDataAndTime"]][1, "Time"])
+        return(deltaTime)
       })
       
-      process$analyteCountsPerSecond <- reactive({
-        process$countsPerSecond()[ , parameters$analyteNames, drop=FALSE]
-      })
-      
-      process$internalStandardCountsPerSecond <- reactive({
-        process$countsPerSecond()[ , parameters$internalStandardNames, drop=FALSE]
-      })
-      
-      process$relativeStandardDeviation <- reactive({
-        relativeStandardDeviation <- extracted$main[ , extracted$secondRowOfMain == "CPS RSD", drop=FALSE]
-        numericalRelativeStandardDeviation <- apply(relativeStandardDeviation, c(1,2), is.numeric)
-        relativeStandardDeviation[!numericalRelativeStandardDeviation] <- NA
-        as.matrix(relativeStandardDeviation)
-      })
-      
-      process$analyteCountsPerSecondRelativeStandardDeviation <- reactive({
-        process$relativeStandardDeviation()[ , parameters$analyteNames, drop=FALSE]
-      })
-      
-      process$internalStandardCountsPerSecondRelativeStandardDeviation <- reactive({
-        process$relativeStandardDeviation()[ , parameters$internalStandardNames, drop=FALSE]
-      })
-      
-      process$analyteCountsPerSecondEudc <- reactive({
-        EstimationUncertaintyDataCouple$new(elementFullNames = parameters$analyteNames,
-                                            estimatedData = process$analyteCountsPerSecond(),
-                                            uncertaintyData = process$analyteCountsPerSecondRelativeStandardDeviation(),
-                                            uncertaintyType = "rsd")
-      })
-      
-      process$internalStandardCountsPerSecondEudc <- reactive({
-        EstimationUncertaintyDataCouple$new(elementFullNames = parameters$internalStandardNames,
-                                            estimatedData = process$internalStandardCountsPerSecond(),
-                                            uncertaintyData = process$internalStandardCountsPerSecondRelativeStandardDeviation(),
-                                            uncertaintyType = "rsd")
-      })
-      
-      process$internalStandardEudcAdaptedToAnalytes <- reactive({
-        if (!is.null(extracted$internalStandardToAnalyteAssignment)) 
-        {
-          return(createinternalStandardEudcAdaptedToAnalytes(internalStandardToAnalyteAssignmentDataframe = extracted$internalStandardToAnalyteAssignment,
-                                                             internalStandardCountsPerSecondEudc = process$internalStandardCountsPerSecondEudc(),
-                                                             parameters = parameters))
+      parameters$listOfElementSpecificDriftIndex <- reactive({
+        
+        req(parameters$analyteNames)
+        
+        listOfElementSpecificDriftIndex <- list()
+        
+        for (elementFullName in parameters$analyteNames) {
+          listOfElementSpecificDriftIndex[[elementFullName]] <- getElementSpecificDriftIndex(elementFullName = elementFullName,
+                                                                                             standardDataFrame = extracted$standard, 
+                                                                                             standardIdentificationColumn = parameters[["categoricalDataAndTime"]][ , "Level"],
+                                                                                             driftIndex = rowIndexInMain$drift)
         }
-        else
-        {
-          return(EstimationUncertaintyDataCouple$new(elementFullNames = parameters$analyteNames,
-                                                     estimatedData = matrix(1, nrow = parameters$sampleNumber, ncol = parameters$analyteNumber),
-                                                     uncertaintyData = matrix(0, nrow = parameters$sampleNumber, ncol = parameters$analyteNumber),
-                                                     uncertaintyType = "sd"))
-        }
+        
+        return(listOfElementSpecificDriftIndex)
       })
       
       #Text display of imported file
@@ -228,7 +189,7 @@ fileUpload_server <- function(id) {
       
       return(
         list(extracted = extracted,
-             process = process,
+             # process = process,
              parameters = parameters,
              applicationState = applicationState)
         )

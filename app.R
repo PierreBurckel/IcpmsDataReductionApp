@@ -1,3 +1,4 @@
+library(GMCM)
 library(tidyverse)
 library(shiny)
 library(shinyalert)
@@ -7,6 +8,7 @@ library(DT)
 library(rstudioapi)
 library(R6)
 
+# install.packages("GMCM")
 # install.packages("tidyverse")
 # install.packages("shiny")
 # install.packages("shinyalert")
@@ -21,6 +23,7 @@ setwd(dirname(getActiveDocumentContext()$path))
 source('helpers/functions.R')
 
 source('modules/fileUpload.R')
+source('modules/reactiveExpressions.R')
 source('modules/indexCreation.R')
 source('modules/interferenceCorrection.R')
 source('modules/blankProcessing.R')
@@ -36,16 +39,19 @@ ICPMS_ui <- shinyUI({
                indexCreation_ui("indexCreation"),
                interferenceCorrection_ui(),
                blankProcessing_ui("blankProcessing"),
-               driftProcessing_ui(),
-               results_ui()
+               driftProcessing_ui("driftProcessing"),
+               results_ui(),
+               reactiveExpressions_ui("reactiveExpressions")
     )
   )
 })
 
 ICPMS_server <- function(input, output, session) {
   fileUpload <- fileUpload_server("fileUpload")
-  indexCreation <- indexCreation_server("indexCreation", fileUpload)
-  blankProcessing_server("blankProcessing", fileUpload, indexCreation)
+  reactiveExpressions <- reactiveExpressions_server("reactiveExpressions", fileUpload, indexCreation, blankProcessing)
+  indexCreation <- indexCreation_server("indexCreation", fileUpload, reactiveExpressions)
+  blankProcessing <- blankProcessing_server("blankProcessing", fileUpload, reactiveExpressions, indexCreation)
+  driftProcessing_server("driftProcessing", fileUpload, reactiveExpressions, indexCreation)
   
 }
 

@@ -18,24 +18,24 @@ indexCreation_ui <- function(id) {
   ) 
 }
 
-indexCreation_server <- function(id, fileUpload) {
+indexCreation_server <- function(id, fileUpload, reactiveExpressions) {
   moduleServer(
     id = id,
     module = function(input, output, session) {
-      
+      browser()
       rowIndexInMain <- reactiveValues()
       
       extracted = fileUpload$extracted
-      process = fileUpload$process
       parameters = fileUpload$parameters
       applicationState = fileUpload$applicationState
+      
+      process = reactiveExpressions$process
       
       observeEvent(parameters$sampleNumber, {
         rowIndexInMain$custom[["All"]] <- which(rep(x = TRUE, parameters$sampleNumber))
       })
       
       output$indexTable <- DT::renderDT(datatable({
-        
         if (!applicationState$isExtractionSuccessful) return()
         
         searchWhere = input$searchIndexwhere
@@ -127,9 +127,7 @@ indexCreation_server <- function(id, fileUpload) {
         updateSelectInput(session,"viewConcentrationIndex", label  = "View index:", choices=c("All", names(rowIndexInMain$custom)),"All")
       })
       
-      return(reactive({
-        rowIndexInMain$custom
-        }))
+      return(rowIndexInMain)
     }
   )
 }

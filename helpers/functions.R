@@ -27,6 +27,26 @@ agilentElementNamePattern <- "[ ]{2}[A-Z]{1}[a-z]*[ ]{2}"
 
 `[.EstimationUncertaintyDataCouple`    <- function(obj, ...) obj$`[`(...) 
 `[<-.EstimationUncertaintyDataCouple`  <- function(obj, ...) obj$`[<-`(...) 
+mean.EstimationUncertaintyDataCouple <- function(...) {
+  estimationMatrix <- NULL
+  fullElementsNames <- NULL
+  for(eudc in list(...)) {
+    if (is.null(fullElementsNames)) fullElementsNames <- eudc$getElementFullNames()
+    estimationMatrix <- rbind(estimationMatrix, eudc$getEstimation())
+  }
+  return(EstimationUncertaintyDataCouple$new(fullElementsNames,
+                                             
+                                             estimationMatrix %>%
+                                             colMeans() %>%
+                                             matrix(nrow = 1),
+                                             
+                                             estimationMatrix %>%
+                                             GMCM:::colSds() %>%
+                                             matrix(nrow = 1),
+                                             
+                                             "sd")
+  )
+}
 
 # `[.EstimationUncertaintyDataCouple` = function(x, i, j, ...) {
 #   
@@ -57,68 +77,72 @@ agilentElementNamePattern <- "[ ]{2}[A-Z]{1}[a-z]*[ ]{2}"
 applyModifierToEudc <- function(eudcToBeModified, modifierList) {
   modifiedEudc <- eudcToBeModified
   for (dataModifier in modifierList) {
-    modifiedEudc[dataModifier$getLinesToBeReplaced()] <- replaceValues(eudcToBeModified, dataModifier$getReplacementMethod(), dataModifier$getLinesToBeReplaced(), dataModifier$getLinesUsedForReplacement())[dataModifier$getLinesToBeReplaced()]
+    replacedLines <- dataModifier$getLinesToBeReplaced()
+    modifiedEudc[replacedLines] <- dataModifier$apply(eudcToBeModified)[replacedLines]
   }
   return(modifiedEudc)
 }
 # 
-# DataModifier <- R6Class("DataModifier",
-#                         public = list(
-#                           initialize = function(modificationMethod, modificationArguments) {
-#                             private$modificationMethod <- modificationMethod
-#                             private$modificationArguments <- modificationArguments
-#                           },
-#                           apply = function(eudcToBeModified) {
-#                             modifierFunction <- private$getModificationFunction(private$modificationMethod)
-#                             modifiedEudc <- do.call(modifierFunction, eudcToBeModified, private$modificationArguments)
-#                             return(modifiedEudc)
-#                           }
-#                         ),
-#                         private = list(
-#                           modificationMethod = NULL,
-#                           modificationArguments = NULL,
-#                           
-#                           getModificationFunction <- function(modificationMethod) {
-#                             
-#                             if (!(modificationMethod %in% c("previous", "average"))) {
-#                               stop(paste0("Modification method -", modificationMethod, "-non existent"))
-#                             }
-#                             
-#                             if (modificationMethod == "previous") {
-#                               modificationFunction <- function(eudcToModify, linesToBeReplaced, linesUsedForReplacement) {
-#                                 modifiedEudc <- eudcToModify
-#                                 for (lineToReplace in linesToBeReplaced)
-#                                 {
-#                                   previousLine <- getClosestInIndex(lineToReplace, numericalLinesUsedForReplacement, "prev")
-#                                   modifiedEudc[lineToReplace] <- eudcToModify[previousLine]
-#                                 }
-#                                 return(modifiedEudc)
-#                               }
-#                             }
-#                             
-#                             if (modificationMethod == "average") {
-#                               modificationFunction <- function(eudcToModify, linesToBeReplaced, linesUsedForReplacement) {
-#                                 modifiedEudc <- eudcToModify
-#                                 for (lineToReplace in linesToBeReplaced)
-#                                 {
-#                                   previousLine <- getClosestInIndex(lineToReplace, numericalLinesUsedForReplacement, "prev")
-#                                   nextLine <- getClosestInIndex(lineToReplace, numericalLinesUsedForReplacement, "next")
-#                                   modifiedEudc[lineToReplace] <- mean(eudcToModify[previousLine], eudcToModify[nextLine])
-#                                 }
-#                                 return(modifiedEudc)
-#                               }
-#                             }
-#                             
-#                             if (modificationMethod == "averageInBlankIndex") {
-#                               modificationFunction <- function(eudcToModify, linesToBeReplaced, linesUsedForReplacement) {
-#                                 modifiedEudc <- eudcToModify
-#                                 modifiedEudc[linesToBeReplaced] <- mean(eudcToModify[linesUsedForReplacement])
-#                                 return(modifiedEudc)
-#                               }
-#                             }
-#                           }
-#                         )
-# )
+DataModifier <- R6Class("DataModifier",
+                        public = list(
+                          initialize = function(modificationMethod, modificationArguments) {
+                            private$modificationMethod <- modificationMethod
+                            private$modificationArguments <- modificationArguments
+                          },
+                          apply = function(eudcToModify) {
+                            # modifierFunction <- private$getModificationFunction(private$modificationMethod)
+                            modifierFunction <- eval(parse(text = paste0("private$", private$modificationMethod)))
+                            modifiedEudc <- do.call(modifierFunction,
+                                                    list(
+                                                      eudcToModify = eudcToModify,
+                                                      modificationArguments = private$modificationArguments
+                                                    )
+                            )
+                            return(modifiedEudc)
+                          },
+                          getLinesToBeReplaced = function() {
+                            return(private$modificationArguments$linesToBeReplaced)
+                          }
+                        ),
+                        private = list(
+                          modificationMethod = NULL,
+                          modificationArguments = NULL,
+                          
+                          none = function(eudcToModify, modificationArguments) {
+                            return(eudcToModify)
+                          },
+                          previous = function(eudcToModify, modificationArguments) {
+                            linesToBeReplaced = modificationArguments$linesToBeReplaced
+                            linesUsedForReplacement = modificationArguments$linesUsedForReplacement
+                            modifiedEudc <- eudcToModify
+                            for (lineToReplace in linesToBeReplaced)
+                            {
+                              previousLine <- getClosestInIndex(lineToReplace, linesUsedForReplacement, "prev")
+                              modifiedEudc[lineToReplace] <- eudcToModify[previousLine]
+                            }
+                            return(modifiedEudc)
+                          },
+                          average = function(eudcToModify, modificationArguments) {
+                            linesToBeReplaced = modificationArguments$linesToBeReplaced
+                            linesUsedForReplacement = modificationArguments$linesUsedForReplacement
+                            modifiedEudc <- eudcToModify
+                            for (lineToReplace in linesToBeReplaced)
+                            {
+                              previousLine <- getClosestInIndex(lineToReplace, linesUsedForReplacement, "prev")
+                              nextLine <- getClosestInIndex(lineToReplace, linesUsedForReplacement, "next")
+                              modifiedEudc[lineToReplace] <- mean(eudcToModify[previousLine], eudcToModify[nextLine])
+                            }
+                            return(modifiedEudc)
+                          },
+                          averageInBlankIndex = function(eudcToModify, modificationArguments) {
+                            linesToBeReplaced = modificationArguments$linesToBeReplaced
+                            linesUsedForReplacement = modificationArguments$linesUsedForReplacement
+                            modifiedEudc <- eudcToModify
+                            modifiedEudc[linesToBeReplaced] <- mean(eudcToModify[linesUsedForReplacement])
+                            return(modifiedEudc)
+                          }
+                        )
+)
 
 # DataModifier <- R6Class("DataModifier",
 #                         public = list(
@@ -240,9 +264,6 @@ EstimationUncertaintyDataCouple <- R6Class("EstimationUncertaintyDataCouple",
     columnNumber = ncol(private$estimatedData)
     return(matrix(nrow = rowNumber, ncol = columnNumber))
   },
-  replaceLines = function(linesToReplace) {
-    
-  },
   `[` = function(i, j) {
     EstimationUncertaintyDataCouple$new(elementFullNames = private$elementFullNames[j],
                                         estimatedData = private$estimatedData[i, j, drop = FALSE],
@@ -252,8 +273,20 @@ EstimationUncertaintyDataCouple <- R6Class("EstimationUncertaintyDataCouple",
   `[<-` = function(i, j, value) {
     estimatedData <- private$estimatedData
     sdData <- private$sdData
-    estimatedData[i,j] <- value$getEstimation()
-    sdData[i,j] <- value$getSd()
+    
+    if (nrow(value$getEstimation()) == 1) {
+      testimatedData <- t(estimatedData)
+      tsdData <- t(sdData)
+      testimatedData[j,i] <- value$getEstimation()
+      tsdData[j,i] <- value$getSd()
+      estimatedData <- t(testimatedData)
+      sdData <- t(tsdData)
+    }
+    else {
+      estimatedData[i,j] <- value$getEstimation()
+      sdData[i,j] <- value$getSd()
+    }
+    
     EstimationUncertaintyDataCouple$new(elementFullNames = private$elementFullNames,
                                         estimatedData = estimatedData,
                                         uncertaintyData = sdData,
