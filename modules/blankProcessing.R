@@ -28,17 +28,17 @@ blankProcessing_server <- function(id, fileUpload, reactiveExpressions, indexCre
       
       blankModifiers <- reactiveVal()
       
-      process = reactiveExpressions$process
-      parameters = fileUpload$parameters
+      process <- reactive({reactiveExpressions$process})
+      parameters <- reactive({fileUpload$parameters})
       customIndex <- reactive({indexCreation$custom})
       
       activeBlankModifier <- reactive({
         list(DataModifier$new(modificationMethod = input$sliderInput_BlankTab_replacementMethod,
                               modificationArguments = list(
                                 linesToBeReplaced = customIndex()[[input$sliderInput_BlankTab_rowsToReplace]],
-                                columnsToBeReplaced = 1:parameters$analyteNumber,
+                                columnsToBeReplaced = 1:parameters()$analyteNumber,
                                 linesUsedForReplacement = customIndex()[[input$sliderInput_BlankTab_rowsToReplaceFrom]],
-                                columnsUsedForReplacement = 1:parameters$analyteNumber
+                                columnsUsedForReplacement = 1:parameters()$analyteNumber
                                 )
                               )
         )
@@ -50,7 +50,7 @@ blankProcessing_server <- function(id, fileUpload, reactiveExpressions, indexCre
       #   # replaceIndexWhat = customIndex()[[input$sliderInput_BlankTab_rowsToReplace]]
       #   # replaceIndexIn = customIndex()[[input$sliderInput_BlankTab_rowsToReplaceFrom]]
       #   # 
-      #   # replaceValues(process$analyteToIstdRatio(), input$sliderInput_BlankTab_replacementMethod, replaceIndexWhat, replaceIndexIn, parameters)
+      #   # replaceValues(process$analyteToIstdRatio(), input$sliderInput_BlankTab_replacementMethod, replaceIndexWhat, replaceIndexIn, parameters())
       # })
       
       #Render ISTD table if all conditions are met
@@ -61,15 +61,15 @@ blankProcessing_server <- function(id, fileUpload, reactiveExpressions, indexCre
         
         if (blank_processOrView == "view") 
         {
-          modifiedAnalyteToIstdRatio <- process$analyteToIstdBlankRatio()
-          blankTab_table <- cbind(parameters[["categoricalDataAndTime"]][ , "Sample Name"], modifiedAnalyteToIstdRatio$getEstimation())
+          modifiedAnalyteToIstdRatio <- process()$analyteToIstdBlankRatio()
+          blankTab_table <- cbind(parameters()[["categoricalDataAndTime"]][ , "Sample Name"], modifiedAnalyteToIstdRatio$getEstimation())
           names(blankTab_table) <- c("Sample Name", names(blankTab_table)[2:length(blankTab_table)])
           blankTab_table <- format(blankTab_table, digits = 3, scientific=T)
         }
         if (blank_processOrView == "process") 
         {
-          activelyModifiedAnalyteToIstdRatio <- process$analyteToIstdRatio() %>% applyModifierToEudc(activeBlankModifier())
-          blankTab_table <- cbind(parameters[["categoricalDataAndTime"]][ , "Sample Name"], activelyModifiedAnalyteToIstdRatio$getEstimation())
+          activelyModifiedAnalyteToIstdRatio <- process()$analyteToIstdRatio() %>% applyModifierToEudc(activeBlankModifier())
+          blankTab_table <- cbind(parameters()[["categoricalDataAndTime"]][ , "Sample Name"], activelyModifiedAnalyteToIstdRatio$getEstimation())
           names(blankTab_table) <- c("Sample Name", names(blankTab_table)[2:length(blankTab_table)])
           blankTab_table <- format(blankTab_table, digits = 3, scientific=T)
         }
@@ -108,7 +108,7 @@ blankProcessing_server <- function(id, fileUpload, reactiveExpressions, indexCre
         # blankRatioSignal[rowReplacementIndex, ] <- liveReplaceBlkTable()$getEstimation()[rowReplacementIndex, , drop = FALSE]
         # blankRatioRsd[rowReplacementIndex, ] <- liveReplaceBlkTable()$getRsd()[rowReplacementIndex, , drop = FALSE]
         # 
-        # process$analyteToIstdBlankRatio <- EstimationUncertaintyDataCouple$new(elementFullNames = parameters$analyteNames,
+        # process$analyteToIstdBlankRatio <- EstimationUncertaintyDataCouple$new(elementFullNames = parameters()$analyteNames,
         #                                                                        estimatedData = blankRatioSignal,
         #                                                                        uncertaintyData = blankRatioRsd,
         #                                                                        uncertaintyType = "rsd")

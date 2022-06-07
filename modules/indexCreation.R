@@ -22,33 +22,31 @@ indexCreation_server <- function(id, fileUpload, reactiveExpressions) {
   moduleServer(
     id = id,
     module = function(input, output, session) {
-      browser()
+      
       rowIndexInMain <- reactiveValues()
       
-      extracted = fileUpload$extracted
-      parameters = fileUpload$parameters
-      applicationState = fileUpload$applicationState
+      parameters <- reactive({fileUpload$parameters})
+      applicationState <- reactive({fileUpload$applicationState})
+      process <- reactive({reactiveExpressions$process})
       
-      process = reactiveExpressions$process
-      
-      observeEvent(parameters$sampleNumber, {
-        rowIndexInMain$custom[["All"]] <- which(rep(x = TRUE, parameters$sampleNumber))
+      observeEvent(parameters()$sampleNumber, {
+        rowIndexInMain$custom[["All"]] <- which(rep(x = TRUE, parameters()$sampleNumber))
       })
       
       output$indexTable <- DT::renderDT(datatable({
-        if (!applicationState$isExtractionSuccessful) return()
+        if (!applicationState()$isExtractionSuccessful) return()
         
         searchWhere = input$searchIndexwhere
         firstColumnName = ""
         
         if (searchWhere == 'smp'){
-          headerRows = parameters[["categoricalDataAndTime"]][ , "Sample Name"]
+          headerRows = parameters()[["categoricalDataAndTime"]][ , "Sample Name"]
           firstColumnName = "Sample Names"}
         else if (searchWhere == 'lvl'){
-          headerRows = parameters[["categoricalDataAndTime"]][ , "Level"]
+          headerRows = parameters()[["categoricalDataAndTime"]][ , "Level"]
           firstColumnName = "Levels"}
         else if (searchWhere == 'type'){
-          headerRows = parameters[["categoricalDataAndTime"]][ , "Type"]
+          headerRows = parameters()[["categoricalDataAndTime"]][ , "Type"]
           firstColumnName = "Type"}
         
         searchWhat = input$searchIndexwhat
@@ -58,19 +56,19 @@ indexCreation_server <- function(id, fileUpload, reactiveExpressions) {
         if (searchType == 'ematch'){searchWhat = paste("^", searchWhat, "$", sep="")}
         
         if (searchWhat == ""){
-          rowIndexInMain$index_rowsMatchingRegularExpression <- seq(parameters$sampleNumber)
+          rowIndexInMain$index_rowsMatchingRegularExpression <- seq(parameters()$sampleNumber)
         }
         else{
           rowIndexInMain$index_rowsMatchingRegularExpression <- grep(searchWhat, headerRows)
         }
         
-        if (displayWhat == "ISTD" & !is.null(process$internalStandardCountsPerSecondEudc()$getEstimation())){
-          indexTable = cbind(headerRows[rowIndexInMain$index_rowsMatchingRegularExpression], process$internalStandardCountsPerSecondEudc()$getEstimation()[rowIndexInMain$index_rowsMatchingRegularExpression,])
-          colnames(indexTable) <- c(firstColumnName, parameters$internalStandardNames)
+        if (displayWhat == "ISTD" & !is.null(process()$internalStandardCountsPerSecondEudc()$getEstimation())){
+          indexTable = cbind(headerRows[rowIndexInMain$index_rowsMatchingRegularExpression], process()$internalStandardCountsPerSecondEudc()$getEstimation()[rowIndexInMain$index_rowsMatchingRegularExpression,])
+          colnames(indexTable) <- c(firstColumnName, parameters()$internalStandardNames)
         }
-        else if (displayWhat == "analytes" & !is.null(process$analyteCountsPerSecondEudc()$getEstimation())){
-          indexTable = cbind(headerRows[rowIndexInMain$index_rowsMatchingRegularExpression], process$analyteCountsPerSecondEudc()$getEstimation()[rowIndexInMain$index_rowsMatchingRegularExpression,])
-          colnames(indexTable) <- c(firstColumnName, parameters$analyteNames)
+        else if (displayWhat == "analytes" & !is.null(process()$analyteCountsPerSecondEudc()$getEstimation())){
+          indexTable = cbind(headerRows[rowIndexInMain$index_rowsMatchingRegularExpression], process()$analyteCountsPerSecondEudc()$getEstimation()[rowIndexInMain$index_rowsMatchingRegularExpression,])
+          colnames(indexTable) <- c(firstColumnName, parameters()$analyteNames)
         }
         else {return()}
         
@@ -92,7 +90,7 @@ indexCreation_server <- function(id, fileUpload, reactiveExpressions) {
       
       observeEvent(input$searchIndexCreate, {
         indexName = input$searchIndexName
-        customNumIndex = c(1:parameters$sampleNumber)[rowIndexInMain$index_rowsMatchingRegularExpression][indexTab_selectedRows()]
+        customNumIndex = c(1:parameters()$sampleNumber)[rowIndexInMain$index_rowsMatchingRegularExpression][indexTab_selectedRows()]
         if (is.null(rowIndexInMain$custom)) {
           rowIndexInMain$custom <- list()
         }
@@ -121,9 +119,6 @@ indexCreation_server <- function(id, fileUpload, reactiveExpressions) {
       observeEvent(rowIndexInMain$custom, {
         if (is.null(rowIndexInMain$custom)){return()}
         updateSelectInput(session,"sliderInput_InterferenceTab_indexForCorrectionFactorCalculation", label  = "Compute correction factor from:", choices=names(rowIndexInMain$custom),names(rowIndexInMain$custom)[1])
-        updateSelectInput(session,"sliderInput_BlankTab_rowsToReplace", label  = "Replace what:", choices=names(rowIndexInMain$custom),names(rowIndexInMain$custom)[1])
-        updateSelectInput(session,"sliderInput_BlankTab_rowsToReplaceFrom", label  = "Replace in:", choices=names(rowIndexInMain$custom),names(rowIndexInMain$custom)[1])
-        updateSelectInput(session,"selectDriftIndex", label  = "Define drift index:", choices=names(rowIndexInMain$custom),names(rowIndexInMain$custom)[1])
         updateSelectInput(session,"viewConcentrationIndex", label  = "View index:", choices=c("All", names(rowIndexInMain$custom)),"All")
       })
       

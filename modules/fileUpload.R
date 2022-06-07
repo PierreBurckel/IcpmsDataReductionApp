@@ -32,10 +32,10 @@ fileUpload_server <- function(id) {
   moduleServer(
     id = id,
     module = function(input, output, session) {
+      
       uploadedFile <- reactiveValues()
       
       extracted <- reactiveValues()
-      process <- reactiveValues()
       parameters <- reactiveValues()
       applicationState <- reactiveValues(isExtractionSuccessful = FALSE)
       
@@ -44,22 +44,7 @@ fileUpload_server <- function(id) {
                                   parameters[["categoricalDataAndTime"]][1, "Time"])
         return(deltaTime)
       })
-      
-      parameters$listOfElementSpecificDriftIndex <- reactive({
         
-        req(parameters$analyteNames)
-        
-        listOfElementSpecificDriftIndex <- list()
-        
-        for (elementFullName in parameters$analyteNames) {
-          listOfElementSpecificDriftIndex[[elementFullName]] <- getElementSpecificDriftIndex(elementFullName = elementFullName,
-                                                                                             standardDataFrame = extracted$standard, 
-                                                                                             standardIdentificationColumn = parameters[["categoricalDataAndTime"]][ , "Level"],
-                                                                                             driftIndex = rowIndexInMain$drift)
-        }
-        
-        return(listOfElementSpecificDriftIndex)
-      })
       
       #Text display of imported file
       output$mainFileAssignmentText <- renderText({
@@ -177,8 +162,6 @@ fileUpload_server <- function(id) {
         #   process$analyteToIstdBlankRatio <- process$analyteCountsPerSecondEudc()
         # }
         
-        parameters$driftCorrectedElements <- rep(FALSE, parameters$analyteNumber)
-        
         applicationState$isExtractionSuccessful <- TRUE
       })
       
@@ -189,7 +172,6 @@ fileUpload_server <- function(id) {
       
       return(
         list(extracted = extracted,
-             # process = process,
              parameters = parameters,
              applicationState = applicationState)
         )

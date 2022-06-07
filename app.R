@@ -40,7 +40,7 @@ ICPMS_ui <- shinyUI({
                interferenceCorrection_ui(),
                blankProcessing_ui("blankProcessing"),
                driftProcessing_ui("driftProcessing"),
-               results_ui(),
+               results_ui("results"),
                reactiveExpressions_ui("reactiveExpressions")
     )
   )
@@ -48,10 +48,11 @@ ICPMS_ui <- shinyUI({
 
 ICPMS_server <- function(input, output, session) {
   fileUpload <- fileUpload_server("fileUpload")
-  reactiveExpressions <- reactiveExpressions_server("reactiveExpressions", fileUpload, indexCreation, blankProcessing)
+  reactiveExpressions <- reactiveExpressions_server("reactiveExpressions", fileUpload, indexCreation, blankProcessing, driftProcessing)
   indexCreation <- indexCreation_server("indexCreation", fileUpload, reactiveExpressions)
   blankProcessing <- blankProcessing_server("blankProcessing", fileUpload, reactiveExpressions, indexCreation)
-  driftProcessing_server("driftProcessing", fileUpload, reactiveExpressions, indexCreation)
+  driftProcessing <- driftProcessing_server("driftProcessing", fileUpload, reactiveExpressions, indexCreation)
+  results_server("results", indexCreation, reactiveExpressions, fileUpload)
   
 }
 
