@@ -1,3 +1,6 @@
+#' Module responsible for formatting, viewing and downloading final concentration
+#' and intermediate results
+
 results_ui <- function(id) {
   ns <- NS(id)
   tabPanel("Process",
@@ -106,6 +109,7 @@ results_server <- function(id, indexCreation, reactiveExpressions, fileUpload) {
         filename =  paste('data_', input$viewConcentrationIndex, '_', Sys.Date(), '.csv', sep=''),
         content = function(file) 
         {
+          browser()
           write.table(downloadTabData(), file, sep=input$csvDelimitation, quote = FALSE, row.names = FALSE, col.names = TRUE)
         }
       )

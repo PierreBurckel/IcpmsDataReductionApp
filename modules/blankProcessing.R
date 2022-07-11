@@ -1,3 +1,9 @@
+#' Module responsible for defining how blank subtraction should be done
+#' 
+#' @return A list containing a reactiveVal @blankModifiers
+#' 
+#' blankModifiers$ @blankModifiers() (list, DataModifier)
+
 blankProcessing_ui <- function(id) {
   ns <- NS(id)
   
@@ -98,7 +104,6 @@ blankProcessing_server <- function(id, fileUpload, reactiveExpressions, indexCre
       #Assigns the current state of the ISTD table to the ISTD variable that will be used for calculations
       observeEvent(input$actionButton_BlankTab_replace, {
         blankModifiers(c(blankModifiers(), activeBlankModifier()))
-        
         # rowReplacementIndex = customIndex()[[input$sliderInput_BlankTab_rowsToReplace]]
         # 
         # req(!is.null(liveReplaceBlkTable()) && !is.null(rowReplacementIndex))

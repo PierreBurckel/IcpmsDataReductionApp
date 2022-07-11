@@ -37,12 +37,10 @@ mean.EstimationUncertaintyDataCouple <- function(...) {
   return(EstimationUncertaintyDataCouple$new(fullElementsNames,
                                              
                                              estimationMatrix %>%
-                                             colMeans() %>%
-                                             matrix(nrow = 1),
+                                             colMeans(),
                                              
                                              estimationMatrix %>%
-                                             GMCM:::colSds() %>%
-                                             matrix(nrow = 1),
+                                             GMCM:::colSds(),
                                              
                                              "sd")
   )
@@ -177,8 +175,8 @@ DataModifier <- R6Class("DataModifier",
 EstimationUncertaintyDataCouple <- R6Class("EstimationUncertaintyDataCouple",
   public = list(
    initialize = function(elementFullNames, estimatedData, uncertaintyData, uncertaintyType) {
-     if (!is.matrix(estimatedData) | !is.matrix(uncertaintyData)) {
-       stop("estimation and uncertainty data must be matrixes")
+     if (!is_tibble(estimatedData) | !is_tibble(uncertaintyData)) {
+       stop("estimation and uncertainty data must be tibbles")
      }
      if (length(elementFullNames) != ncol(estimatedData) | length(elementFullNames) != ncol(uncertaintyData)) {
        stop("incompatible element name number and column number in estimation and/or uncertainty")
@@ -190,12 +188,13 @@ EstimationUncertaintyDataCouple <- R6Class("EstimationUncertaintyDataCouple",
      names(private$elementFullNames) <- elementFullNames
      private$estimatedData <- estimatedData
      if (uncertaintyType == "rsd") {
-       private$sdData <- self$createEmptyMatrixOfEudcSize()
-       notApplicableUncertaintyData <- apply(uncertaintyData, c(1,2), is.na)
-       notApplicableEstimatedData <- apply(estimatedData, c(1,2), is.na)
-       private$sdData[!notApplicableUncertaintyData] <- uncertaintyData[!notApplicableUncertaintyData] / 100 * estimatedData[!notApplicableUncertaintyData]
-       private$sdData[notApplicableUncertaintyData & !notApplicableEstimatedData] <- 0
-       private$sdData[notApplicableEstimatedData] <- NA
+       private$sdData <- uncertaintyData / 100 * estimatedData
+       # private$sdData <- self$createEmptyMatrixOfEudcSize()
+       # notApplicableUncertaintyData <- apply(uncertaintyData, c(1,2), is.na)
+       # notApplicableEstimatedData <- apply(estimatedData, c(1,2), is.na)
+       # private$sdData[!notApplicableUncertaintyData] <- uncertaintyData[!notApplicableUncertaintyData] / 100 * estimatedData[!notApplicableUncertaintyData]
+       # private$sdData[notApplicableUncertaintyData & !notApplicableEstimatedData] <- 0
+       # private$sdData[notApplicableEstimatedData] <- NA
      }
      else if (uncertaintyType == "sd") {
        private$sdData <- uncertaintyData
@@ -250,6 +249,7 @@ EstimationUncertaintyDataCouple <- R6Class("EstimationUncertaintyDataCouple",
      return(private$sdData)
    },
   getRsd = function() {
+    browser()
     notApplicableData <- apply(private$estimatedData, c(1,2), is.na)
     applicableEstimationEqualsToZero <- (private$estimatedData[!notApplicableData] == 0)
     rsdData <- self$createEmptyMatrixOfEudcSize()
@@ -262,7 +262,7 @@ EstimationUncertaintyDataCouple <- R6Class("EstimationUncertaintyDataCouple",
   createEmptyMatrixOfEudcSize = function() {
     rowNumber = nrow(private$estimatedData)
     columnNumber = ncol(private$estimatedData)
-    return(matrix(nrow = rowNumber, ncol = columnNumber))
+    return(as_tibble(matrix(nrow = rowNumber, ncol = columnNumber)))
   },
   `[` = function(i, j) {
     EstimationUncertaintyDataCouple$new(elementFullNames = private$elementFullNames[j],
@@ -481,7 +481,7 @@ mergeMatrixes <- function(matrix1, matrix2) {
   
   matrix1 <- as.matrix(matrix1)
   matrix2 <- as.matrix(matrix2)
-  mergedMatrix <- matrix(0, nrow = rowNumber, ncol = 2 * columnNumber)
+  mergedMatrix <- as_tibble(matrix(0, nrow = rowNumber, ncol = 2 * columnNumber))
   
   firstMatrixInsertionIndex <- seq(from = 1, to = 2 * columnNumber, by = 2)
   secondMatrixInsertionIndex <- seq(from = 2, to = 2 * columnNumber, by = 2)
@@ -772,8 +772,8 @@ createinternalStandardEudcAdaptedToAnalytes <- function(internalStandardToAnalyt
   analyteNames <- parameters$analyteNames
   istdColumnPosition <- 2
   
-  estimationMatrix <- matrix(nrow = parameters$sampleNumber, ncol = parameters$analyteNumber)
-  uncertaintyMatrix <- matrix(nrow = parameters$sampleNumber, ncol = parameters$analyteNumber)
+  estimationMatrix <- as_tibble(matrix(nrow = parameters$sampleNumber, ncol = parameters$analyteNumber))
+  uncertaintyMatrix <- as_tibble(matrix(nrow = parameters$sampleNumber, ncol = parameters$analyteNumber))
   
   for (analyteIncrement in seq(1, parameters$analyteNumber)){
     analyteSpecificIstd <- internalStandardToAnalyteAssignmentDataframe[analyteIncrement, istdColumnPosition]

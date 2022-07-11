@@ -1,3 +1,15 @@
+#' Module responsible for defining the drift corrected elements, their specific drift
+#' index and their model
+#' 
+#' @return A list containing reactiveValues @elementSpecificDriftModels @listOfElementSpecificDriftIndex
+#' and a reactiveVal @driftCorrectedElements
+#' 
+#' @elementSpecificDriftModels() (list, lm)  @listOfElementSpecificDriftIndex (list, num)
+#' @driftCorrectedElements (bool)
+
+
+C_LETTER_KEYCODE <- 67
+
 driftProcessing_ui <- function(id) {
   ns <- NS(id)
   tabPanel("Drift verification/processing",
@@ -10,14 +22,14 @@ driftProcessing_ui <- function(id) {
                numericInput(ns("driftTab_numericInput_analyteNumber"), "Element number", 1),
                actionButton(ns("setDriftCorrection"), "Set ISTD correction"),
                textOutput(ns("warningDrifr")),
-               tags$script('
+               tags$script(paste0('
               pressedKeyCount = 0;
               $(document).on("keydown", function (e) {
                  var tag = e.target.id;
-                 Shiny.onInputChange("tagId", tag);
-                 Shiny.onInputChange("pressedKey", pressedKeyCount++);
-                 Shiny.onInputChange("pressedKeyId", e.which);
-              });'
+                 Shiny.onInputChange("', ns("tagId"), '", tag);
+                 Shiny.onInputChange("', ns("pressedKey"), '", pressedKeyCount++);
+                 Shiny.onInputChange("', ns("pressedKeyId"), '", e.which);
+              });')
                )),
              mainPanel(
                DT::DTOutput(ns("smpBlkCorTable")),
@@ -32,6 +44,8 @@ driftProcessing_server <- function(id, fileUpload, reactiveExpressions, indexCre
   moduleServer(
     id = id,
     module = function(input, output, session) {
+      
+      ns <- session$ns
       
       customIndex <- reactive({indexCreation$custom})
       process <- reactive({reactiveExpressions$process})
@@ -142,8 +156,10 @@ driftProcessing_server <- function(id, fileUpload, reactiveExpressions, indexCre
       })
       
       observeEvent(input$pressedKey, {
-        if (is.null(driftCorrectedElements()) || input$pressedKeyId != C_LETTER_KEYCODE || input$tagId != "driftTab_numericInput_analyteNumber"){return()}
-        driftCorrectedElements()[input$driftTab_numericInput_analyteNumber] <- !driftCorrectedElements()[input$driftTab_numericInput_analyteNumber]
+        if (is.null(driftCorrectedElements()) || input$pressedKeyId != C_LETTER_KEYCODE || input$tagId != ns("driftTab_numericInput_analyteNumber")){return()}
+        currentDriftCorrectedElements <- driftCorrectedElements()
+        currentDriftCorrectedElements[input$driftTab_numericInput_analyteNumber] <- !currentDriftCorrectedElements[input$driftTab_numericInput_analyteNumber]
+        driftCorrectedElements(currentDriftCorrectedElements)
       })
       
       observeEvent(customIndex(), {
