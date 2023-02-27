@@ -56,7 +56,9 @@ reactiveExpressions_server <- function(id, fileUpload, indexCreation, blankProce
       driftCorrectedElements <- reactive(driftProcessing$driftCorrectedElements())
       
       process$countsPerSecond <- reactive({
-        countsPerSecond <- extracted()$main %>% select(ends_with("_CPS"))
+        extracted()$main %>%
+          select(ends_with("_CPS")) %>%
+          as.matrix()
         # countsPerSecond <- extracted()$main[ , extracted()$secondRowOfMain == "CPS", drop=FALSE]
         # numericalCountsPerSecond <- apply(countsPerSecond, c(1,2), is.numeric)
         # countsPerSecond[!numericalCountsPerSecond] <- NA
@@ -64,16 +66,21 @@ reactiveExpressions_server <- function(id, fileUpload, indexCreation, blankProce
       })
       
       process$analyteCountsPerSecond <- reactive({
-        browser()
-        process$countsPerSecond() %>% select(paste(parameters()$analyteNames, "CPS", sep = "_"))
+        extracted()$main %>%
+          select(paste(parameters()$analyteNames, "CPS", sep = "_")) %>%
+          as.matrix()
       })
       
       process$internalStandardCountsPerSecond <- reactive({
-        process$countsPerSecond() %>% select(paste(parameters()$internalStandardNames, "CPS", sep = "_"))
+        extracted()$main %>%
+          select(paste(parameters()$internalStandardNames, "CPS", sep = "_")) %>%
+          as.matrix()
       })
       
       process$relativeStandardDeviation <- reactive({
-        relativeStandardDeviation <- extracted()$main %>% select(ends_with("_CPS RSD"))
+        extracted()$main %>%
+          select(ends_with("_CPS RSD")) %>%
+          as.matrix()
         # relativeStandardDeviation <- extracted()$main[ , extracted()$secondRowOfMain == "CPS RSD", drop=FALSE]
         # numericalRelativeStandardDeviation <- apply(relativeStandardDeviation, c(1,2), is.numeric)
         # relativeStandardDeviation[!numericalRelativeStandardDeviation] <- NA
@@ -81,11 +88,15 @@ reactiveExpressions_server <- function(id, fileUpload, indexCreation, blankProce
       })
       
       process$analyteCountsPerSecondRelativeStandardDeviation <- reactive({
-        process$relativeStandardDeviation() %>% select(paste(parameters()$analyteNames, "CPS RSD", sep = "_"))
+        extracted()$main %>%
+          select(paste(parameters()$analyteNames, "CPS RSD", sep = "_")) %>%
+          as.matrix()
       })
       
       process$internalStandardCountsPerSecondRelativeStandardDeviation <- reactive({
-        process$relativeStandardDeviation() %>% select(paste(parameters()$internalStandardNames, "CPS RSD", sep = "_"))
+        extracted()$main %>%
+          select(paste(parameters()$internalStandardNames, "CPS RSD", sep = "_")) %>%
+          as.matrix()
       })
       
       process$analyteCountsPerSecondEudc <- reactive({
@@ -112,8 +123,8 @@ reactiveExpressions_server <- function(id, fileUpload, indexCreation, blankProce
         else
         {
           return(EstimationUncertaintyDataCouple$new(elementFullNames = parameters()$analyteNames,
-                                                     estimatedData = as_tibble(matrix(1, nrow = parameters()$sampleNumber, ncol = parameters()$analyteNumber)),
-                                                     uncertaintyData = as_tibble(matrix(0, nrow = parameters()$sampleNumber, ncol = parameters()$analyteNumber)),
+                                                     estimatedData = matrix(1, nrow = parameters()$sampleNumber, ncol = parameters()$analyteNumber),
+                                                     uncertaintyData = matrix(0, nrow = parameters()$sampleNumber, ncol = parameters()$analyteNumber),
                                                      uncertaintyType = "sd"))
         }
       })
@@ -130,8 +141,8 @@ reactiveExpressions_server <- function(id, fileUpload, indexCreation, blankProce
         else
         {
           EstimationUncertaintyDataCouple$new(elementFullNames = parameters()$analyteNames,
-                                              estimatedData = as_tibble(matrix(0, ncol = parameters()$analyteNumber, nrow = parameters()$sampleNumber)),
-                                              uncertaintyData = as_tibble(matrix(0, ncol = parameters()$analyteNumber, nrow = parameters()$sampleNumber)),
+                                              estimatedData = matrix(0, ncol = parameters()$analyteNumber, nrow = parameters()$sampleNumber),
+                                              uncertaintyData = matrix(0, ncol = parameters()$analyteNumber, nrow = parameters()$sampleNumber),
                                               uncertaintyType = "sd")
         }
       })
@@ -144,8 +155,8 @@ reactiveExpressions_server <- function(id, fileUpload, indexCreation, blankProce
         
         if (driftCorrectedElements() %>% is.null()) {
           return(EstimationUncertaintyDataCouple$new(elementFullNames = parameters()$analyteNames,
-                                                     estimatedData = as_tibble(matrix(1, nrow = parameters()$sampleNumber, ncol = parameters()$analyteNumber)),
-                                                     uncertaintyData = as_tibble(matrix(0, nrow = parameters()$sampleNumber, ncol = parameters()$analyteNumber)),
+                                                     estimatedData = matrix(1, nrow = parameters()$sampleNumber, ncol = parameters()$analyteNumber),
+                                                     uncertaintyData = matrix(0, nrow = parameters()$sampleNumber, ncol = parameters()$analyteNumber),
                                                      uncertaintyType = "sd"))
         }
         
@@ -179,8 +190,8 @@ reactiveExpressions_server <- function(id, fileUpload, indexCreation, blankProce
           }
         }
         return(EstimationUncertaintyDataCouple$new(elementFullNames = parameters()$analyteNames,
-                                                   estimatedData = as_tibble(driftMatrix),
-                                                   uncertaintyData = as_tibble(matrix(0, nrow = parameters()$sampleNumber, ncol = parameters()$analyteNumber)),
+                                                   estimatedData = driftMatrix,
+                                                   uncertaintyData = matrix(0, nrow = parameters()$sampleNumber, ncol = parameters()$analyteNumber),
                                                    uncertaintyType = "sd"))
       })
       
