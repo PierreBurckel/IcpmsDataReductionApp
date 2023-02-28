@@ -57,7 +57,20 @@ indexCreation_server <- function(id, fileUpload, reactiveExpressions) {
           rowIndexInMain$index_rowsMatchingRegularExpression <- seq(parameters()$sampleNumber)
         }
         else {
-          rowIndexInMain$index_rowsMatchingRegularExpression <- grep(searchWhat, headerRows)
+          rowIndexInMain$index_rowsMatchingRegularExpression <- tryCatch(
+            {
+              grep(searchWhat, headerRows)
+            },
+            error=function(cond) {
+              message("Error, impossible to evaluate regular expression")
+              return(NULL)
+            },
+            warning=function(cond) {
+              message("Warning raised evaluating regular expression")
+              return(NULL)
+            }
+          )
+          # rowIndexInMain$index_rowsMatchingRegularExpression <- grep(searchWhat, headerRows)
         }
         if (displayWhat == "ISTD" & !is.null(process()$internalStandardCountsPerSecondEudc()$getEstimation())){
           indexTable = cbind(headerRows[rowIndexInMain$index_rowsMatchingRegularExpression], process()$internalStandardCountsPerSecondEudc()$getEstimation()[rowIndexInMain$index_rowsMatchingRegularExpression,])
