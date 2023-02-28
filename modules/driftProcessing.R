@@ -56,7 +56,6 @@ driftProcessing_server <- function(id, fileUpload, reactiveExpressions, indexCre
       driftCorrectedElements <- reactiveVal()
       
       observeEvent(input$setAsDriftIndex, {
-        
         req(input$selectDriftIndex)
         
         if (is.null(driftCorrectedElements())) {
@@ -75,7 +74,8 @@ driftProcessing_server <- function(id, fileUpload, reactiveExpressions, indexCre
           lc <- max(which((1:input$driftTab_numericInput_analyteNumber)%%5 == 0))
         }
         uc <- min(lc + 4, parameters()$analyteNumber)
-        driftTable <- cbind(parameters()[["categoricalDataAndTime"]][ , "Sample Name"][driftIndex()],driftSignal[driftIndex(),lc:uc])
+        # categoricalDataAndTime in parameters is a tibble, it needs to be dropped or sliced as a 2d array (this is what we do here)
+        driftTable <- cbind(parameters()[["categoricalDataAndTime"]][ , "Sample Name"][driftIndex(),],driftSignal[driftIndex(),lc:uc])
         names(driftTable) <- c("Sample Name", names(driftTable)[2:length(driftTable)])
         driftTable
         
@@ -108,11 +108,9 @@ driftProcessing_server <- function(id, fileUpload, reactiveExpressions, indexCre
       yminus <- reactive({(process()$analyteToIstdRatioBlankCorrected()$getEstimation() - process()$analyteToIstdRatioBlankCorrected()$getSd())[driftIndex(), input$driftTab_numericInput_analyteNumber]})
       
       output$driftPlot <- renderPlot({
-        
         if (is.null(process()$analyteToIstdRatioBlankCorrected()$getEstimation()) | is.null(driftIndex())){return()}
         
         elementFullName <- parameters()$analyteNames[input$driftTab_numericInput_analyteNumber]
-        
         driftTime <- parameters()$deltaTime()[driftIndex()]
         driftValue <- process()$analyteToIstdRatioBlankCorrected()$getEstimation()[driftIndex(),input$driftTab_numericInput_analyteNumber]
         driftSd <- process()$analyteToIstdRatioBlankCorrected()$getSd()[driftIndex(),input$driftTab_numericInput_analyteNumber]
@@ -176,7 +174,7 @@ driftProcessing_server <- function(id, fileUpload, reactiveExpressions, indexCre
         for (elementFullName in parameters()$analyteNames) {
           listOfElementSpecificDriftIndex[[elementFullName]] <- getElementSpecificDriftIndex(elementFullName = elementFullName,
                                                                                              standardDataFrame = extracted()$standard, 
-                                                                                             standardIdentificationColumn = parameters()[["categoricalDataAndTime"]][ , "Level"],
+                                                                                             standardIdentificationColumn = parameters()[["categoricalDataAndTime"]][ , "Level",drop = TRUE],
                                                                                              driftIndex = driftIndex())
         }
         return(listOfElementSpecificDriftIndex)

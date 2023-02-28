@@ -210,7 +210,7 @@ reactiveExpressions_server <- function(id, fileUpload, indexCreation, blankProce
           elementFullName <- parameters()$analyteNames[elementIndex]
           
           calibrationSignalUncertaintyConcentration <- getCalibrationData(elementFullName = elementFullName, signalMatrix = process$analyteToIstdRatioBlankCorrected(),
-                                                                          standardIdentificationColumn = parameters()[["categoricalDataAndTime"]][ , "Level"], standardDataFrame = extracted()$standard)
+                                                                          standardIdentificationColumn = parameters()[["categoricalDataAndTime"]][ , "Level",drop = TRUE], standardDataFrame = extracted()$standard)
           
           if (!is.null(calibrationSignalUncertaintyConcentration)) {
             calibrationModel <- lm(Concentration ~ 0+Signal, data=as.data.frame(calibrationSignalUncertaintyConcentration))

@@ -62,7 +62,6 @@ blankProcessing_server <- function(id, fileUpload, reactiveExpressions, indexCre
       #Render ISTD table if all conditions are met
       output$blankTab_table <- DT::renderDT(datatable({
         
-        
         blank_processOrView = input$sliderInput_BlankTab_processOrView
         
         if (blank_processOrView == "view") 

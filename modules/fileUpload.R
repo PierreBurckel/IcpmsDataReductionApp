@@ -175,8 +175,11 @@ fileUpload_server <- function(id) {
       })
       
       parameters$deltaTime <- reactive({
-        deltaTime <- as.numeric(parameters[["categoricalDataAndTime"]][ , "Time"] - 
-                                  parameters[["categoricalDataAndTime"]][1, "Time"])
+        # categoricalDataAndTime are tibbles, tibble format needs to be dropped to perform operations
+        # deltaTime is a numeric vector and gives the time in seconds since first sample
+        # as.numeric removes the timestamp and converts to pure numeric vector
+        deltaTime <- as.numeric(parameters[["categoricalDataAndTime"]][, "Time",drop=TRUE] - 
+                                  parameters[["categoricalDataAndTime"]][1, "Time",drop=TRUE])
         return(deltaTime)
       })
       

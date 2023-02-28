@@ -34,64 +34,49 @@ indexCreation_server <- function(id, fileUpload, reactiveExpressions) {
       parameters <- reactive({fileUpload$parameters})
       process <- reactive({reactiveExpressions$process})
       
-      indexTable <- tibble()
+      indexTable <- reactive({
+        searchWhere = input$searchIndexwhere
+        firstColumnName = ""
+        if (searchWhere == 'smp'){
+          headerRows = parameters()[["categoricalDataAndTime"]][ , "Sample Name", drop = TRUE]
+          firstColumnName = "Sample Name"}
+        else if (searchWhere == 'lvl'){
+          headerRows = parameters()[["categoricalDataAndTime"]][ , "Level", drop = TRUE]
+          firstColumnName = "Level"}
+        else if (searchWhere == 'type'){
+          headerRows = parameters()[["categoricalDataAndTime"]][ , "Type", drop = TRUE]
+          firstColumnName = "Type"}
+        searchWhat = input$searchIndexwhat
+        searchType = input$searchIndexhow
+        displayWhat = input$searchIndexDisplay
+        indexTable <- cbind(headerRows, process()$internalStandardCountsPerSecondEudc()$getEstimation())
+        if (searchType == 'ematch'){
+          searchWhat = paste("^", searchWhat, "$", sep="")
+        }
+        if (searchWhat == ""){
+          rowIndexInMain$index_rowsMatchingRegularExpression <- seq(parameters()$sampleNumber)
+        }
+        else {
+          rowIndexInMain$index_rowsMatchingRegularExpression <- grep(searchWhat, headerRows)
+        }
+        if (displayWhat == "ISTD" & !is.null(process()$internalStandardCountsPerSecondEudc()$getEstimation())){
+          indexTable = cbind(headerRows[rowIndexInMain$index_rowsMatchingRegularExpression], process()$internalStandardCountsPerSecondEudc()$getEstimation()[rowIndexInMain$index_rowsMatchingRegularExpression,])
+          colnames(indexTable) <- c(firstColumnName, parameters()$internalStandardNames)
+        }
+        else if (displayWhat == "analytes" & !is.null(process()$analyteCountsPerSecondEudc()$getEstimation())){
+          indexTable = cbind(headerRows[rowIndexInMain$index_rowsMatchingRegularExpression], process()$analyteCountsPerSecondEudc()$getEstimation()[rowIndexInMain$index_rowsMatchingRegularExpression,])
+          colnames(indexTable) <- c(firstColumnName, parameters()$analyteNames)
+        }
+        indexTable
+      })
+      # indexTable <- tibble()
       
       observeEvent(parameters()$sampleNumber, {
         rowIndexInMain$custom[["All"]] <- which(rep(x = TRUE, parameters()$sampleNumber))
       })
       
       output$indexTable <- DT::renderDT(datatable({
-        searchWhere = input$searchIndexwhere
-        firstColumnName = ""
-        
-        if (searchWhere == 'smp'){
-          headerRows = parameters()[["categoricalDataAndTime"]][ , "Sample Name"]
-          firstColumnName = "Sample Name"}
-        else if (searchWhere == 'lvl'){
-          headerRows = parameters()[["categoricalDataAndTime"]][ , "Level"]
-          firstColumnName = "Level"}
-        else if (searchWhere == 'type'){
-          headerRows = parameters()[["categoricalDataAndTime"]][ , "Type"]
-          firstColumnName = "Type"}
-        
-        searchWhat = input$searchIndexwhat
-        searchType = input$searchIndexhow
-        displayWhat = input$searchIndexDisplay
-        
-        indexTable <<- bind_cols(headerRows, process()$internalStandardCountsPerSecondEudc()$getEstimation())
-        
-        if (searchType == 'ematch') {
-          indexTable <<- indexTable %>% filter(!!sym(firstColumnName) == searchWhat)
-        }
-        
-        if (searchWhat == "") {
-          indexTable <<- indexTable
-        }
-        else {
-          indexTable <<- indexTable %>% filter(grepl(searchWhat, !!sym(firstColumnName)))
-        }
-        
-        # if (searchType == 'ematch'){searchWhat = paste("^", searchWhat, "$", sep="")}
-        # 
-        # if (searchWhat == ""){
-        #   rowIndexInMain$index_rowsMatchingRegularExpression <- seq(parameters()$sampleNumber)
-        # }
-        # else{
-        #   rowIndexInMain$index_rowsMatchingRegularExpression <- grep(searchWhat, headerRows)
-        # }
-        # 
-        # if (displayWhat == "ISTD" & !is.null(process()$internalStandardCountsPerSecondEudc()$getEstimation())){
-        #   indexTable = cbind(headerRows[rowIndexInMain$index_rowsMatchingRegularExpression, ], process()$internalStandardCountsPerSecondEudc()$getEstimation()[rowIndexInMain$index_rowsMatchingRegularExpression,])
-        #   colnames(indexTable) <- c(firstColumnName, parameters()$internalStandardNames)
-        # }
-        # else if (displayWhat == "analytes" & !is.null(process()$analyteCountsPerSecondEudc()$getEstimation())){
-        #   indexTable = cbind(headerRows[rowIndexInMain$index_rowsMatchingRegularExpression, ], process()$analyteCountsPerSecondEudc()$getEstimation()[rowIndexInMain$index_rowsMatchingRegularExpression,])
-        #   colnames(indexTable) <- c(firstColumnName, parameters()$analyteNames)
-        # }
-        # else {return()}
-        
-        indexTable
-        
+        indexTable()
       }, extensions = c('Scroller', 'Buttons'),
       options = list(dom = 'Bt', ordering=F, autoWidth = TRUE,
                      scrollX = TRUE, scrollY = 300, deferRender = TRUE, scroller = TRUE,
@@ -118,14 +103,13 @@ indexCreation_server <- function(id, fileUpload, reactiveExpressions) {
       indexTableProxy <- DT::dataTableProxy("indexTable", session = session)
       
       observeEvent(input$indexSelectAll, {
-        # browser()
         if (identical(indexTab_selectedRows(), seq(nrow(indexTable))))
         {
           DT::selectRows(indexTableProxy, NULL)
         }
         else
         {
-          DT::selectRows(indexTableProxy, seq(nrow(indexTable)))
+          DT::selectRows(indexTableProxy, seq(nrow(indexTable())))
         }
         
       })
