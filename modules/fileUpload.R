@@ -145,12 +145,21 @@ fileUpload_server <- function(id) {
         extracted$standard <- createStandardDataFrameFromFile(dataPath = standardFileDatapath, sep = input$csvDelimitation)
         if (is.null(extracted$standard)) return(FALSE)
         
+        # Extraction of the internal standard assignment information
+        if (!is.null(internalStandardFileDatapath)) {
+          extracted$internalStandardToAnalyteAssignment <- read.table(internalStandardFileDatapath,
+                                                                      skip = 1, header = FALSE,
+                                                                      sep = input$csvDelimitation,
+                                                                      stringsAsFactors=FALSE)
+        }
+        
         # Parameters computation
         parameters$sampleNumber <- nrow(extracted$main)
         parameters$analyteNames <- firstRowOfMain[secondRowOfMain == "CPS" & !grepl("ISTD", firstRowOfMain)]
         parameters$analyteNumber <- length(parameters$analyteNames)
         parameters$internalStandardNames <- firstRowOfMain[secondRowOfMain == "CPS" & grepl("ISTD", firstRowOfMain)]
         parameters$internalStandardNumber <- length(parameters$internalStandardNames)
+        parameters$csvDelimitation <- input$csvDelimitation
         
         sampleTime <- extracted$main %>% 
           select("Sample_Acq. Date-Time") %>% 

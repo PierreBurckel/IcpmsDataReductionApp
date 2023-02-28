@@ -776,7 +776,7 @@ createinternalStandardEudcAdaptedToAnalytes <- function(internalStandardToAnalyt
   estimationMatrix <- matrix(nrow = parameters$sampleNumber, ncol = parameters$analyteNumber)
   uncertaintyMatrix <- matrix(nrow = parameters$sampleNumber, ncol = parameters$analyteNumber)
   
-  for (analyteIncrement in seq(1, parameters$analyteNumber)){
+  for (analyteIncrement in seq(parameters$analyteNumber)){
     analyteSpecificIstd <- internalStandardToAnalyteAssignmentDataframe[analyteIncrement, istdColumnPosition]
     estimationMatrix[ , analyteIncrement] <- internalStandardCountsPerSecondEudc$getEstimation()[ , analyteSpecificIstd]
     uncertaintyMatrix[ , analyteIncrement] <- internalStandardCountsPerSecondEudc$getSd()[, analyteSpecificIstd]
