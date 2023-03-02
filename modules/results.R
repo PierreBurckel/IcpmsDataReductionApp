@@ -40,7 +40,7 @@ results_server <- function(id, indexCreation, reactiveExpressions, fileUpload) {
         
         downloadTabDataSignal <- switch(input$dataReductionStateSelection,
                                         "Counts per second" = process()$analyteCountsPerSecond(),
-                                        "Interference counts per second" = process()$interferenceCountsPerSeconds$getEstimation(),
+                                        "Interference counts per second" = process()$interferenceCountsPerSecond()$getEstimation(),
                                         "Interference corrected counts per second" = process()$interferenceCorrectedCountsPerSecond()$getEstimation(),
                                         "Internal Standard matrix (adapted for analytes)" = process()$internalStandardEudcAdaptedToAnalytes()$getEstimation(),
                                         "Internal Standard ratio" = process()$analyteToIstdRatio()$getEstimation(),
@@ -56,7 +56,7 @@ results_server <- function(id, indexCreation, reactiveExpressions, fileUpload) {
         
         downloadTabDataRsd <- switch(input$dataReductionStateSelection,
                                      "Counts per second" = process()$analyteCountsPerSecondRelativeStandardDeviation(),
-                                     "Interference counts per second" = process()$interferenceCountsPerSeconds$getRsd(),
+                                     "Interference counts per second" = process()$interferenceCountsPerSecond()$getRsd(),
                                      "Interference corrected counts per second" = process()$interferenceCorrectedCountsPerSecond()$getRsd(),
                                      "Internal Standard matrix (adapted for analytes)" = process()$internalStandardEudcAdaptedToAnalytes()$getRsd(),
                                      "Internal Standard ratio" = process()$analyteToIstdRatio()$getRsd(),

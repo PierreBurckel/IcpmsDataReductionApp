@@ -39,7 +39,7 @@ reactiveExpressions_ui <- function(id) {
   )
 }
 
-reactiveExpressions_server <- function(id, fileUpload, indexCreation, blankProcessing, driftProcessing) {
+reactiveExpressions_server <- function(id, fileUpload, indexCreation, interferenceCorrection, blankProcessing, driftProcessing) {
   moduleServer(
     id = id,
     module = function(input, output, session) {
@@ -106,6 +106,33 @@ reactiveExpressions_server <- function(id, fileUpload, indexCreation, blankProce
                                             uncertaintyType = "rsd")
       })
       
+      process$analyteCountsPerSecondBlankEudc <- reactive({
+        if (input$enableBlankCorrection == TRUE)
+        {
+          process$analyteCountsPerSecondEudc() %>% applyModifierToEudc(blankProcessing$blankModifiers())
+        }
+        else
+        {
+          EstimationUncertaintyDataCouple$new(elementFullNames = parameters()$analyteNames,
+                                              estimatedData = matrix(0, ncol = parameters()$analyteNumber, nrow = parameters()$sampleNumber),
+                                              uncertaintyData = matrix(0, ncol = parameters()$analyteNumber, nrow = parameters()$sampleNumber),
+                                              uncertaintyType = "sd")
+        }
+      })
+      
+      process$analyteCountsPerSecondBlankCorrected <- reactive({
+        process$analyteCountsPerSecondEudc()$subtract(process$analyteCountsPerSecondBlankEudc())
+      })
+      
+      process$interferenceCountsPerSecond <- reactive({
+        process$analyteCountsPerSecondBlankCorrected() %>% applyCumulativeModifierToEudc(process$analyteCountsPerSecondEudc(), interferenceCorrection$interferenceModifiers())
+      })
+      
+      process$interferenceCorrectedCountsPerSecond <- reactive({
+        interferenceCorrected <- process$analyteCountsPerSecondEudc()$subtract(process$interferenceCountsPerSecond())
+        interferenceCorrected$zeroOutNegatives()
+      })
+      
       process$internalStandardCountsPerSecondEudc <- reactive({
         EstimationUncertaintyDataCouple$new(elementFullNames = parameters()$internalStandardNames,
                                             estimatedData = process$internalStandardCountsPerSecond(),
@@ -130,7 +157,7 @@ reactiveExpressions_server <- function(id, fileUpload, indexCreation, blankProce
       })
       
       process$analyteToIstdRatio <- reactive({
-        process$analyteCountsPerSecondEudc()$divideBy(process$internalStandardEudcAdaptedToAnalytes())
+        process$interferenceCorrectedCountsPerSecond()$divideBy(process$internalStandardEudcAdaptedToAnalytes())
       })
       
       process$analyteToIstdBlankRatio <- reactive({

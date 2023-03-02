@@ -74,6 +74,13 @@ mean.EstimationUncertaintyDataCouple <- function(...) {
 #   EstimationUncertaintyDataCouple$new(fullElementsNames, fullEstimation, fullEstimation, "sd")
 # }
 
+createBlankEudc <- function(elementFullNames, nrow) {
+  return(EstimationUncertaintyDataCouple$new(elementFullNames = elementFullNames,
+                                             estimatedData = matrix(0, ncol = length(elementFullNames), nrow = nrow),
+                                             uncertaintyData = matrix(0, ncol = length(elementFullNames), nrow = nrow),
+                                             uncertaintyType = "sd"))
+}
+
 applyModifierToEudc <- function(eudcToBeModified, modifierList) {
   modifiedEudc <- eudcToBeModified
   for (dataModifier in modifierList) {
@@ -81,6 +88,20 @@ applyModifierToEudc <- function(eudcToBeModified, modifierList) {
     modifiedEudc[replacedLines] <- dataModifier$apply(eudcToBeModified)[replacedLines]
   }
   return(modifiedEudc)
+}
+
+applyCumulativeModifierToEudc <- function(cps_bc, cps, modifierList) {
+  cumulativeEudc <- createBlankEudc(cps_bc$getElementFullNames(),
+                                    cps_bc$getSampleNumber())
+  for (dataModifier in modifierList) {
+    replacedLines <- dataModifier$getLinesToBeReplaced()
+    interferenceFactorEudc <- dataModifier$apply(cps_bc)
+    interferenceCPSEudc <- createBlankEudc(cps_bc$getElementFullNames(),
+                                           cps_bc$getSampleNumber())
+    interferenceCPSEudc[ , dataModifier$getColumnsToBeReplaced()] <- cps$multiplyBy(interferenceFactorEudc)[ , dataModifier$getColumnsUsedForReplacement()]
+    cumulativeEudc <- cumulativeEudc$add(interferenceCPSEudc)
+  }
+  return(cumulativeEudc)
 }
 # 
 DataModifier <- R6Class("DataModifier",
@@ -102,6 +123,15 @@ DataModifier <- R6Class("DataModifier",
                           },
                           getLinesToBeReplaced = function() {
                             return(private$modificationArguments$linesToBeReplaced)
+                          },
+                          getLinesUsedForReplacement = function() {
+                            return(private$modificationArguments$linesUsedForReplacement)
+                          },
+                          getColumnsToBeReplaced = function() {
+                            return(private$modificationArguments$columnsToBeReplaced)
+                          },
+                          getColumnsUsedForReplacement = function() {
+                            return(private$modificationArguments$columnsUsedForReplacement)
                           }
                         ),
                         private = list(
@@ -140,6 +170,46 @@ DataModifier <- R6Class("DataModifier",
                             modifiedEudc <- eudcToModify
                             modifiedEudc[linesToBeReplaced] <- mean(eudcToModify[linesUsedForReplacement])
                             return(modifiedEudc)
+                          },
+                          interferenceCorrection = function(eudcToModify, modificationArguments) {
+                            linesToBeReplaced = modificationArguments$linesToBeReplaced
+                            linesUsedForReplacement = modificationArguments$linesUsedForReplacement
+                            columnsToBeReplaced = modificationArguments$columnsToBeReplaced
+                            columnsUsedForReplacement = modificationArguments$columnsUsedForReplacement
+                            cumulativeEudc <- createBlankEudc(eudcToModify$getElementFullNames(),
+                                                              eudcToModify$getSampleNumber())
+                            if (is.null(linesUsedForReplacement)) {
+                              warning("Trying to correct interference with empty index")
+                              return(modifiedEudc)
+                            }
+                            interferenceFactor <- eudcToModify[linesUsedForReplacement, columnsToBeReplaced]$divideBy(eudcToModify[linesUsedForReplacement, columnsUsedForReplacement])
+                            if (length(linesUsedForReplacement) > 1) {
+                              interferenceFactor <- mean(interferenceFactor)
+                            }
+                            blankMatrix <- matrix(0,
+                                                  nrow = eudcToModify$getSampleNumber(),
+                                                  ncol = eudcToModify$getElementNumber())
+                            interferenceFactorEstimationMatrix <- blankMatrix
+                            interferenceFactorUncertaintyMatrix <- blankMatrix
+                            interferenceFactorEstimationMatrix[ , columnsUsedForReplacement] <- rep(interferenceFactor$getEstimation(),
+                                                                                              eudcToModify$getSampleNumber())
+                            interferenceFactorUncertaintyMatrix[ , columnsUsedForReplacement] <- rep(interferenceFactor$getSd(),
+                                                                                              eudcToModify$getSampleNumber())
+                            interferenceFactorEudc <- EstimationUncertaintyDataCouple$new(elementFullNames = eudcToModify$getElementFullNames(),
+                                                                                          estimatedData = interferenceFactorEstimationMatrix,
+                                                                                          uncertaintyData = interferenceFactorUncertaintyMatrix,
+                                                                                          uncertaintyType = "sd")
+                            return(interferenceFactorEudc)
+                            # interferenceCountsPerSecondEudc <- interferenceFactorEudc[ ,columnsUsedForReplacement]$multiplyBy(eudcToModify[ ,columnsUsedForReplacement])
+                            # interferenceCPSEstimationMatrix <- blankMatrix
+                            # interferenceCPSUncertaintyMatrix <- blankMatrix
+                            # interferenceCPSEstimationMatrix[ , columnsToBeReplaced] <- interferenceCountsPerSecondEudc$getEstimation()
+                            # interferenceCPSUncertaintyMatrix[ , columnsToBeReplaced] <- interferenceCountsPerSecondEudc$getSd()
+                            # interferenceCPSEudc <- EstimationUncertaintyDataCouple$new(elementFullNames = eudcToModify$getElementFullNames(),
+                            #                                                               estimatedData = interferenceCPSEstimationMatrix,
+                            #                                                               uncertaintyData = interferenceCPSUncertaintyMatrix,
+                            #                                                               uncertaintyType = "sd")
+                            # return(interferenceCPSEudc)
                           }
                         )
 )
@@ -203,6 +273,16 @@ EstimationUncertaintyDataCouple <- R6Class("EstimationUncertaintyDataCouple",
      }
      colnames(private$estimatedData) <- elementFullNames
      colnames(private$sdData) <- elementFullNames
+   },
+   zeroOutNegatives = function() {
+     estimate <- private$estimatedData
+     estimate[estimate < 0] <- 0
+     uncertainty <- private$sdData
+     uncertainty[estimate < 0] <- 0
+     return(EstimationUncertaintyDataCouple$new(elementFullNames = private$elementFullNames,
+                                                estimatedData = estimate,
+                                                uncertaintyData = uncertainty,
+                                                uncertaintyType = "sd"))
    },
    divideBy = function(otherEudc) {
      estimate <- private$estimatedData / otherEudc$getEstimation()

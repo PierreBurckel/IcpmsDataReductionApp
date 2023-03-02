@@ -73,11 +73,11 @@ indexCreation_server <- function(id, fileUpload, reactiveExpressions) {
           # rowIndexInMain$index_rowsMatchingRegularExpression <- grep(searchWhat, headerRows)
         }
         if (displayWhat == "ISTD" & !is.null(process()$internalStandardCountsPerSecondEudc()$getEstimation())){
-          indexTable = cbind(headerRows[rowIndexInMain$index_rowsMatchingRegularExpression], process()$internalStandardCountsPerSecondEudc()$getEstimation()[rowIndexInMain$index_rowsMatchingRegularExpression,])
+          indexTable = cbind(headerRows[rowIndexInMain$index_rowsMatchingRegularExpression], process()$internalStandardCountsPerSecondEudc()$getEstimation()[rowIndexInMain$index_rowsMatchingRegularExpression,,drop = FALSE])
           colnames(indexTable) <- c(firstColumnName, parameters()$internalStandardNames)
         }
         else if (displayWhat == "analytes" & !is.null(process()$analyteCountsPerSecondEudc()$getEstimation())){
-          indexTable = cbind(headerRows[rowIndexInMain$index_rowsMatchingRegularExpression], process()$analyteCountsPerSecondEudc()$getEstimation()[rowIndexInMain$index_rowsMatchingRegularExpression,])
+          indexTable = cbind(headerRows[rowIndexInMain$index_rowsMatchingRegularExpression], process()$analyteCountsPerSecondEudc()$getEstimation()[rowIndexInMain$index_rowsMatchingRegularExpression,,drop = FALSE])
           colnames(indexTable) <- c(firstColumnName, parameters()$analyteNames)
         }
         indexTable
@@ -116,7 +116,7 @@ indexCreation_server <- function(id, fileUpload, reactiveExpressions) {
       indexTableProxy <- DT::dataTableProxy("indexTable", session = session)
       
       observeEvent(input$indexSelectAll, {
-        if (identical(indexTab_selectedRows(), seq(nrow(indexTable))))
+        if (identical(indexTab_selectedRows(), seq(nrow(indexTable()))))
         {
           DT::selectRows(indexTableProxy, NULL)
         }
