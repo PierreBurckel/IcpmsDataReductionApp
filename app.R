@@ -18,7 +18,7 @@ library(R6)
 # install.packages("rstudioapi")
 # install.packages("R6")
 
-setwd(dirname(getActiveDocumentContext()$path))  
+# setwd(dirname(getActiveDocumentContext()$path))  
 
 source('helpers/functions.R')
 
@@ -34,8 +34,10 @@ ICPMS_ui <- shinyUI({
   fluidPage(
     useShinyalert(),
     shinyjs::useShinyjs(),
-    navbarPage("ICP-MS processing",
-               fileUpload_ui("fileUpload"),
+    navbarPage("ICP-MS processing"
+               ,
+               fileUpload_ui("fileUpload")
+               ,
                indexCreation_ui("indexCreation"),
                interferenceCorrection_ui("interferenceCorrection"),
                blankProcessing_ui("blankProcessing"),
@@ -54,9 +56,11 @@ ICPMS_server <- function(input, output, session) {
   blankProcessing <- blankProcessing_server("blankProcessing", fileUpload, reactiveExpressions, indexCreation)
   driftProcessing <- driftProcessing_server("driftProcessing", fileUpload, reactiveExpressions, indexCreation)
   results_server("results", indexCreation, reactiveExpressions, fileUpload)
-  
+
 }
 
-app <- shinyApp(ui = ICPMS_ui, server = ICPMS_server)
+shinyApp(ui = ICPMS_ui, server = ICPMS_server)
 
-runApp(app,  port = 4856, launch.browser = TRUE)
+# app <- shinyApp(ui = ICPMS_ui, server = ICPMS_server)
+# 
+# runApp(app,  port = 4856, launch.browser = TRUE)
