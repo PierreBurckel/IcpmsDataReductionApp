@@ -20,7 +20,7 @@ library(R6)
 
 # setwd(dirname(getActiveDocumentContext()$path))  
 
-source('helpers/functions.R')
+source('R/functions.R')
 
 source('modules/fileUpload.R')
 source('modules/reactiveExpressions.R')
