@@ -1,0 +1,752 @@
+library(stringr)
+library(R6)
+
+
+# EstimationUncertaintyDataCouple definition and generics -----------------
+
+`[.EstimationUncertaintyDataCouple`    <- function(obj, ...) obj$`[`(...) 
+
+`[<-.EstimationUncertaintyDataCouple`  <- function(obj, ...) obj$`[<-`(...)
+
+mean.EstimationUncertaintyDataCouple <- function(...) {
+  estimationMatrix <- NULL
+  fullElementsNames <- NULL
+  for(eudc in list(...)) {
+    if (is.null(fullElementsNames)) fullElementsNames <- eudc$getElementFullNames()
+    estimationMatrix <- rbind(estimationMatrix, eudc$getEstimation())
+  }
+  return(EstimationUncertaintyDataCouple$new(fullElementsNames,
+                                             
+                                             estimationMatrix %>%
+                                             colMeans() %>% 
+                                             matrix(nrow = 1),
+                                             
+                                             estimationMatrix %>%
+                                             GMCM:::colSds() %>%
+                                             matrix(nrow = 1),
+                                             
+                                             "sd")
+  )
+}
+
+EstimationUncertaintyDataCouple <- R6Class("EstimationUncertaintyDataCouple",
+                                           public = list(
+                                             #' @param elementFullNames a character vector containing the isotope name and mode if measurement
+                                             #' @param estimatedData a matrix containing estimated values of a signal
+                                             #' @param uncertaintyData a matrix containing the uncertainty of the estimated values
+                                             #' @param uncertaintyType a character of size 1, either sd or rsd
+                                             initialize = function(elementFullNames, estimatedData, uncertaintyData, uncertaintyType) {
+                                               # Guard clauses ------------
+                                               # Enforcing uncertainty type choice 
+                                               match.arg(arg = uncertaintyType, choices = c("sd", "rsd"))
+                                               # Checking argument types
+                                               stopifnot("`elementFullNames` must be a character" = is.character(elementFullNames))
+                                               stopifnot("`estimatedData` must be a matrix" = is.matrix(estimatedData),
+                                                         "`uncertaintyData` must be a matrix" = is.matrix(uncertaintyData))
+                                               # Checking matching argument dimensions
+                                               stopifnot("`estimatedData` must have the same column number as `elementFullNames` size" = length(elementFullNames) == ncol(estimatedData))
+                                               stopifnot("`estimatedData` and `uncertaintyData` must be of same dimension" = identical(dim(estimatedData), dim(uncertaintyData)))
+                                               # Body ---------------------
+                                               private$elementFullNames <- elementFullNames
+                                               private$estimatedData <- estimatedData
+                                               if (uncertaintyType == "rsd") {
+                                                 private$sdData <- uncertaintyData / 100 * estimatedData
+                                                 # TODO: deal with 0 - N/A in RSD
+                                               }
+                                               else if (uncertaintyType == "sd") {
+                                                 private$sdData <- uncertaintyData
+                                               }
+                                               colnames(private$estimatedData) <- elementFullNames
+                                               colnames(private$sdData) <- elementFullNames
+                                             },
+                                             zeroOutNegatives = function() {
+                                               estimate <- private$estimatedData
+                                               estimate[private$estimatedData < 0] <- 0
+                                               uncertainty <- private$sdData
+                                               uncertainty[private$estimatedData < 0] <- 0
+                                               return(EstimationUncertaintyDataCouple$new(elementFullNames = private$elementFullNames,
+                                                                                          estimatedData = estimate,
+                                                                                          uncertaintyData = uncertainty,
+                                                                                          uncertaintyType = "sd"))
+                                             },
+                                             divideBy = function(otherEudc) {
+                                               estimate <- private$estimatedData / otherEudc$getEstimation()
+                                               uncertainty <- sqrt((self$getRsd()/100)^2 + (otherEudc$getRsd()/100)^2) * 100
+                                               return(EstimationUncertaintyDataCouple$new(elementFullNames = private$elementFullNames, estimatedData = estimate,
+                                                                                          uncertaintyData = uncertainty,
+                                                                                          uncertaintyType = "rsd"))
+                                             },
+                                             multiplyBy = function(otherEudc) {
+                                               estimate <- private$estimatedData * otherEudc$getEstimation()
+                                               uncertainty <- sqrt((self$getRsd()/100)^2 + (otherEudc$getRsd()/100)^2) * 100
+                                               return(EstimationUncertaintyDataCouple$new(elementFullNames = private$elementFullNames,
+                                                                                          estimatedData = estimate,
+                                                                                          uncertaintyData = uncertainty,
+                                                                                          uncertaintyType = "rsd"))
+                                             },
+                                             add = function(otherEudc) {
+                                               estimate <- private$estimatedData + otherEudc$getEstimation()
+                                               uncertainty <- sqrt(self$getSd()^2 + otherEudc$getSd()^2)
+                                               return(EstimationUncertaintyDataCouple$new(elementFullNames = private$elementFullNames,
+                                                                                          estimatedData = estimate,
+                                                                                          uncertaintyData = uncertainty,
+                                                                                          uncertaintyType = "sd"))
+                                             },
+                                             subtract = function(otherEudc) {
+                                               estimate <- private$estimatedData - otherEudc$getEstimation()
+                                               uncertainty <- sqrt(self$getSd()^2 + otherEudc$getSd()^2)
+                                               return(EstimationUncertaintyDataCouple$new(elementFullNames = private$elementFullNames,
+                                                                                          estimatedData = estimate,
+                                                                                          uncertaintyData = uncertainty,
+                                                                                          uncertaintyType = "sd"))
+                                             },
+                                             getElementFullNames = function() {
+                                               return(private$elementFullNames)
+                                             },
+                                             getElementNumber = function() {
+                                               return(length(private$elementFullNames))
+                                             },
+                                             getSampleNumber = function() {
+                                               return(nrow(private$estimatedData))
+                                             },
+                                             getEstimation = function() {
+                                               return(private$estimatedData)
+                                             },
+                                             getSd = function() {
+                                               return(private$sdData)
+                                             },
+                                             getRsd = function() {
+                                               notApplicableData <- apply(private$estimatedData, c(1,2), is.na)
+                                               applicableEstimationEqualsToZero <- (private$estimatedData[!notApplicableData] == 0)
+                                               rsdData <- self$createEmptyMatrixOfEudcSize()
+                                               rsdData[!notApplicableData][!applicableEstimationEqualsToZero] <- private$sdData[!notApplicableData][!applicableEstimationEqualsToZero] / private$estimatedData[!notApplicableData][!applicableEstimationEqualsToZero] * 100
+                                               rsdData[!notApplicableData][applicableEstimationEqualsToZero] <- NA
+                                               rsdData[notApplicableData] <- NA
+                                               colnames(rsdData) <- private$elementFullNames
+                                               return(rsdData)
+                                             },
+                                             createEmptyMatrixOfEudcSize = function() {
+                                               rowNumber = nrow(private$estimatedData)
+                                               columnNumber = ncol(private$estimatedData)
+                                               return(matrix(nrow = rowNumber, ncol = columnNumber))
+                                             },
+                                             `[` = function(i, j) {
+                                               EstimationUncertaintyDataCouple$new(elementFullNames = private$elementFullNames[j],
+                                                                                   estimatedData = private$estimatedData[i, j, drop = FALSE],
+                                                                                   uncertaintyData = private$sdData[i, j, drop = FALSE],
+                                                                                   uncertaintyType = "sd")
+                                             },
+                                             `[<-` = function(i, j, value) {
+                                               estimatedData <- private$estimatedData
+                                               sdData <- private$sdData
+                                               
+                                               if (nrow(value$getEstimation()) == 1) {
+                                                 testimatedData <- t(estimatedData)
+                                                 tsdData <- t(sdData)
+                                                 testimatedData[j,i] <- value$getEstimation()
+                                                 tsdData[j,i] <- value$getSd()
+                                                 estimatedData <- t(testimatedData)
+                                                 sdData <- t(tsdData)
+                                               }
+                                               else {
+                                                 estimatedData[i,j] <- value$getEstimation()
+                                                 sdData[i,j] <- value$getSd()
+                                               }
+                                               
+                                               EstimationUncertaintyDataCouple$new(elementFullNames = private$elementFullNames,
+                                                                                   estimatedData = estimatedData,
+                                                                                   uncertaintyData = sdData,
+                                                                                   uncertaintyType = "sd")
+                                             }),
+                                           private = list(
+                                             elementFullNames = NULL,
+                                             estimatedData = NULL,
+                                             sdData = NULL
+                                           )
+)
+
+
+# Functions using the EstimationUncertaintyDataCouple object --------------
+
+createBlankEudc <- function(elementFullNames, nrow) {
+  return(EstimationUncertaintyDataCouple$new(elementFullNames = elementFullNames,
+                                             estimatedData = matrix(0, ncol = length(elementFullNames), nrow = nrow),
+                                             uncertaintyData = matrix(0, ncol = length(elementFullNames), nrow = nrow),
+                                             uncertaintyType = "sd"))
+}
+
+
+# DataModifier definition and generics ------------------------------------
+
+DataModifier <- R6Class("DataModifier",
+                        public = list(
+                          initialize = function(modificationMethod, modificationArguments) {
+                            private$modificationMethod <- modificationMethod
+                            private$modificationArguments <- modificationArguments
+                          },
+                          apply = function(eudcToModify) {
+                            # modifierFunction <- private$getModificationFunction(private$modificationMethod)
+                            modifierFunction <- eval(parse(text = paste0("private$", private$modificationMethod)))
+                            modifiedEudc <- do.call(modifierFunction,
+                                                    list(
+                                                      eudcToModify = eudcToModify,
+                                                      modificationArguments = private$modificationArguments
+                                                    )
+                            )
+                            return(modifiedEudc)
+                          },
+                          getLinesToBeReplaced = function() {
+                            return(private$modificationArguments$linesToBeReplaced)
+                          },
+                          getLinesUsedForReplacement = function() {
+                            return(private$modificationArguments$linesUsedForReplacement)
+                          },
+                          getColumnsToBeReplaced = function() {
+                            return(private$modificationArguments$columnsToBeReplaced)
+                          },
+                          getColumnsUsedForReplacement = function() {
+                            return(private$modificationArguments$columnsUsedForReplacement)
+                          }
+                        ),
+                        private = list(
+                          modificationMethod = NULL,
+                          modificationArguments = NULL,
+                          
+                          none = function(eudcToModify, modificationArguments) {
+                            return(eudcToModify)
+                          },
+                          previous = function(eudcToModify, modificationArguments) {
+                            linesToBeReplaced = modificationArguments$linesToBeReplaced
+                            linesUsedForReplacement = modificationArguments$linesUsedForReplacement
+                            modifiedEudc <- eudcToModify
+                            for (lineToReplace in linesToBeReplaced)
+                            {
+                              previousLine <- getClosestInIndex(lineToReplace, linesUsedForReplacement, "prev")
+                              modifiedEudc[lineToReplace] <- eudcToModify[previousLine]
+                            }
+                            return(modifiedEudc)
+                          },
+                          average = function(eudcToModify, modificationArguments) {
+                            linesToBeReplaced = modificationArguments$linesToBeReplaced
+                            linesUsedForReplacement = modificationArguments$linesUsedForReplacement
+                            modifiedEudc <- eudcToModify
+                            for (lineToReplace in linesToBeReplaced)
+                            {
+                              previousLine <- getClosestInIndex(lineToReplace, linesUsedForReplacement, "prev")
+                              nextLine <- getClosestInIndex(lineToReplace, linesUsedForReplacement, "next")
+                              modifiedEudc[lineToReplace] <- mean(eudcToModify[previousLine], eudcToModify[nextLine])
+                            }
+                            return(modifiedEudc)
+                          },
+                          averageInBlankIndex = function(eudcToModify, modificationArguments) {
+                            linesToBeReplaced = modificationArguments$linesToBeReplaced
+                            linesUsedForReplacement = modificationArguments$linesUsedForReplacement
+                            modifiedEudc <- eudcToModify
+                            modifiedEudc[linesToBeReplaced] <- mean(eudcToModify[linesUsedForReplacement])
+                            return(modifiedEudc)
+                          },
+                          interferenceCorrection = function(eudcToModify, modificationArguments) {
+                            linesToBeReplaced = modificationArguments$linesToBeReplaced
+                            linesUsedForReplacement = modificationArguments$linesUsedForReplacement
+                            columnsToBeReplaced = modificationArguments$columnsToBeReplaced
+                            columnsUsedForReplacement = modificationArguments$columnsUsedForReplacement
+                            cumulativeEudc <- createBlankEudc(eudcToModify$getElementFullNames(),
+                                                              eudcToModify$getSampleNumber())
+                            if (is.null(linesUsedForReplacement)) {
+                              warning("Trying to correct interference with empty index")
+                              return(modifiedEudc)
+                            }
+                            interferenceFactor <- eudcToModify[linesUsedForReplacement, columnsToBeReplaced]$divideBy(eudcToModify[linesUsedForReplacement, columnsUsedForReplacement])
+                            if (length(linesUsedForReplacement) > 1) {
+                              interferenceFactor <- mean(interferenceFactor)
+                            }
+                            blankMatrix <- matrix(0,
+                                                  nrow = eudcToModify$getSampleNumber(),
+                                                  ncol = eudcToModify$getElementNumber())
+                            interferenceFactorEstimationMatrix <- blankMatrix
+                            interferenceFactorUncertaintyMatrix <- blankMatrix
+                            interferenceFactorEstimationMatrix[ , columnsUsedForReplacement] <- rep(interferenceFactor$getEstimation(),
+                                                                                                    eudcToModify$getSampleNumber())
+                            interferenceFactorUncertaintyMatrix[ , columnsUsedForReplacement] <- rep(interferenceFactor$getSd(),
+                                                                                                     eudcToModify$getSampleNumber())
+                            interferenceFactorEudc <- EstimationUncertaintyDataCouple$new(elementFullNames = eudcToModify$getElementFullNames(),
+                                                                                          estimatedData = interferenceFactorEstimationMatrix,
+                                                                                          uncertaintyData = interferenceFactorUncertaintyMatrix,
+                                                                                          uncertaintyType = "sd")
+                            return(interferenceFactorEudc)
+                          }
+                        )
+)
+
+# Functions using the DataModifier object ---------------------------------
+
+applyModifierToEudc <- function(eudcToBeModified, modifierList) {
+  modifiedEudc <- eudcToBeModified
+  for (dataModifier in modifierList) {
+    replacedLines <- dataModifier$getLinesToBeReplaced()
+    modifiedEudc[replacedLines] <- dataModifier$apply(eudcToBeModified)[replacedLines]
+  }
+  return(modifiedEudc)
+}
+
+applyCumulativeModifierToEudc <- function(cps_bc, cps, modifierList) {
+  cumulativeEudc <- createBlankEudc(cps_bc$getElementFullNames(),
+                                    cps_bc$getSampleNumber())
+  for (dataModifier in modifierList) {
+    replacedLines <- dataModifier$getLinesToBeReplaced()
+    interferenceFactorEudc <- dataModifier$apply(cps_bc)
+    interferenceCPSEudc <- createBlankEudc(cps_bc$getElementFullNames(),
+                                           cps_bc$getSampleNumber())
+    interferenceCPSEudc[ , dataModifier$getColumnsToBeReplaced()] <- cps$multiplyBy(interferenceFactorEudc)[ , dataModifier$getColumnsUsedForReplacement()]
+    cumulativeEudc <- cumulativeEudc$add(interferenceCPSEudc)
+  }
+  return(cumulativeEudc)
+}
+
+# Formatting functions ----------------------------------------------------
+
+createStandardDataFrameFromFile <- function(dataPath, sep) {
+  
+  standardDataFrame <- read.table(dataPath, header = FALSE, sep = sep, stringsAsFactors=FALSE)
+  
+  if (!identical(unique(standardDataFrame[1, ]), standardDataFrame[1, ])) {
+    shinyalert("Impossible to extract", "In the standard file, the standard labels in the first row are not unique", type = "error")
+    return(NULL)
+  }
+  
+  if (!identical(unique(standardDataFrame[ ,1]), standardDataFrame[ ,1])) {
+    shinyalert("Impossible to extract", "In the standard file, the analyte names in the first column are not unique", type = "error")
+    return(NULL)
+  }
+  
+  colnames(standardDataFrame) <- standardDataFrame[1, ]
+  standardDataFrame <- standardDataFrame[-1, ]
+  row.names(standardDataFrame) <- standardDataFrame[ , 1]
+  standardDataFrame <- standardDataFrame[ , -1]
+  
+  return(standardDataFrame)
+}
+
+mergeMatrixes <- function(matrix1, matrix2) {
+  
+  if (!identical(dim(matrix1), dim(matrix2)))
+  {
+    stop("Merged matrixes need to have the same dimensions")
+  }
+  
+  rowNumber <- nrow(matrix1)
+  columnNumber <- ncol(matrix1)
+  
+  matrix1 <- as.matrix(matrix1)
+  matrix2 <- as.matrix(matrix2)
+  mergedMatrix <- matrix(0, nrow = rowNumber, ncol = 2 * columnNumber)
+  
+  firstMatrixInsertionIndex <- seq(from = 1, to = 2 * columnNumber, by = 2)
+  secondMatrixInsertionIndex <- seq(from = 2, to = 2 * columnNumber, by = 2)
+  
+  mergedMatrix[ , firstMatrixInsertionIndex] <- matrix1
+  mergedMatrix[ , secondMatrixInsertionIndex] <- matrix2
+  
+  return(mergedMatrix)
+}
+
+##Function that replaces each value in a text vector by its previous value if the current value is empty (=="")
+##Note that if the first value of the vector is empty, there will be empty values in the returned vector
+fillEmptyStrings <- function(textVector){
+  for (i in 2:length(textVector)){
+    if (textVector[i] == ""){
+      textVector[i] <- textVector[i-1]
+    }
+  }
+  
+  return(textVector)
+}
+
+removeDuplicateLines <- function(df){
+  nLine <- 1
+  while (nLine < nrow(df)){
+    linesToDelete <- numeric()
+    for (i in (nLine + 1):nrow(df)){
+      if (identical(as.character(df[i,]), as.character(df[nLine,]))){
+        linesToDelete <- c(linesToDelete, i)
+      }
+      else{}
+    }
+    
+    if (length(linesToDelete) != 0){
+      df <- df[-linesToDelete, ]
+    }
+    else {}
+    
+    nLine <- nLine + 1
+  }
+  
+  return(df)
+}
+
+replaceValues <- function(eudcToModify, howToReplace, linesToBeReplaced, linesUsedForReplacement){
+  
+  signalEstimation = eudcToModify$getEstimation()
+  signalRelativeStandardDeviation = eudcToModify$getRsd()
+  elementFullNames <- eudcToModify$getElementFullNames()
+  modifiedEstimation <- signalEstimation
+  modifiedRelativeStandardDeviation <- signalRelativeStandardDeviation
+  
+  #This condition is useful in shiny tables to return the table signal and RSD when no replacements are required
+  if (howToReplace == "none" | is.null(linesToBeReplaced)) {
+    return(eudcToModify)
+  }
+  
+  lineNumber <- eudcToModify$getSampleNumber()
+  
+  # Forces logical index
+  if (!is.logical(linesToBeReplaced)) {
+    linesToBeReplaced <- convertToLogical(linesToBeReplaced, lineNumber)
+  }
+  # The function accepts a NULL sourceLineIndex. The sourceLineIndex variable takes the opposite value of the logical lineIndex (!lineIndex)
+  if (is.null(linesUsedForReplacement)){
+    linesUsedForReplacement <- !linesToBeReplaced
+  }
+  # Forces logical index
+  else if (!is.logical(linesUsedForReplacement)) {
+    linesUsedForReplacement <- convertToLogical(linesUsedForReplacement, lineNumber)
+  }
+  # If linesUsedForReplacement is the "all" index, converts linesUsedForReplacement to the inverse of the linesToBeReplaced
+  if (identical(linesUsedForReplacement, rep(TRUE, rep = lineNumber))) {
+    linesUsedForReplacement <- !linesToBeReplaced
+  }
+  
+  numericalLinesToBeReplaced <- which(linesToBeReplaced)
+  numericalLinesUsedForReplacement <- which(linesUsedForReplacement)
+  
+  for (elementFullName in elementFullNames){
+    
+    for (lineToReplace in numericalLinesToBeReplaced){
+      
+      previousLine <- getClosestInIndex(lineToReplace, numericalLinesUsedForReplacement, "prev")
+      previousEstimation <- signalEstimation[previousLine, elementFullName]
+      previousRelativeStandardDeviation <- signalRelativeStandardDeviation[previousLine, elementFullName]
+      
+      if (howToReplace == "mean"){
+        
+        nextLine <- getClosestInIndex(lineToReplace, numericalLinesUsedForReplacement, "next")
+        nextEstimation <- signalEstimation[nextLine, elementFullName]
+        
+        if (is.na(previousEstimation) | is.na(nextEstimation) | is.na(modifiedEstimation[lineToReplace, elementFullName])) {
+          modifiedEstimation[lineToReplace, elementFullName] <- NA
+        }
+        else {
+          modifiedEstimation[lineToReplace, elementFullName] <- mean(c(previousEstimation, nextEstimation))
+          modifiedRelativeStandardDeviation[lineToReplace,elementFullName] <- calculateRSD(c(previousEstimation, nextEstimation))
+        }
+        
+      } 
+      else if (howToReplace == "prev"){
+        
+        if (is.na(previousEstimation) | is.na(modifiedEstimation[lineToReplace,elementFullName])) {
+          modifiedEstimation[lineToReplace, elementFullName] <- NA
+        }
+        else {
+          modifiedEstimation[lineToReplace, elementFullName] <- previousEstimation
+          modifiedRelativeStandardDeviation[lineToReplace, elementFullName] <- previousRelativeStandardDeviation
+        }
+        
+      }
+      else if (howToReplace == "averageInBlankIndex"){
+        
+        if (length(numericalLinesUsedForReplacement) > 1) {
+          modifiedEstimation[lineToReplace, elementFullName] <- mean(signalEstimation[numericalLinesUsedForReplacement, elementFullName])
+          modifiedRelativeStandardDeviation[lineToReplace,elementFullName] <- sd(signalEstimation[numericalLinesUsedForReplacement, elementFullName]) / signalEstimation[lineToReplace, elementFullName] * 100
+        }
+        else if (length(numericalLinesUsedForReplacement) == 1) 
+        {
+          modifiedEstimation[lineToReplace,elementFullName] <- signalEstimation[numericalLinesUsedForReplacement, elementFullName]
+          modifiedRelativeStandardDeviation[lineToReplace,elementFullName] <- signalRelativeStandardDeviation[numericalLinesUsedForReplacement, elementFullName]
+        }
+        else 
+        {
+          modifiedEstimation[lineToReplace, elementFullName] <- NA
+          modifiedRelativeStandardDeviation[lineToReplace, elementFullName] <- NA
+        }
+        
+      }
+    }
+  }
+  return(EstimationUncertaintyDataCouple$new(elementFullNames = elementFullNames,
+                                             estimatedData = modifiedEstimation,
+                                             uncertaintyData = modifiedRelativeStandardDeviation,
+                                             uncertaintyType = "rsd"))
+}
+
+##Function to create the ISTD template based on raw datafile
+##Returns a dataframe containing a column analyte with the analyte names
+##and a column ISTD with the ISTD names
+createISTDtemplate <- function(dataFileName, sep){
+  
+  #header_1 contains the first line of the file
+  header_1 <- scan(dataFileName, nlines = 1, what = character(),sep = sep)
+  #header_2 contains the second line of the file
+  header_2 <- scan(dataFileName, nlines = 1, what = character(),sep = sep, skip=1)
+  
+  #fills empty values in header_1 based on previous values
+  header_1 <- fillEmptyStrings(header_1)
+  
+  #finds the analyte and the ISTD in the headers based on the occurence of CPS and ISTD keywords
+  analyteIndex <- (header_2 == "CPS") & (!grepl("ISTD", header_1))
+  ISTDindex <- (header_2 == "CPS") & (grepl("ISTD", header_1))
+  
+  analyteColumn <- header_1[analyteIndex]
+  ISTDColumn <- header_1[ISTDindex]
+  
+  if (length(analyteColumn) > length(ISTDColumn)) {
+    ISTDColumn <- c(ISTDColumn, rep(NA, times=length(analyteColumn) - length(ISTDColumn)))
+  }
+  else if (length(analyteColumn) < length(ISTDColumn)) {
+    analyteColumn <- c(analyteColumn, rep(NA, times=length(ISTDColumn) - length(analyteColumn)))
+  }
+  
+  return(data.frame(analyte=analyteColumn, ISTD=ISTDColumn))
+}
+
+createinternalStandardEudcAdaptedToAnalytes <- function(internalStandardToAnalyteAssignmentDataframe, internalStandardCountsPerSecondEudc, parameters){
+  
+  
+  analyteNames <- parameters$analyteNames
+  istdColumnPosition <- 2
+  
+  estimationMatrix <- matrix(nrow = parameters$sampleNumber, ncol = parameters$analyteNumber)
+  uncertaintyMatrix <- matrix(nrow = parameters$sampleNumber, ncol = parameters$analyteNumber)
+  
+  for (analyteIncrement in seq(parameters$analyteNumber)){
+    analyteSpecificIstd <- internalStandardToAnalyteAssignmentDataframe[analyteIncrement, istdColumnPosition]
+    estimationMatrix[ , analyteIncrement] <- internalStandardCountsPerSecondEudc$getEstimation()[ , analyteSpecificIstd]
+    uncertaintyMatrix[ , analyteIncrement] <- internalStandardCountsPerSecondEudc$getSd()[, analyteSpecificIstd]
+  }
+  
+  colnames(estimationMatrix) <- analyteNames
+  colnames(uncertaintyMatrix) <- analyteNames
+  
+  return(EstimationUncertaintyDataCouple$new(elementFullNames = parameters$analyteNames,
+                                             estimatedData = estimationMatrix,
+                                             uncertaintyData = uncertaintyMatrix,
+                                             uncertaintyType = "sd"))
+}
+
+# Information pulling functions -------------------------------------------
+
+##Function that takes the raw data and standard file along with some options
+##and returns the extracted information from these file. Extracted information
+##is CPS, RSD, IS.CPS, IS.RSD, etc...
+extractData <- function(dataFileName, stdFileName){
+  
+  #header_1 contains the first line of the file
+  header_1 <- scan(dataFileName, nlines = 1, what = character(),sep=';')
+  #header_2 contains the second line of the file
+  header_2 <- scan(dataFileName, nlines = 1, what = character(),sep=';', skip=1)
+  
+  #fills empty values in header_1 based on previous values
+  header_1 <- fillEmptyStrings(header_1)
+  
+  #Import raw data without headers as they are imported previously. header_1 is used for column names
+  dat.raw <- read.csv2(dataFileName, skip = 2, header = FALSE, stringsAsFactors=FALSE)
+  names(dat.raw) <- header_1
+  
+  #Import the standard data, we consider here that there are headers corresponding to the standard names
+  standardDataFrame <- read.table(stdFileName, header = TRUE, sep=';', stringsAsFactors=FALSE)
+  
+  #Remove potential duplicates of element names in the standard dataframe
+  standardDataFrame <- removeDuplicateLines(standardDataFrame)
+  
+  #Assigns the first column of the std file to the row names then removes the first column
+  row.names(standardDataFrame) <- standardDataFrame[,1]
+  standardDataFrame <- standardDataFrame[,2:length(standardDataFrame)]
+  
+  return(list(raw=dat.raw, std=standardDataFrame, header_1=header_1, header_2=header_2))
+}
+
+getWeights <- function(calibrationData, fn) {
+  if (fn == "1/SD") {
+    return(1/(calibrationData[,"RSD"]/100 *calibrationData[,"Signal"]))
+  }
+  else if (fn == "1/SD^2") {
+    return(1/(calibrationData[,"RSD"]/100 *calibrationData[,"Signal"])^2)
+  }
+  else {
+    return()
+  }
+}
+
+getElementSpecificDriftIndex <- function(elementFullName, standardDataFrame, standardIdentificationColumn, driftIndex) {
+  
+  if (isAnalyteValidInStandardDataFrame(elementFullName, standardDataFrame) == FALSE) {
+    return(NULL)
+  }
+  
+  elementSpecificStandardIndex <- which(!is.na(standardDataFrame[elementFullName, ]))
+  
+  standardIdColumnInData <- make.names(standardIdentificationColumn)
+  elementSpecificStandardIdHeaderInStandardFile <- make.names(colnames(standardDataFrame)[elementSpecificStandardIndex])
+  isStandardBothInDataAndStandardFile <- standardIdColumnInData %in% elementSpecificStandardIdHeaderInStandardFile
+  firstStandardNumIndex <- min(which(isStandardBothInDataAndStandardFile))
+  elementSpecificDritftIndex <- driftIndex[driftIndex >= firstStandardNumIndex]
+  
+  return(elementSpecificDritftIndex)
+}
+
+getCalibrationData <- function(elementFullName, signalMatrix, standardIdentificationColumn, standardDataFrame) {
+  
+  if (!(elementFullName %in% row.names(standardDataFrame))) {
+    return(NULL)
+  }
+  
+  standardNamesInStandardFile <- colnames(standardDataFrame[elementFullName, ])
+  standardConcentrationInStandardFile <- standardDataFrame[elementFullName, ]
+  
+  standardRowNumberInMain <- as.numeric(sapply(paste("^", standardNamesInStandardFile, "$", sep=""),
+                                               grep, standardIdentificationColumn))
+  
+  isInMainAndStandardFiles <- !is.na(standardRowNumberInMain) & !is.na(standardConcentrationInStandardFile)
+  
+  standardConcentrationInStandardFile <- standardConcentrationInStandardFile[isInMainAndStandardFiles]
+  standardRowNumberInMain <- standardRowNumberInMain[isInMainAndStandardFiles]
+  
+  if (length(standardRowNumberInMain) == 0 || length(standardConcentrationInStandardFile) == 0)
+  {
+    return(NULL)
+  }
+  else 
+  {
+    eSignal <- signalMatrix$getEstimation()[standardRowNumberInMain, elementFullName]
+    eRSD <- signalMatrix$getSd()[standardRowNumberInMain, elementFullName]
+  }
+  
+  return(cbind(Signal=eSignal, RSD=eRSD, Concentration=as.numeric(standardConcentrationInStandardFile)))
+}
+
+#' @param element_software_name A character vector with the name of the isotope and its measurement mode
+#' @param icp_model A character vector of length one with the name of the icp_ms
+getElementName <- function(element_software_name, icp_model) {
+  match.arg(arg = icp_model, choices = c("Agilent7900"))
+  reg_exp = switch(  
+    icp_model,  
+    "Agilent7900" = "[ ]{2}[A-Z]{1}[a-z]*[ ]{2}"
+  )
+  element_name <- gsub(pattern = " ",
+                       replacement = "",
+                       x = str_extract(element_software_name, reg_exp),
+                       fixed = TRUE)
+  return(element_name)
+}
+
+##Function that returns the closest number in an array (numericalIndex) before or after a reference position
+##If there is no value matching the request, returns NULL
+getClosestInIndex <- function(refPosition, numericalIndex, searchWhere){
+  
+  if (searchWhere == "prev"){
+    if (TRUE %in% (numericalIndex <= refPosition)){
+      return(max(numericalIndex[numericalIndex <= refPosition]))
+    }
+    else{
+      return(NULL)
+    }
+  }
+  else if (searchWhere == "next"){
+    if (TRUE %in% (numericalIndex >= refPosition)){
+      return(min(numericalIndex[numericalIndex >= refPosition]))
+    }
+    else{
+      return(NULL)
+    }
+  }
+  else{return(NULL)}
+}
+
+# Validation functions ----------------------------------------------------
+
+isAnalyteValidInStandardDataFrame <- function(elementFullName, standardDataFrame) {
+  
+  if (!(elementFullName %in% row.names(standardDataFrame))) {
+    shinyalert("Issue with standard file",
+               paste0(elementFullName, " not found in the standard file. If not in the standards, create an empty line for ", elementFullName, " in the file."),
+               type = "error")
+    return(FALSE)
+  }
+  
+  elementSpecificStandardIndex <- which(!is.na(standardDataFrame[elementFullName, ]))
+  
+  if (length(elementSpecificStandardIndex) == 0) {
+    shinyalert("Issue with standard file",
+               paste0("The standard file line for ",elementFullName, " should be of size > 0"),
+               type = "error")
+    return(FALSE)
+  }
+  
+  return(TRUE)
+}
+
+createColoredTextForBooleanViewing <- function(state, stateText, invalidStateText, validStateText) {
+  
+  if (state == TRUE) {
+    displayedText <- paste('<span style=\"color:green\">', stateText, validStateText)
+  }
+  else if (state == FALSE) {
+    displayedText <- paste('<span style=\"color:red\">', stateText, invalidStateText)
+  }
+  return(displayedText)
+}
+
+# Utility functions -------------------------------------------------------
+
+##Function that converts a numerical index to a logical index
+##Takes as argument the numerical index and the number of line expected in the logical index
+##Returns the logical index
+convertToLogical <- function(nIndex, lineNb){
+  lIndex <- rep(FALSE, lineNb)
+  lIndex[nIndex] <- TRUE
+  
+  return(lIndex)
+}
+
+##Function that calculates the RSD of a collection of numerical values
+calculateRSD <- function(values){
+  if (length(values) > 1){
+    if (mean(values) == 0) {
+      return(0)
+    } else {
+      return(sd(values)/mean(values)*100)
+    }
+  }
+  else{
+    return(NULL)
+  }
+}
+
+propagateUncertainty <- function(a, b, operation){
+  
+  a_signal = a[[1]]
+  b_signal = b[[1]]
+  a_RSD = a[[2]]
+  b_RSD = b[[2]]
+  if (operation == "addition"){
+    signal <- a_signal + b_signal
+    RSD <- sqrt((a_RSD/100*a_signal)^2+(b_RSD/100*b_signal)^2)/signal*100
+  }
+  else if (operation == "substraction"){
+    signal <- a_signal - b_signal
+    RSD <- sqrt((a_RSD/100*a_signal)^2+(b_RSD/100*b_signal)^2)/signal*100
+  }
+  else if (operation == "multiplication"){
+    signal <- a_signal * b_signal
+    RSD <- sqrt((a_RSD/100)^2+(b_RSD/100)^2)*100
+  }
+  else if (operation == "division"){
+    signal <- a_signal / b_signal
+    RSD <- sqrt((a_RSD/100)^2+(b_RSD/100)^2)*100
+  }
+  else {return(NULL)}
+  
+  return(list(signal=signal, RSD=RSD))
+}
+
+
+
