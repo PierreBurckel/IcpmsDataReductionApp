@@ -34,10 +34,8 @@ ICPMS_ui <- shinyUI({
   fluidPage(
     useShinyalert(),
     shinyjs::useShinyjs(),
-    navbarPage("ICP-MS processing"
-               ,
-               fileUpload_ui("fileUpload")
-               ,
+    navbarPage("ICP-MS processing",
+               fileUpload_ui("fileUpload"),
                indexCreation_ui("indexCreation"),
                interferenceCorrection_ui("interferenceCorrection"),
                blankProcessing_ui("blankProcessing"),

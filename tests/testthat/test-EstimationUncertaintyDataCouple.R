@@ -1,3 +1,5 @@
+source("C:/Users/pierr/Desktop/IPGP/R/ICP-MS_process/R/functions.R")
+
 # Setup -------------------------------------------------------------------
 
 element_names <- c("Li", "Be", "B")

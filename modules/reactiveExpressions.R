@@ -174,6 +174,14 @@ reactiveExpressions_server <- function(id, fileUpload, indexCreation, interferen
         }
       })
       
+      process$detectionLimit <- reactive({
+        calculateLimit(process$analyteToIstdBlankRatio(), "Detection Limit", process$calibrationCoefficientMatrix())
+      })
+      
+      process$quantificationLimit <- reactive({
+        calculateLimit(process$analyteToIstdBlankRatio(), "Quantification Limit", process$calibrationCoefficientMatrix())
+      })
+      
       process$analyteToIstdRatioBlankCorrected <- reactive({
         process$analyteToIstdRatio()$subtract(process$analyteToIstdBlankRatio())
       })
@@ -262,14 +270,14 @@ reactiveExpressions_server <- function(id, fileUpload, indexCreation, interferen
       })
       
       process$concentration <- reactive({
-        
-        concentration <- t(t(process$driftAndBlankCorrectedEudc()$getEstimation())*process$calibrationCoefficientMatrix())
-        concentrationRSD <- process$driftAndBlankCorrectedEudc()$getRsd()
-        
-        return(EstimationUncertaintyDataCouple$new(elementFullNames = parameters()$analyteNames,
-                                                   estimatedData = concentration,
-                                                   uncertaintyData = concentrationRSD,
-                                                   uncertaintyType = "rsd"))
+        concentration_eudc <- calculateConcentration(process$driftAndBlankCorrectedEudc(), process$calibrationCoefficientMatrix())
+        # concentration <- t(t(process$driftAndBlankCorrectedEudc()$getEstimation())*process$calibrationCoefficientMatrix())
+        # concentrationRSD <- process$driftAndBlankCorrectedEudc()$getRsd()
+        return(concentration_eudc)
+        # return(EstimationUncertaintyDataCouple$new(elementFullNames = parameters()$analyteNames,
+        #                                            estimatedData = concentration,
+        #                                            uncertaintyData = concentrationRSD,
+        #                                            uncertaintyType = "rsd"))
       })
       
       return(list(process = process))

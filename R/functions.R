@@ -168,6 +168,19 @@ EstimationUncertaintyDataCouple <- R6Class("EstimationUncertaintyDataCouple",
 
 # Functions using the EstimationUncertaintyDataCouple object --------------
 
+#' Creates a blank (i.e. estimation and uncertainty filled with 0) EstimationUncertaintyDataCouple from a target EstimationUncertaintyDataCouple object.
+#' The blank EstimationUncertaintyDataCouple will have the same size and element names as the target.
+#'
+#' @param eudc_template A EstimationUncertaintyDataCouple to use as template
+#' @returns An EstimationUncertaintyDataCouple object
+createBlankEudcFromTemplate <- function(eudc_template) {
+  stopifnot("`eudc_template` must be of class EstimationUncertaintyDataCouple" = "EstimationUncertaintyDataCouple" %in% class(eudc_template))
+  element_names <- eudc_template$getElementFullNames()
+  row_number <- eudc_template$getSampleNumber()
+  blank_eudc <- createBlankEudc(element_names, row_number)
+  return(blank_eudc)
+}
+
 createBlankEudc <- function(elementFullNames, nrow) {
   return(EstimationUncertaintyDataCouple$new(elementFullNames = elementFullNames,
                                              estimatedData = matrix(0, ncol = length(elementFullNames), nrow = nrow),
@@ -746,6 +759,47 @@ propagateUncertainty <- function(a, b, operation){
   else {return(NULL)}
   
   return(list(signal=signal, RSD=RSD))
+}
+
+#' Calculates the detection or quantification limits of the session
+#'
+#' @param blank_ratio A EstimationUncertaintyDataCouple containing the values of the blank (CPS or ratio) throughout the sequence
+#' @param limit_type Either `Detection Limit` or `Quantification Limit`
+#' @param calibration_coefficients A numeric vector containing the calibration slope of each element
+#' @returns An EstimationUncertaintyDataCouple object
+calculateLimit <- function(blank_ratio, limit_type, calibration_coefficients) {
+  match.arg(limit_type, c("Detection Limit", "Quantification Limit"))
+  stopifnot("`blank_ratio` must be of class EstimationUncertaintyDataCouple" = "EstimationUncertaintyDataCouple" %in% class(blank_ratio))
+  stopifnot("`calibration_coefficients` must be a numeric" = is.numeric(calibration_coefficients))
+  stopifnot("`calibration_coefficients` size must be the same as the element number in `blank_ratio`" = length(calibration_coefficients) == blank_ratio$getElementNumber())
+  limit_factor <- switch(limit_type,
+                         "Detection Limit" = 3.3,
+                         "Quantification Limit" = 10)
+  element_names <- blank_ratio$getElementFullNames()
+  estimation_value <- blank_ratio$getSd() * limit_factor
+  estimation_sd <- createBlankEudcFromTemplate(blank_ratio)$getSd()
+  limit_ratio <- EstimationUncertaintyDataCouple$new(element_names, estimation_value, estimation_sd, "sd")
+  limit_concentration <- calculateConcentration(limit_ratio, calibration_coefficients)
+  return(limit_concentration)
+}
+
+#' Calculates the concentration of a signal value
+#' The concentration should be expressed as concentration = signal * coefficient + 0
+#'
+#' @param value A EstimationUncertaintyDataCouple containing the signal values to be converted to concentrations
+#' @param calibration_coefficients A numeric vector containing the calibration slope of each element
+#' @returns An EstimationUncertaintyDataCouple object
+calculateConcentration <- function(value, calibration_coefficients) {
+  stopifnot("`value` must be of class EstimationUncertaintyDataCouple" = "EstimationUncertaintyDataCouple" %in% class(value))
+  stopifnot("`calibration_coefficients` must be a numeric" = is.numeric(calibration_coefficients))
+  stopifnot("`calibration_coefficients` size must be the same as the element number in `value`" = length(calibration_coefficients) == value$getElementNumber())
+  concentration_value <- t(t(value$getEstimation()) * calibration_coefficients)
+  concentration_rsd <- value$getRsd()
+  concentration_eudc <- EstimationUncertaintyDataCouple$new(elementFullNames = value$getElementFullNames(),
+                                                            estimatedData = concentration_value,
+                                                            uncertaintyData = concentration_rsd,
+                                                            uncertaintyType = "rsd")
+  return(concentration_eudc)
 }
 
 
