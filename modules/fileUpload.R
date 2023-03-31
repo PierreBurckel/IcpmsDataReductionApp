@@ -114,8 +114,6 @@ fileUpload_server <- function(id) {
       # Returns false if extraction not complete and true if extraction complete
       isExtracted <- eventReactive(input$extract, { req(isExtractionReady())
         
-        browser()
-        
         # Datapath assignment
         mainFileDatapath = uploadedFile$main$datapath
         standardFileDatapath = uploadedFile$standard$datapath

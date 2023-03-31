@@ -116,11 +116,15 @@ indexCreation_server <- function(id, fileUpload, reactiveExpressions) {
       
       # Output of the information table on created in dex
       output$index_info_table <- DT::renderDT(datatable({
-        index_info_table <- as.data.frame(lapply(rowIndexInMain$custom,
-                                                 paste,
-                                                 collapse = ", ")
-        ) %>% t()
-        colnames(index_info_table) <- "Lines in index"
+        browser()
+        samples_in_index <- NULL
+        for (index in rowIndexInMain$custom) {
+          samples_in_index <- c(samples_in_index, paste(parameters()$categoricalDataAndTime[ ,"Sample Name",drop = TRUE][index], collapse = ", "))
+        }
+        index_info_table <- as.data.frame(samples_in_index)
+        index_info_table <- cbind(names(rowIndexInMain$custom), index_info_table)
+        colnames(index_info_table) <- c("Index Name", "Samples in index")
+        index_info_table
       }, extensions = c('Scroller', 'Buttons'),
       options = list(dom = 'Bt', ordering=F, autoWidth = TRUE,
                      scrollX = TRUE, scrollY = 300, deferRender = TRUE, scroller = TRUE,
