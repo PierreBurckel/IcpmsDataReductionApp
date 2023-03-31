@@ -114,6 +114,8 @@ fileUpload_server <- function(id) {
       # Returns false if extraction not complete and true if extraction complete
       isExtracted <- eventReactive(input$extract, { req(isExtractionReady())
         
+        browser()
+        
         # Datapath assignment
         mainFileDatapath = uploadedFile$main$datapath
         standardFileDatapath = uploadedFile$standard$datapath
@@ -138,7 +140,12 @@ fileUpload_server <- function(id) {
         
         # Extraction of the body of the main data.frame and column name assignment
         extracted$main <- read.table(mainFileDatapath, skip = 2, header = FALSE, sep = input$csvDelimitation, stringsAsFactors=FALSE)
-        colnames(extracted$main) <- paste(firstRowOfMain, secondRowOfMain, sep = "_")
+        column_names <- paste(firstRowOfMain, secondRowOfMain, sep = "_")
+        if (!identical(column_names, unique(column_names))) {
+          shinyalert("Impossible to extract, column names are not unique. Delete the duplicated columns in the csv file and upload the new file prior to extraction.", type = "error")
+          return(FALSE)
+        }
+        colnames(extracted$main) <- column_names
         extracted$main <- as_tibble(extracted$main)
         
         # Extraction of the standard data.frame
@@ -152,6 +159,8 @@ fileUpload_server <- function(id) {
                                                                       sep = input$csvDelimitation,
                                                                       stringsAsFactors=FALSE)
         }
+        
+        
         
         # Parameters computation
         parameters$sampleNumber <- nrow(extracted$main)
@@ -179,7 +188,15 @@ fileUpload_server <- function(id) {
         # Conversion to numeric of CPS and CPS RSD columns
         numericalColumns <- seq(from = max(which(firstRowOfMain == "Sample")) + 1, to = ncol(extracted$main))
         extracted$main[ , numericalColumns] <- sapply(extracted$main[ , numericalColumns], as.numeric)
-        # extracted$main <- extracted$main %>% select(-starts_with("Sample")) %>% sapply(as.numeric)
+        
+        # Assessing that the number of CPS, CPS RSD and unique element names are coherent
+        CPS_number <- sum(secondRowOfMain == "CPS")
+        CPS_RSD_number <- sum(secondRowOfMain == "CPS RSD")
+        unique_element_number <- length(unique(firstRowOfMain[numericalColumns]))
+        if (CPS_number != CPS_RSD_number | CPS_number != unique_element_number) {
+          shinyalert("Impossible to extract, number of columns containing the keywords `CPS`, `CPS RSD` and unique element names in the first line are not equal. Check column names in the csv file.", type = "error")
+          return(FALSE)
+        }
         return(TRUE)
       })
       

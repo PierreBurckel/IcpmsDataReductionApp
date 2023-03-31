@@ -11,8 +11,11 @@ interferenceCorrection_ui <- function(id) {
               selectInput(ns("sliderInput_InterferenceTab_interferedElement"), "Select interfered element:",
                           "", selected = ""),
   
-              actionButton(ns("actionButton_InterferenceTab_applyCorrection"), "Apply correction")),
-            mainPanel()
+              actionButton(ns("actionButton_InterferenceTab_applyCorrection"), "Apply correction"),
+              actionButton(ns("delete_modifier"), "Remove correction")),
+            mainPanel(
+              DT::DTOutput(ns("interference_modifiers_info_table"))
+              )
           )
   )
 }
@@ -44,6 +47,45 @@ interferenceCorrection_server <- function(id, fileUpload, reactiveExpressions, i
       observeEvent(input$actionButton_InterferenceTab_applyCorrection, {
         # Merging the current DataModifier list in the interferenceModifiers list
         interferenceModifiers(c(interferenceModifiers(), activeInterferenceModifier()))
+      })
+      
+      # Output of the information table on created in dex
+      output$interference_modifiers_info_table <- DT::renderDT(datatable({
+        interference_modifiers_info_table <- NULL
+        for (modifier in interferenceModifiers()) {
+          # Get the modifier information to be displayed in the table
+          columnsUsedForReplacement <- modifier$getColumnsUsedForReplacement()
+          columnsToBeReplaced <- modifier$getColumnsToBeReplaced()
+          linesUsedForReplacement <- modifier$getLinesUsedForReplacement()
+          # Convert the numerical format (line and column number) to a character format (sample and analyte names)
+          columnsUsedForReplacement <- parameters()$analyteNames[columnsUsedForReplacement]
+          columnsToBeReplaced <- parameters()$analyteNames[columnsToBeReplaced]
+          linesUsedForReplacement <- parameters()$categoricalDataAndTime[ ,"Sample Name",drop = TRUE][linesUsedForReplacement]
+          # Concatenate sample and analyte strings of length > 1 
+          columnsUsedForReplacement <- paste(columnsUsedForReplacement, collapse = ", ")
+          columnsToBeReplaced <- paste(columnsToBeReplaced, collapse = ", ")
+          linesUsedForReplacement <- paste(linesUsedForReplacement, collapse = ", ")
+          # Place the information in the table
+          interference_modifiers_info_table <- rbind(interference_modifiers_info_table,
+                                                     c(columnsUsedForReplacement, columnsToBeReplaced, linesUsedForReplacement))
+        }
+        # Rename table column names if table exists
+        if (!is.null(interference_modifiers_info_table)) {
+          colnames(interference_modifiers_info_table) <- c("Interfering Element", "Interfered Element", "Samples used for interference correction")
+        }
+        # Return the table after iteration complete
+        interference_modifiers_info_table
+      }, extensions = c('Scroller', 'Buttons'),
+      options = list(dom = 'Bt', ordering=F, autoWidth = TRUE,
+                     scrollX = TRUE, scrollY = 300, deferRender = TRUE, scroller = TRUE,
+                     buttons = c('copy', 'csv'),
+                     columnDefs = list(list(width = '120px', targets = "_all")))))
+      
+      interferenceModifierTableProxy <- DT::dataTableProxy("interference_modifiers_info_table", session = session)
+      
+      # Handle the deletion of modifiers
+      observeEvent(input$delete_modifier, {
+        interferenceModifiers(interferenceModifiers()[-input$interference_modifiers_info_table_rows_selected])
       })
       
       observeEvent(customIndex(), {

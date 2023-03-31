@@ -29,6 +29,7 @@ source('modules/interferenceCorrection.R')
 source('modules/blankProcessing.R')
 source('modules/driftProcessing.R')
 source('modules/results.R')
+source('modules/plot_module.R')
 
 ICPMS_ui <- shinyUI({
   fluidPage(

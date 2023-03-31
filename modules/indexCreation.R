@@ -18,7 +18,8 @@ indexCreation_ui <- function(id) {
                actionButton(ns("searchIndexCreate"), "Create new index")),
              mainPanel(
                selectInput(ns("searchIndexDisplay"), "Show:", c("Internal standards" = "ISTD", "Analytes" = "analytes")),
-               DT::DTOutput(ns("indexTable"))
+               DT::DTOutput(ns("indexTable")),
+               DT::DTOutput(ns("index_info_table"))
              )
            )
   ) 
@@ -112,6 +113,19 @@ indexCreation_server <- function(id, fileUpload, reactiveExpressions) {
         }
         rowIndexInMain$custom[[input$searchIndexName]] <- customNumIndex
       })
+      
+      # Output of the information table on created in dex
+      output$index_info_table <- DT::renderDT(datatable({
+        index_info_table <- as.data.frame(lapply(rowIndexInMain$custom,
+                                                 paste,
+                                                 collapse = ", ")
+        ) %>% t()
+        colnames(index_info_table) <- "Lines in index"
+      }, extensions = c('Scroller', 'Buttons'),
+      options = list(dom = 'Bt', ordering=F, autoWidth = TRUE,
+                     scrollX = TRUE, scrollY = 300, deferRender = TRUE, scroller = TRUE,
+                     buttons = c('copy', 'csv'),
+                     columnDefs = list(list(width = '120px', targets = "_all")))))
       
       indexTableProxy <- DT::dataTableProxy("indexTable", session = session)
       

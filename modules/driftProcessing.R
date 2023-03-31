@@ -33,8 +33,7 @@ driftProcessing_ui <- function(id) {
                )),
              mainPanel(
                DT::DTOutput(ns("smpBlkCorTable")),
-               plotOutput(ns("driftPlot")),
-               tableOutput(ns("test"))
+               plotOutput(ns("driftPlot"))
              )
            )
   )
@@ -206,6 +205,7 @@ driftProcessing_server <- function(id, fileUpload, reactiveExpressions, indexCre
         
         return(listOfDriftModels)
       })
+      
       
       return(list(elementSpecificDriftModels = elementSpecificDriftModels,
                   listOfElementSpecificDriftIndex = listOfElementSpecificDriftIndex,
