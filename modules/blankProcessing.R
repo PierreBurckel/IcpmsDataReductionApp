@@ -19,9 +19,11 @@ blankProcessing_ui <- function(id) {
                             "Previous blank" = "previous", "Average in index" = "averageInBlankIndex")),
               selectInput(ns("sliderInput_BlankTab_rowsToReplaceFrom"), "Replace in:",
                           "All", selected = "All"),
-              actionButton(ns("actionButton_BlankTab_replace"), "Set blank interpolation")),
+              actionButton(ns("actionButton_BlankTab_replace"), "Set blank interpolation"),
+              actionButton(ns("delete_modifier"), "Remove blank interpolation")),
             mainPanel(
-              DT::DTOutput(ns("blankTab_table"))
+              DT::DTOutput(ns("blankTab_table")),
+              DT::DTOutput(ns("blank_modifiers_info_table"))
             )
           )
   )
@@ -116,6 +118,42 @@ blankProcessing_server <- function(id, fileUpload, reactiveExpressions, indexCre
         #                                                                        estimatedData = blankRatioSignal,
         #                                                                        uncertaintyData = blankRatioRsd,
         #                                                                        uncertaintyType = "rsd")
+      })
+      
+      # Output of the information table on blank modifiers
+      output$blank_modifiers_info_table <- DT::renderDT(datatable({
+        blank_modifiers_info_table <- NULL
+        for (modifier in blankModifiers()) {
+          # Get the modifier information to be displayed in the table
+          linesUsedForReplacement <- modifier$getLinesUsedForReplacement()
+          linesToBeReplaced <- modifier$getLinesToBeReplaced()
+          # Convert the numerical format (line and column number) to a character format (sample and analyte names)
+          linesUsedForReplacement <- parameters()$categoricalDataAndTime[ ,"Sample Name",drop = TRUE][linesUsedForReplacement]
+          linesToBeReplaced <- parameters()$categoricalDataAndTime[ ,"Sample Name",drop = TRUE][linesToBeReplaced]
+          # Concatenate sample and analyte strings of length > 1 
+          linesUsedForReplacement <- paste(linesUsedForReplacement, collapse = ", ")
+          linesToBeReplaced <- paste(linesToBeReplaced, collapse = ", ")
+          # Place the information in the table
+          blank_modifiers_info_table <- rbind(blank_modifiers_info_table,
+                                                     c(linesToBeReplaced, linesUsedForReplacement))
+        }
+        # Rename table column names if table exists
+        if (!is.null(blank_modifiers_info_table)) {
+          colnames(blank_modifiers_info_table) <- c("Samples replaced", "Samples used for replacement")
+        }
+        # Return the table after iteration complete
+        blank_modifiers_info_table
+      }, extensions = c('Scroller', 'Buttons'),
+      options = list(dom = 'Bt', ordering=F, autoWidth = TRUE,
+                     scrollX = TRUE, scrollY = 300, deferRender = TRUE, scroller = TRUE,
+                     buttons = c('copy', 'csv'),
+                     columnDefs = list(list(width = '120px', targets = "_all")))))
+      
+      blankModifierTableProxy <- DT::dataTableProxy("blank_modifiers_info_table", session = session)
+      
+      # Handle the deletion of modifiers
+      observeEvent(input$delete_modifier, {
+        blankModifiers(blankModifiers()[-input$blank_modifiers_info_table_rows_selected])
       })
       
       observe({

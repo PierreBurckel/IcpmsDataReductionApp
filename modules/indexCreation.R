@@ -116,7 +116,6 @@ indexCreation_server <- function(id, fileUpload, reactiveExpressions) {
       
       # Output of the information table on created in dex
       output$index_info_table <- DT::renderDT(datatable({
-        browser()
         samples_in_index <- NULL
         for (index in rowIndexInMain$custom) {
           samples_in_index <- c(samples_in_index, paste(parameters()$categoricalDataAndTime[ ,"Sample Name",drop = TRUE][index], collapse = ", "))

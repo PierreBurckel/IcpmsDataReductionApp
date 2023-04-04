@@ -49,7 +49,7 @@ interferenceCorrection_server <- function(id, fileUpload, reactiveExpressions, i
         interferenceModifiers(c(interferenceModifiers(), activeInterferenceModifier()))
       })
       
-      # Output of the information table on created in dex
+      # Output of the information table on created index
       output$interference_modifiers_info_table <- DT::renderDT(datatable({
         interference_modifiers_info_table <- NULL
         for (modifier in interferenceModifiers()) {
